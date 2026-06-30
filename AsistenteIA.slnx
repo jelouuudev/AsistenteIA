@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Asistente.API/Asistente.API.csproj" />
+  <Project Path="Asistente.Application/Asistente.Application.csproj" />
+  <Project Path="Asistente.Domain/Asistente.Domain.csproj" />
+  <Project Path="Asistente.Infrastructure/Asistente.Infrastructure.csproj" />
+  <Project Path="Asistente.Shared/Asistente.Shared.csproj" />
+  <Project Path="Asistente.Web/Asistente.Web.csproj" />
+</Solution>

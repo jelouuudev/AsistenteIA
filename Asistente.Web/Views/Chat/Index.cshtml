@@ -1,0 +1,39 @@
+@{
+    ViewData["Title"] = "Asistente IA";
+}
+
+<div class="container-fluid h-100 d-flex flex-column">
+    <div class="row flex-grow-1">
+        <div class="col-12 d-flex flex-column">
+            <div id="chat-container" class="flex-grow-1 overflow-auto mb-3 p-3 border rounded bg-light" style="max-height: 70vh;">
+                <div id="mensajes" class="d-flex flex-column">
+                    <div class="text-center text-muted py-5">
+                        <h5>Bienvenido al Asistente Inteligente Empresarial</h5>
+                        <p>Escriba su consulta y presione Enviar para comenzar.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="loading-indicator" class="text-center d-none mb-2">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Generando respuesta...</span>
+                </div>
+                <p class="text-muted small">La IA está generando una respuesta...</p>
+            </div>
+
+            <div class="input-group">
+                <input type="text" id="mensaje-input" class="form-control" placeholder="Escriba su mensaje aquí..." autofocus />
+                <button id="btn-enviar" class="btn btn-primary" type="button">
+                    <i class="bi bi-send"></i> Enviar
+                </button>
+                <button id="btn-limpiar" class="btn btn-outline-secondary" type="button">
+                    <i class="bi bi-eraser"></i> Limpiar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/chat.js"></script>
+}
