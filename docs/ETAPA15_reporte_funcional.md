@@ -26,10 +26,15 @@
 | Prueba | Estado |
 |--------|--------|
 | 1 Login→Chat | SUPERADA |
-| 2 RAG | Parcial (requiere ChromaDB) |
-| 3 SQL Tool | Parcial (requiere fuente autorizada) |
-| 4 Workflow | Parcial (requiere workflow demo) |
-| 5 PDF→Evento→Embeddings | Parcial (requiere ChromaDB) |
-| 6 Scheduler | SUPERADA (Quartz OK) |
+| 2 RAG | SUPERADA (E2E: indexado + embeddings Ollama 768d + recuperación semántica InMemory) |
+| 3 SQL Tool | SUPERADA (E2E: "total de clientes = 5" vía RestauranteDB) |
+| 4 Workflow | SUPERADA (E2E: workflow "Resumen de Clientes" ejecutado por el motor) |
+| 5 PDF→Evento→Embeddings | SUPERADA (E2E: documentos 1–4 indexados con embeddings reales) |
+| 6 Scheduler | SUPERADA (Quartz programado y activo) |
 
-**Bloqueo:** ChromaDB y un workflow de demostración con fuente SQL deben estar activos en el host de pruebas para completar las Pruebas 2–5 E2E.
+**Evidencia E2E real (ejecutado 2026-08-11, API net8.0 + Ollama):**
+- RAG: consulta "¿pasos para dar de alta un empleado?" → respuesta fundamentada en "Manual de Onboarding para Nuevos Colaboradores TechCorp Solutions" (recuperado por similitud semántica sobre embeddings nomic-embed-text de 768 dimensiones).
+- SQL Tool: "¿total de clientes registrados?" → "El total de clientes registrados en la base de datos es 5" (tabla `clientes` en `RestauranteDB`, consulta parametrizada/autorizada).
+- Workflow: "Ejecuta el workflow Resumen de Clientes" → "El total de clientes es 5, obtenido de la tabla 'clientes' en la base de datos 'RestauranteDB'" (orquestación de pasos vía WorkflowEngine).
+
+**Nota de configuración (ETAPA 15):** el almacén vectorial es seleccionable por `Embedding:BaseVectorial` (`InMemory` para dev/pruebas sin ChromaDB, `Chroma` para producción). Se corrigió el registro de `OllamaEmbeddingProvider` como cliente tipado de `IEmbeddingProvider` con `BaseAddress` = `Ollama.Url` (antes fallaba con "invalid request URI" al llamar a `/api/embeddings`), y `InMemoryVectorStore` se registró como Singleton para compartir el índice entre solicitudes.
