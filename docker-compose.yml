@@ -1,0 +1,93 @@
+# Asistente Inteligente Empresarial - Orquestación Docker
+# Perfiles:
+#   dev   -> chromadb (desarrollo)
+#   test  -> chromadb (pruebas)
+#   prod  -> api + web + chromadb (producción)
+# Levantar:
+#   docker compose --profile dev up -d
+#   docker compose --profile prod up -d
+# Variables en .env (ver .env.example). NO commitear .env.
+
+services:
+  chromadb:
+    image: chromadb/chroma:0.4.24
+    container_name: asistentechroma
+    profiles: ["dev", "test", "prod"]
+    ports:
+      - "${CHROMA_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_SERVER_AUTHN_CREDENTIALS=${CHROMA_AUTH:-chroma}"
+    restart: always
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: asistentesql
+    profiles: ["dev", "test", "prod"]
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${SQL_SA_PASSWORD:-CambiaEstePassword123!}
+      - MSSQL_PID=Developer
+    ports:
+      - "${SQL_PORT:-1433}:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+    restart: always
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: asistenteollama
+    profiles: ["dev", "test", "prod"]
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: always
+    # Nota: en Windows con GPU NVIDIA usar: deploy.resources.reservations.devices
+    # Para producción sin GPU, el modelo corre en CPU (más lento).
+
+  api:
+    build:
+      context: .
+      dockerfile: Asistente.API/Dockerfile
+    container_name: asistenteapi
+    profiles: ["prod"]
+    depends_on:
+      - chromadb
+      - mssql
+      - ollama
+    ports:
+      - "${API_PORT:-5298}:5298"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=${API_DB_CONNECTION}
+      - Ollama__Url=${OLLAMA_URL:-http://ollama:11434}
+      - Ollama__Modelo=${OLLAMA_MODEL:-deepseek-r1:7b}
+      - Embedding__ModeloEmbeddings=${EMBEDDING_MODEL:-nomic-embed-text}
+      - JwtSettings__SecretKey=${JWT_SECRET}
+      - ApiBaseUrl=http://api:5298
+    restart: always
+
+  web:
+    build:
+      context: .
+      dockerfile: Asistente.Web/Dockerfile
+    container_name: asistenteweb
+    profiles: ["prod"]
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-5206}:5206"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ApiBaseUrl=http://api:5298
+      - ApiTimeoutSegundos=600
+    restart: always
+
+volumes:
+  chroma_data:
+  sql_data:
+  ollama_data:

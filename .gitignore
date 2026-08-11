@@ -75,3 +75,35 @@ ClientBin/
 *.pfx
 *.publishsettings
 node_modules/
+
+# ============================================================
+# ETAPA 15 - Seguridad: NO commitear secretos ni config sensible
+# ============================================================
+# Archivos de entorno con secretos reales (usar .env.example en el repo)
+.env
+.env.*
+!.env.example
+
+# Connection strings / claves locales
+appsettings.Local.json
+appsettings.local.json
+*appsettings.Secrets.json
+
+# Claves, certificados y credenciales
+*.key
+*.pem
+secrets.json
+secrets/
+
+# Backups y respaldos generados
+/backups/
+*.bak
+*.trn
+
+# Documentos cargados por los usuarios (no son código fuente)
+AsistenteIA_Documentos/
+
+# ============================================================
+# Carpeta ajena al proyecto (no es parte de AsistenteIA)
+# ============================================================
+backend-red-salud/
