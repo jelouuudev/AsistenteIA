@@ -67,6 +67,7 @@ services:
       - Ollama__Url=${OLLAMA_URL:-http://ollama:11434}
       - Ollama__Modelo=${OLLAMA_MODEL:-deepseek-r1:7b}
       - Embedding__ModeloEmbeddings=${EMBEDDING_MODEL:-nomic-embed-text}
+      - Chroma__Url=${CHROMA_URL:-http://chromadb:8000}
       - JwtSettings__SecretKey=${JWT_SECRET}
       - ApiBaseUrl=http://api:5298
     restart: always
