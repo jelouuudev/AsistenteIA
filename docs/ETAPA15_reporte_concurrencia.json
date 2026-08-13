@@ -1,87 +1,12 @@
-{
-  "fecha": "2026-08-11T11:46:53.513067",
-  "tipo": "concurrency_rendimiento_api",
-  "nota": "Endpoints rapidos (sin Ollama). La carga completa con generacion IA requiere servidor de produccion con GPU.",
-  "resultados": {
-    "health_N5": {
-      "endpoint": "/api/health",
-      "usuarios": 5,
-      "exitosas": 5,
-      "errores": 0,
-      "tiempo_total_seg": 2.18,
-      "avg_seg": 2.1827,
-      "p95_seg": 2.1831,
-      "max_seg": 2.1833
-    },
-    "health_N10": {
-      "endpoint": "/api/health",
-      "usuarios": 10,
-      "exitosas": 10,
-      "errores": 0,
-      "tiempo_total_seg": 2.08,
-      "avg_seg": 2.0739,
-      "p95_seg": 2.0778,
-      "max_seg": 2.0781
-    },
-    "health_N25": {
-      "endpoint": "/api/health",
-      "usuarios": 25,
-      "exitosas": 25,
-      "errores": 0,
-      "tiempo_total_seg": 2.1,
-      "avg_seg": 2.0883,
-      "p95_seg": 2.0947,
-      "max_seg": 2.1021
-    },
-    "health_N50": {
-      "endpoint": "/api/health",
-      "usuarios": 50,
-      "exitosas": 19,
-      "errores": 31,
-      "tiempo_total_seg": 2.08,
-      "avg_seg": 2.0641,
-      "p95_seg": 2.0748,
-      "max_seg": 2.075
-    },
-    "auth_permisos_N5": {
-      "endpoint": "/api/seguridad/permisos",
-      "usuarios": 5,
-      "exitosas": 5,
-      "errores": 0,
-      "tiempo_total_seg": 0.08,
-      "avg_seg": 0.0742,
-      "p95_seg": 0.0746,
-      "max_seg": 0.0752
-    },
-    "auth_permisos_N10": {
-      "endpoint": "/api/seguridad/permisos",
-      "usuarios": 10,
-      "exitosas": 10,
-      "errores": 0,
-      "tiempo_total_seg": 0.01,
-      "avg_seg": 0.0103,
-      "p95_seg": 0.0126,
-      "max_seg": 0.0132
-    },
-    "auth_permisos_N25": {
-      "endpoint": "/api/seguridad/permisos",
-      "usuarios": 25,
-      "exitosas": 25,
-      "errores": 0,
-      "tiempo_total_seg": 0.02,
-      "avg_seg": 0.0043,
-      "p95_seg": 0.0047,
-      "max_seg": 0.0164
-    },
-    "auth_permisos_N50": {
-      "endpoint": "/api/seguridad/permisos",
-      "usuarios": 50,
-      "exitosas": 20,
-      "errores": 30,
-      "tiempo_total_seg": 0.04,
-      "avg_seg": 0.0041,
-      "p95_seg": 0.005,
-      "max_seg": 0.0052
-    }
-  }
-}
+[
+{"label":"health_N5","endpoint":"/api/health","N":5,"exitosas":5,"errores":0,"nota":"sin rate-limit"},
+{"label":"health_N10","endpoint":"/api/health","N":10,"exitosas":10,"errores":0,"nota":"sin rate-limit"},
+{"label":"health_N25","endpoint":"/api/health","N":25,"exitosas":25,"errores":0,"nota":"sin rate-limit"},
+{"label":"health_N50","endpoint":"/api/health","N":50,"exitosas":19,"errores":31,"nota":"rate-limit General Maximos=120/60s alcanzado"},
+{"label":"permisos_N5","endpoint":"/api/seguridad/permisos","N":5,"exitosas":5,"errores":0,"nota":"auth, <100ms"},
+{"label":"permisos_N10","endpoint":"/api/seguridad/permisos","N":10,"exitosas":10,"errores":0,"nota":"auth, <100ms"},
+{"label":"permisos_N25","endpoint":"/api/seguridad/permisos","N":25,"exitosas":25,"errores":0,"nota":"auth, <100ms"},
+{"label":"permisos_N50","endpoint":"/api/seguridad/permisos","N":50,"exitosas":20,"errores":30,"nota":"rate-limit General Maximos=120/60s alcanzado"},
+{"label":"chat_rag_N1","endpoint":"/api/chat/enviar","N":1,"exitoso":true,"wall_s":150,"TiempoRespuestaMs":95832,"TiempoConstruccionContextoMs":5,"nota":"Ollama deepseek-r1:7b en CPU; RAG recovery=5ms (Chroma local)"},
+{"label":"chat_rag_N3","endpoint":"/api/chat/enviar","N":3,"exitoso":"no_ejecutado","razon":"CPU se satura y rate-limit bloquea; medir en GPU"}
+]
