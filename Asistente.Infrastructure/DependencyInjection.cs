@@ -28,7 +28,12 @@ public static class DependencyInjection
         // NOTA: OllamaEmbeddingProvider se registra como cliente tipado de IEmbeddingProvider
         // para que el HttpClient resuelva SIEMPRE con BaseAddress = Ollama.Url (evita el
         // error "An invalid request URI was provided" al llamar a /api/embeddings).
-        services.AddHttpClient<ChromaVectorStore>();
+        services.AddHttpClient<ChromaVectorStore>((sp, client) =>
+        {
+            var cfg = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ChromaConfig>>().Value;
+            client.BaseAddress = new Uri(cfg.Url);
+            client.Timeout = TimeSpan.FromSeconds((cfg.TimeoutSegundos > 0 ? cfg.TimeoutSegundos : 30) + 5);
+        });
         services.AddHttpClient<IEmbeddingProvider, OllamaEmbeddingProvider>((sp, client) =>
         {
             var cfg = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<OllamaConfig>>().Value;
@@ -36,7 +41,9 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds((cfg.TimeoutSegundos > 0 ? cfg.TimeoutSegundos : 3600) + 5);
         });
         services.AddSingleton<InMemoryVectorStore>();
-        services.AddScoped<ChromaVectorStore>();
+        // NOTA: ChromaVectorStore se registra via AddHttpClient<ChromaVectorStore> (arriba) para
+        // inyectar el HttpClient con BaseAddress = ChromaConfig.Url. NO registrar AddScoped<ChromaVectorStore>()
+        // aqui, porque pisaria el AddHttpClient y el HttpClient quedaria sin BaseAddress (BaseAddress=NULL).
         services.AddScoped<IConfiguracionWorkflowRepository, ConfiguracionWorkflowRepository>();
 
         // Selección del almacén vectorial según configuración (ETAPA 15 - despliegue sin ChromaDB)
