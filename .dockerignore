@@ -1,0 +1,26 @@
+# Excluir artefactos de build de .NET (crítico: evita el error NETSDK1064)
+**/bin/
+**/obj/
+**/out/
+
+# Archivos de entorno y secretos (NO deben entrar a la imagen)
+.env
+.env.*
+!.env.example
+
+# Control de versiones y editor
+.git/
+.gitignore
+.vs/
+.idea/
+*.user
+*.suo
+
+# Documentación y scripts de host (no necesarios en la imagen)
+docs/
+scripts/
+*.md
+
+# Imágenes/logs temporales
+**/*.log
+**/TestResults/

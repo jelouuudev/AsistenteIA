@@ -6,13 +6,14 @@ COPY Asistente.Web/Asistente.Web.csproj Asistente.Web/
 COPY Asistente.API/Asistente.API.csproj Asistente.API/
 COPY Asistente.Application/Asistente.Application.csproj Asistente.Application/
 COPY Asistente.Domain/Asistente.Domain.csproj Asistente.Domain/
-COPY Asistente.Shared/Asistente.Shared.csproj /dev/null 2>/dev/null || true
 COPY Asistente.Shared/Asistente.Shared.csproj Asistente.Shared/
 COPY Asistente.Infrastructure/Asistente.Infrastructure.csproj Asistente.Infrastructure/
 RUN dotnet restore Asistente.Web/Asistente.Web.csproj
 
 COPY . .
-RUN dotnet publish Asistente.Web/Asistente.Web.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish Asistente.Web/Asistente.Web.csproj -c Release -o /app/publish --no-restore -p:ErrorOnDuplicatePublishOutputFiles=false
+# Asegurar que la Web use su propio appsettings (API se publica como dependencia y colisiona)
+COPY Asistente.Web/appsettings*.json /app/publish/
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app

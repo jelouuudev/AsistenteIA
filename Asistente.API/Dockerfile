@@ -14,7 +14,9 @@ RUN dotnet restore Asistente.API/Asistente.API.csproj
 
 # Copiar código fuente y publicar
 COPY . .
-RUN dotnet publish Asistente.API/Asistente.API.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish Asistente.API/Asistente.API.csproj -c Release -o /app/publish --no-restore -p:ErrorOnDuplicatePublishOutputFiles=false
+# Asegurar que la API use su propio appsettings (Web se publica como dependencia y colisiona)
+COPY Asistente.API/appsettings*.json /app/publish/
 
 # Imagen final
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
