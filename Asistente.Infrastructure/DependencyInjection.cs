@@ -1,3 +1,4 @@
+using Asistente.Application.Interfaces;
 using Asistente.Domain.Interfaces;
 using Asistente.Infrastructure.Data;
 using Asistente.Infrastructure.Repositories;
@@ -104,6 +105,18 @@ public static class DependencyInjection
         services.AddScoped<IAsistenteHerramientaRepository, AsistenteHerramientaRepository>();
         services.AddScoped<IEjecucionHerramientaRepository, EjecucionHerramientaRepository>();
         services.AddScoped<IConfiguracionOrchestratorRepository, ConfiguracionOrchestratorRepository>();
+
+        // Agent Orchestrator (ETAPA 17)
+        services.AddScoped<IAgentExecutionRepository, AgentExecutionRepository>();
+        services.AddScoped<IAgentExecutionStepRepository, AgentExecutionStepRepository>();
+        services.AddScoped<IAgentExecutionTraceRepository, AgentExecutionTraceRepository>();
+        services.AddScoped<IAgentCollaborationRuleRepository, AgentCollaborationRuleRepository>();
+
+        // Planner Engine (ETAPA 18)
+        services.AddScoped<IPlanRepository, PlanRepository>();
+        services.AddScoped<IPlanStepRepository, PlanStepRepository>();
+        services.AddScoped<IPlanDependencyRepository, PlanDependencyRepository>();
+        services.AddScoped<IPlanExecutionLogRepository, PlanExecutionLogRepository>();
 
         // Workflow Engine (ETAPA 12)
         services.AddScoped<IWorkflowRepository, WorkflowRepository>();

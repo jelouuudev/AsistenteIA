@@ -1,4 +1,5 @@
-﻿<!DOCTYPE html>
+@using System.Security.Claims
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="utf-8" />
@@ -6,28 +7,273 @@
     <title>@ViewData["Title"] - Asistente IA</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <style>
+        body { font-family: 'Outfit', sans-serif; background: #0f172a; color: #e2e8f0; }
+        .navbar-custom {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 0.6rem 1.5rem;
+            position: relative;
+            z-index: 1050;
+        }
+        .navbar-brand-text {
+            font-weight: 700;
+            font-size: 1.2rem;
+            background: linear-gradient(90deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .nav-link-custom {
+            color: #94a3b8 !important;
+            border-radius: 8px;
+            padding: 6px 14px !important;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .nav-link-custom:hover, .nav-link-custom.active {
+            color: #fff !important;
+            background: rgba(129, 140, 248, 0.12);
+        }
+        .nav-link-custom i { margin-right: 5px; }
+        .badge-role {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: white;
+        }
+        .user-info { color: #cbd5e1; font-size: 0.88rem; }
+        .btn-logout {
+            background: rgba(239,68,68,0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239,68,68,0.2);
+            border-radius: 8px;
+            padding: 4px 12px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .btn-logout:hover {
+            background: rgba(239,68,68,0.3);
+            color: #fff;
+        }
+        .main-content { min-height: calc(100vh - 110px); }
+        footer { background: rgba(15,23,42,0.95); border-top: 1px solid rgba(255,255,255,0.07); color: #475569; font-size: 0.8rem; padding: 10px 0; }
+    </style>
 </head>
 <body class="d-flex flex-column vh-100">
     <header>
-        <nav class="navbar navbar-dark bg-dark">
+        <nav class="navbar navbar-custom navbar-expand-lg">
             <div class="container-fluid">
-                <a class="navbar-brand" href="/">
-                    <i class="bi bi-robot"></i> Asistente Inteligente Empresarial
+                <a class="navbar-brand d-flex align-items-center gap-2" href="/Chat">
+                    <i class="bi bi-robot fs-5" style="color:#818cf8;"></i>
+                    <span class="navbar-brand-text">Asistente IA</span>
                 </a>
+
+                <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+                    <i class="bi bi-list text-light fs-5"></i>
+                </button>
+
+                <div class="collapse navbar-collapse" id="navbarMain">
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0 ms-3 gap-1">
+                        @if (User.IsInRole("Administrador") || User.IsInRole("Operador"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Chat" ? "active" : "")"
+                                   asp-controller="Chat" asp-action="Index">
+                                    <i class="bi bi-chat-dots"></i> Asistente
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Documentos" ? "active" : "")"
+                                   asp-controller="Documentos" asp-action="Index">
+                                    <i class="bi bi-file-earmark-text"></i> Documentos
+                                </a>
+                            </li>
+                            @if (User.IsInRole("Administrador"))
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "ConsultasEmpresariales" ? "active" : "")"
+                                       asp-controller="ConsultasEmpresariales" asp-action="Index">
+                                        <i class="bi bi-cpu"></i> Consultas BD
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Herramientas" ? "active" : "")"
+                                       asp-controller="Herramientas" asp-action="Index">
+                                        <i class="bi bi-tools"></i> Herramientas
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Workflows" ? "active" : "")"
+                                       asp-controller="Workflows" asp-action="Index">
+                                        <i class="bi bi-diagram-3"></i> Flujos
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "EventosEmpresariales" ? "active" : "")"
+                                       asp-controller="EventosEmpresariales" asp-action="Index">
+                                        <i class="bi bi-lightning-charge-fill"></i> Eventos
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "TareasProgramadas" ? "active" : "")"
+                                       asp-controller="TareasProgramadas" asp-action="Index">
+                                        <i class="bi bi-calendar-check"></i> Tareas
+                                    </a>
+                                </li>
+                            }
+                        }
+                        @if (User.IsInRole("Administrador") || User.IsInRole("Supervisor"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Procesamiento" ? "active" : "")"
+                                   asp-controller="Procesamiento" asp-action="Index">
+                                    <i class="bi bi-gear-wide-connected"></i> Procesamiento
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Indexacion" ? "active" : "")"
+                                   asp-controller="Indexacion" asp-action="Index">
+                                    <i class="bi bi-database"></i> Indexación
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Monitoreo" ? "active" : "")"
+                                   asp-controller="Monitoreo" asp-action="Index">
+                                    <i class="bi bi-speedometer2"></i> Monitoreo
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "MonitoreoHerramientas" ? "active" : "")"
+                                   asp-controller="MonitoreoHerramientas" asp-action="Index">
+                                    <i class="bi bi-activity"></i> Monitoreo Herram.
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "MonitoreoWorkflows" ? "active" : "")"
+                                   asp-controller="MonitoreoWorkflows" asp-action="Index">
+                                    <i class="bi bi-diagram-3"></i> Monitoreo Flujos
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "MonitoreoEventos" ? "active" : "")"
+                                   asp-controller="MonitoreoEventos" asp-action="Index">
+                                    <i class="bi bi-lightning-charge-fill"></i> Monitoreo Eventos
+                                </a>
+                            </li>
+                        }
+                        @if (User.IsInRole("Administrador"))
+                        {
+                            <li class="nav-item dropdown">
+                                <a class="nav-link-custom dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
+                                    <i class="bi bi-gear"></i> Configuración
+                                </a>
+                                <ul class="dropdown-menu dropdown-menu-dark" style="background:#1e293b;border:1px solid rgba(255,255,255,0.07);min-width:200px;">
+                                    <li><a class="dropdown-item" asp-controller="Asistentes" asp-action="Index"><i class="bi bi-robot me-2"></i>Asistentes</a></li>
+                                    <li><a class="dropdown-item" asp-controller="FuentesConocimiento" asp-action="Index"><i class="bi bi-book me-2"></i>Fuentes de Conocimiento</a></li>
+                                    <li><a class="dropdown-item" asp-controller="ConfiguracionRAG" asp-action="Index"><i class="bi bi-sliders me-2"></i>Config. RAG</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Prompts" asp-action="Index"><i class="bi bi-file-text me-2"></i>Prompts</a></li>
+                                    <li><a class="dropdown-item" asp-controller="ConfiguracionMemoria" asp-action="Index"><i class="bi bi-memory me-2"></i>Memoria</a></li>
+                                    <li><a class="dropdown-item" asp-controller="CategoriasDocumento" asp-action="Index"><i class="bi bi-tags me-2"></i>Categorías Doc.</a></li>
+                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                    <li><a class="dropdown-item" asp-controller="ConexionesBaseDatos" asp-action="Index"><i class="bi bi-database me-2"></i>Conexiones BD</a></li>
+                                    <li><a class="dropdown-item" asp-controller="ConsultasPlantillas" asp-action="Index"><i class="bi bi-file-earmark-code me-2"></i>Plantillas de Consulta</a></li>
+                                    <li><a class="dropdown-item" asp-controller="ConfiguracionMotorConsultas" asp-action="Index"><i class="bi bi-sliders2 me-2"></i>Config. Motor Consultas</a></li>
+                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                    <li><a class="dropdown-item" asp-controller="Herramientas" asp-action="Index"><i class="bi bi-tools me-2"></i>Herramientas (Orchestrator)</a></li>
+                                    <li><a class="dropdown-item" asp-controller="AsistenteHerramientas" asp-action="Index"><i class="bi bi-link-45deg me-2"></i>Asociar Herramientas</a></li>
+                                    <li><a class="dropdown-item" asp-controller="OrchestratorConfig" asp-action="Index"><i class="bi bi-sliders me-2"></i>Config. Orquestador</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Orchestrator" asp-action="Index"><i class="bi bi-diagram-3 me-2"></i>Agent Orchestrator</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Planner" asp-action="Index"><i class="bi bi-diagram-2 me-2"></i>Planner Engine</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Workflows" asp-action="Configuracion"><i class="bi bi-diagram-3 me-2"></i>Config. Workflow Engine</a></li>
+                                    <li><a class="dropdown-item" asp-controller="ReglasEvento" asp-action="Index"><i class="bi bi-link-45deg me-2"></i>Reglas de Automatización</a></li>
+                                    <li><a class="dropdown-item" asp-controller="MonitoreoEventos" asp-action="Configuracion"><i class="bi bi-sliders me-2"></i>Config. Motor Eventos</a></li>
+                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                    <li><a class="dropdown-item" asp-controller="Usuarios" asp-action="Index"><i class="bi bi-people me-2"></i>Usuarios</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Roles" asp-action="Index"><i class="bi bi-shield-check me-2"></i>Roles</a></li>
+                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard Seguridad</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Permisos"><i class="bi bi-key me-2"></i>Permisos</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Politicas"><i class="bi bi-shield-lock me-2"></i>Políticas de IA</a></li>
+                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Usuarios"><i class="bi bi-people me-2"></i>Control de Acceso (Usuarios)</a></li>
+                                </ul>
+                            </li>
+                        }
+                        @if (User.IsInRole("Administrador") || User.IsInRole("Supervisor"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Auditoria" ? "active" : "")"
+                                   asp-controller="Auditoria" asp-action="Index">
+                                    <i class="bi bi-journal-text"></i> Auditoría
+                                </a>
+                            </li>
+                        }
+                        @if (User.IsInRole("Administrador"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Debug" ? "active" : "")"
+                                   asp-controller="Debug" asp-action="Index">
+                                    <i class="bi bi-bug"></i> Depuración
+                                </a>
+                            </li>
+                        }
+                    </ul>
+
+                    @if (User.Identity?.IsAuthenticated == true)
+                    {
+                        var fullName = User.FindFirst("FullName")?.Value ?? User.Identity.Name ?? "Usuario";
+                        var roles = User.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value);
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="user-info d-none d-lg-flex align-items-center gap-2">
+                                <i class="bi bi-person-circle" style="color:#818cf8;"></i>
+                                <span>@fullName</span>
+                                @foreach (var rol in roles)
+                                {
+                                    <span class="badge-role">@rol</span>
+                                }
+                            </div>
+                            <form asp-controller="Account" asp-action="Logout" method="post" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-logout">
+                                    <i class="bi bi-box-arrow-right me-1"></i> Salir
+                                </button>
+                            </form>
+                        </div>
+                    }
+                </div>
             </div>
         </nav>
     </header>
 
-    <main role="main" class="flex-grow-1 overflow-hidden">
+    <main role="main" class="flex-grow-1 overflow-auto main-content">
         <div class="container-fluid h-100 py-3">
+            @if (TempData["SuccessMessage"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show border-0 mb-3"
+                     style="background:rgba(16,185,129,0.15);border-left:4px solid #10b981 !important;color:#6ee7b7;" role="alert">
+                    <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+                </div>
+            }
+            @if (TempData["ErrorMessage"] != null)
+            {
+                <div class="alert alert-danger alert-dismissible fade show border-0 mb-3"
+                     style="background:rgba(239,68,68,0.15);border-left:4px solid #ef4444 !important;color:#fca5a5;" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2"></i>@TempData["ErrorMessage"]
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+                </div>
+            }
             @RenderBody()
         </div>
     </main>
 
-    <footer class="border-top footer text-muted bg-light py-2">
-        <div class="container-fluid text-center small">
-            Asistente IA &copy; 2026 - Powered by DeepSeek-R1 + Ollama
+    <footer>
+        <div class="container-fluid text-center">
+            Asistente IA &copy; 2026 &mdash; Powered by DeepSeek-R1 + Ollama
         </div>
     </footer>
 
