@@ -111,16 +111,16 @@ public class PlanBuilder
         pasos.Add(Paso(ref orden, "Agent", "Entregar resultado final al usuario", principal.IdAsistente,
             principal.Nombre, "Consolida y presenta la respuesta final."));
 
-        // Dependencias: cadena secuencial (DAG) salvo RAG que puede ir en paralelo con SQL.
+        // Dependencias: cadena secuencial (DAG) — cada paso depende del anterior.
+        // Garantiza un grafo acíclico (Regla 7) y es determinista.
         for (int i = 1; i < pasos.Count; i++)
         {
-            var prev = pasos[i - 1];
-            var actual = pasos[i];
-            // RAG puede ejecutarse en paralelo con la consulta SQL (misma capa).
-            if (actual.Tipo == "RAG" && quiereSql)
-                plan.Dependencias.Add(new PlanDependency { IdPlan = 0, StepOrigen = 0, StepDestino = actual.Orden }); // sin dependencia previa
-            else
-                plan.Dependencias.Add(new PlanDependency { IdPlan = 0, StepOrigen = prev.Orden, StepDestino = actual.Orden });
+            plan.Dependencias.Add(new PlanDependency
+            {
+                IdPlan = 0,
+                StepOrigen = pasos[i - 1].Orden,
+                StepDestino = pasos[i].Orden
+            });
         }
 
         plan.Pasos = pasos;

@@ -53,17 +53,13 @@ public class PlannerEngine : IPlannerEngine
     public async Task<Plan> GenerarPlanAsync(string objetivo, int idUsuario, CancellationToken ct = default)
     {
         var plan = await _builder.ConstruirAsync(objetivo, idUsuario, ct);
+
+        // Persistencia en UNA sola unidad: el Plan ya trae Pasos y Dependencias como
+        // propiedades de navegación, así que un solo SaveChanges resuelve las FKs hijas.
+        // NO se debe re-hacer AddAsync sobre los pasos (ya están trackeados por el contexto
+        // al guardar el plan) — eso dispara "cannot be tracked" / FK violation.
         plan = await _planRepo.AddAsync(plan, ct);
-        foreach (var paso in plan.Pasos)
-        {
-            paso.IdPlan = plan.IdPlan;
-            await _stepRepo.AddAsync(paso, ct);
-        }
-        foreach (var dep in plan.Dependencias)
-        {
-            dep.IdPlan = plan.IdPlan;
-            await _depRepo.AddAsync(dep, ct);
-        }
+
         await RegistrarLogAsync(plan.IdPlan, null, "PlanGenerado",
             $"Plan #{plan.IdPlan} generado con {plan.Pasos.Count} paso(s). Requiere aprobación: {plan.RequiereAprobacion}.", ct);
         return plan;
