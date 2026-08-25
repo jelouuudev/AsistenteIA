@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator;
 using Asistente.Domain.Entities;
+using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace Asistente.Application.Orchestrator.Planner;
@@ -24,6 +27,7 @@ public class PlannerEngine : IPlannerEngine
     private readonly IPlanDependencyRepository _depRepo;
     private readonly IPlanExecutionLogRepository _logRepo;
     private readonly IAgentOrchestrator _orchestrator;
+    private readonly IAsistenteRepository _asistenteRepo;
     private readonly ILogger<PlannerEngine> _logger;
 
     public PlannerEngine(
@@ -36,6 +40,7 @@ public class PlannerEngine : IPlannerEngine
         IPlanDependencyRepository depRepo,
         IPlanExecutionLogRepository logRepo,
         IAgentOrchestrator orchestrator,
+        IAsistenteRepository asistenteRepo,
         ILogger<PlannerEngine> logger)
     {
         _builder = builder;
@@ -47,6 +52,7 @@ public class PlannerEngine : IPlannerEngine
         _depRepo = depRepo;
         _logRepo = logRepo;
         _orchestrator = orchestrator;
+        _asistenteRepo = asistenteRepo;
         _logger = logger;
     }
 
@@ -122,11 +128,15 @@ public class PlannerEngine : IPlannerEngine
         // Validación en seco (Regla 1 / Actividad 3) — sin ejecutar nada.
         var validacion = await _validator.ValidarAsync(plan, cancellationToken);
 
-        // Predicción: participantes (agentes únicos) y herramientas que intervendrían.
-        // El nombre del agente ya quedó registrado en PlanStep.Nombre por el Plan Builder.
+        // Predicción: participantes (agentes reales) y herramientas que intervendrían.
+        // Se resuelve el NOMBRE del agente por IdAsistente (PlanStep.Nombre guarda la
+        // descripción del paso, no el agente). Si no se encuentra, se muestra el código/id.
+        var agentes = (await _asistenteRepo.GetAllAsync()).ToDictionary(a => a.IdAsistente, a => a.Nombre ?? a.Codigo);
         var participantes = plan.Pasos
             .Where(p => p.IdAsistente.HasValue)
-            .Select(p => p.Nombre ?? $"Agente {p.IdAsistente}")
+            .Select(p => agentes.TryGetValue(p.IdAsistente!.Value, out var nombre)
+                ? nombre
+                : $"Agente {p.IdAsistente}")
             .Distinct()
             .ToList();
         var herramientas = plan.Pasos
