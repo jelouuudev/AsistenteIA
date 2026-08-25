@@ -25,8 +25,22 @@ public interface IPlannerEngine
     /// <summary>Construye el grafo de ejecución (DAG) a partir de un plan ya validado.</summary>
     ExecutionGraph ConstruirGrafo(Plan plan);
 
+    /// <summary>Simulación en seco (Actividad 5): valida el plan SIN ejecutarlo y predice
+    /// participantes, herramientas y riesgos. No delega al Orchestrator (Regla 3).</summary>
+    Task<SimulacionPlan> SimularAsync(int idPlan, CancellationToken cancellationToken = default);
+
     /// <summary>Registra un evento en el log de auditoría del plan (Regla 5 / Sección 13).</summary>
     Task RegistrarLogAsync(int idPlan, int? idStep, string evento, string? detalle, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Resultado de la simulación en seco: validación + predicción de ejecución.</summary>
+public class SimulacionPlan
+{
+    public Plan Plan { get; set; } = new();
+    public ResultadoValidacionPlan Validacion { get; set; } = new();
+    public List<string> Participantes { get; set; } = new();
+    public List<string> Herramientas { get; set; } = new();
+    public int TiempoEstimadoSegundos { get; set; }
 }
 
 /// <summary>Resultado de la validación de un plan por el Plan Validator.</summary>

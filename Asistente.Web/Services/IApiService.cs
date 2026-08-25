@@ -259,7 +259,7 @@ public interface IApiService
     // Planner Engine (ETAPA 18)
     Task<PlanDto> GenerarPlanAsync(string objetivo, int currentUserId, string ip);
     Task<ResultadoValidacionPlanDto> ValidarPlanAsync(int id, int currentUserId, string ip);
-    Task<PlanDto> SimularPlanAsync(int id, int currentUserId, string ip);
+    Task<SimulacionPlanDto> SimularPlanAsync(int id, int currentUserId, string ip);
     Task<PlanDto> EjecutarPlanAsync(int id, int currentUserId, string ip);
     Task AprobarPlanAsync(int id, int currentUserId, string ip);
     Task CancelarPlanAsync(int id, int currentUserId, string ip);

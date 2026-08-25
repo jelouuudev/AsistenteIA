@@ -114,6 +114,40 @@ public class PlannerEngine : IPlannerEngine
         return resultado;
     }
 
+    public async Task<SimulacionPlan> SimularAsync(int idPlan, CancellationToken cancellationToken = default)
+    {
+        var plan = await _planRepo.GetByIdAsync(idPlan, cancellationToken)
+                   ?? throw new InvalidOperationException($"Plan {idPlan} no encontrado.");
+
+        // Validación en seco (Regla 1 / Actividad 3) — sin ejecutar nada.
+        var validacion = await _validator.ValidarAsync(plan, cancellationToken);
+
+        // Predicción: participantes (agentes únicos) y herramientas que intervendrían.
+        // El nombre del agente ya quedó registrado en PlanStep.Nombre por el Plan Builder.
+        var participantes = plan.Pasos
+            .Where(p => p.IdAsistente.HasValue)
+            .Select(p => p.Nombre ?? $"Agente {p.IdAsistente}")
+            .Distinct()
+            .ToList();
+        var herramientas = plan.Pasos
+            .Where(p => !string.IsNullOrWhiteSpace(p.CodigoHerramienta))
+            .Select(p => p.CodigoHerramienta!)
+            .Distinct()
+            .ToList();
+
+        // Estimación simple en CPU (~60 s por paso de agente/herramienta, DeepSeek-r1:7b).
+        int tiempoEstimado = plan.Pasos.Count * 60;
+
+        return new SimulacionPlan
+        {
+            Plan = plan,
+            Validacion = validacion,
+            Participantes = participantes,
+            Herramientas = herramientas,
+            TiempoEstimadoSegundos = tiempoEstimado
+        };
+    }
+
     public async Task RegistrarLogAsync(int idPlan, int? idStep, string evento, string? detalle, CancellationToken ct = default)
         => await _logRepo.AddAsync(new PlanExecutionLog
         {

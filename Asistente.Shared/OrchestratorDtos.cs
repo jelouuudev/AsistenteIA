@@ -106,3 +106,14 @@ public class ResultadoValidacionPlanDto
     public List<string> Advertencias { get; set; } = new();
     public List<string> Riesgos { get; set; } = new();
 }
+
+/// <summary>Resultado de la simulación en seco (Actividad 5): valida sin ejecutar
+/// y predice participantes, herramientas y riesgos del plan.</summary>
+public class SimulacionPlanDto
+{
+    public PlanDto Plan { get; set; } = new();
+    public ResultadoValidacionPlanDto Validacion { get; set; } = new();
+    public List<string> Participantes { get; set; } = new();
+    public List<string> Herramientas { get; set; } = new();
+    public int TiempoEstimadoSegundos { get; set; }
+}

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator.Planner;
 using Asistente.Domain.Entities;
+using Asistente.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -58,11 +59,28 @@ public class PlannerController : ControllerBase
 
     /// <summary>Simula el plan (lo muestra sin ejecutarlo) para visualización previa (Actividad 5).</summary>
     [HttpGet("simular/{id:int}")]
-    public async Task<ActionResult<PlanDto>> Simular(int id, CancellationToken ct)
+    public async Task<ActionResult<SimulacionPlanDto>> Simular(int id, CancellationToken ct)
     {
         var plan = await _planRepo.GetByIdAsync(id, ct);
         if (plan == null) return NotFound();
-        return Ok(ToDto(plan));
+
+        // Simulación en seco: valida SIN ejecutar (Regla 3) y predice participantes/herramientas.
+        var simulacion = await _planner.SimularAsync(id, ct);
+        var dto = new SimulacionPlanDto
+        {
+            Plan = ToDto(simulacion.Plan),
+            Validacion = new ResultadoValidacionPlanDto
+            {
+                Valido = simulacion.Validacion.Valido,
+                Errores = simulacion.Validacion.Errores,
+                Advertencias = simulacion.Validacion.Advertencias,
+                Riesgos = simulacion.Validacion.Riesgos
+            },
+            Participantes = simulacion.Participantes,
+            Herramientas = simulacion.Herramientas,
+            TiempoEstimadoSegundos = simulacion.TiempoEstimadoSegundos
+        };
+        return Ok(dto);
     }
 
     /// <summary>Ejecuta el plan delegándolo al Agent Orchestrator (Regla 4). Fire-and-forget:
@@ -145,7 +163,7 @@ public class PlannerController : ControllerBase
         return Ok(ToDto(plan));
     }
 
-    private static PlanDto ToDto(Plan plan) => new()
+    private static Asistente.Shared.PlanDto ToDto(Plan plan) => new()
     {
         IdPlan = plan.IdPlan,
         Objetivo = plan.Objetivo,
@@ -155,7 +173,7 @@ public class PlannerController : ControllerBase
         IdExecution = plan.IdExecution,
         TiempoTotalMs = plan.TiempoTotalMs,
         Razonamiento = plan.Razonamiento,
-        Pasos = plan.Pasos.OrderBy(s => s.Orden).Select(s => new PlanStepDto
+        Pasos = plan.Pasos.OrderBy(s => s.Orden).Select(s => new Asistente.Shared.PlanStepDto
         {
             IdStep = s.IdStep,
             Orden = s.Orden,
@@ -168,12 +186,12 @@ public class PlannerController : ControllerBase
             CodigoHerramienta = s.CodigoHerramienta,
             Intentos = s.Intentos
         }).ToList(),
-        Dependencias = plan.Dependencias.Select(d => new PlanDepDto
+        Dependencias = plan.Dependencias.Select(d => new Asistente.Shared.PlanDepDto
         {
             StepOrigen = d.StepOrigen,
             StepDestino = d.StepDestino
         }).ToList(),
-        Logs = plan.Logs.OrderBy(l => l.Fecha).Select(l => new PlanLogDto
+        Logs = plan.Logs.OrderBy(l => l.Fecha).Select(l => new Asistente.Shared.PlanLogDto
         {
             Evento = l.Evento,
             Detalle = l.Detalle,
@@ -183,45 +201,3 @@ public class PlannerController : ControllerBase
 }
 
 public class GenerarPlanRequest { public string Objetivo { get; set; } = string.Empty; }
-
-public class PlanDto
-{
-    public int IdPlan { get; set; }
-    public string Objetivo { get; set; } = string.Empty;
-    public string Estado { get; set; } = string.Empty;
-    public bool RequiereAprobacion { get; set; }
-    public bool Aprobado { get; set; }
-    public string? IdExecution { get; set; }
-    public long? TiempoTotalMs { get; set; }
-    public string? Razonamiento { get; set; }
-    public List<PlanStepDto> Pasos { get; set; } = new();
-    public List<PlanDepDto> Dependencias { get; set; } = new();
-    public List<PlanLogDto> Logs { get; set; } = new();
-}
-
-public class PlanStepDto
-{
-    public int IdStep { get; set; }
-    public int Orden { get; set; }
-    public string Tipo { get; set; } = string.Empty;
-    public string Nombre { get; set; } = string.Empty;
-    public string? Descripcion { get; set; }
-    public string Estado { get; set; } = string.Empty;
-    public string? Resultado { get; set; }
-    public int? IdAsistente { get; set; }
-    public string? CodigoHerramienta { get; set; }
-    public int Intentos { get; set; }
-}
-
-public class PlanDepDto { public int StepOrigen { get; set; } public int StepDestino { get; set; } }
-public class PlanLogDto { public string Evento { get; set; } = string.Empty; public string? Detalle { get; set; } public DateTime Fecha { get; set; } }
-
-public class PlannerDashboardDto
-{
-    public int Total { get; set; }
-    public int Activos { get; set; }
-    public int Finalizados { get; set; }
-    public int Fallidos { get; set; }
-    public long TiempoPromedioMs { get; set; }
-    public List<PlanDto> Planes { get; set; } = new();
-}

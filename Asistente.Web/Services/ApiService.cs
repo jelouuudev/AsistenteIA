@@ -1428,8 +1428,8 @@ public class ApiService : IApiService
         => await EnviarYLeerAsync<ResultadoValidacionPlanDto>(CrearRequest(HttpMethod.Post,
             $"/api/planner/validar/{id}", null, currentUserId, ip));
 
-    public async Task<PlanDto> SimularPlanAsync(int id, int currentUserId, string ip)
-        => await EnviarYLeerAsync<PlanDto>(CrearRequest(HttpMethod.Get,
+    public async Task<SimulacionPlanDto> SimularPlanAsync(int id, int currentUserId, string ip)
+        => await EnviarYLeerAsync<SimulacionPlanDto>(CrearRequest(HttpMethod.Get,
             $"/api/planner/simular/{id}", null, currentUserId, ip));
 
     public async Task<PlanDto> EjecutarPlanAsync(int id, int currentUserId, string ip)

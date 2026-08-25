@@ -8,6 +8,44 @@
         <p class="text-secondary small mb-0">@plan.Objetivo</p>
     </div>
 
+    @if (ViewBag.Simulacion is Asistente.Shared.SimulacionPlanDto sim)
+    {
+        <div class="card border-0 mb-3 @(sim.Validacion.Valido ? "border-success" : "border-danger")" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid @(sim.Validacion.Valido ? "rgba(16,185,129,0.5)" : "rgba(239,68,68,0.5)");">
+            <div class="card-body p-4">
+                <h6 class="fw-semibold mb-2 @(sim.Validacion.Valido ? "text-success" : "text-danger")">
+                    🔍 Simulación en seco — @(sim.Validacion.Valido ? "Plan VÁLIDO, listo para ejecutar" : "Plan INVÁLIDO, corrija antes de ejecutar")
+                </h6>
+                <div class="row g-2 small">
+                    <div class="col-md-4">
+                        <div class="text-secondary">Participantes</div>
+                        @foreach (var p in sim.Participantes) { <span class="badge bg-info text-dark me-1">@p</span> }
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-secondary">Herramientas</div>
+                        @foreach (var h in sim.Herramientas) { <span class="badge bg-secondary me-1">@h</span> }
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-secondary">Tiempo estimado (CPU)</div>
+                        <span class="text-white">@(sim.TiempoEstimadoSegundos / 60) min aprox.</span>
+                    </div>
+                </div>
+                @if (sim.Validacion.Errores.Any())
+                {
+                    <div class="mt-2 small text-danger">Errores: @string.Join(" | ", sim.Validacion.Errores)</div>
+                }
+                @if (sim.Validacion.Riesgos.Any())
+                {
+                    <div class="mt-1 small text-warning">Riesgos: @string.Join(" | ", sim.Validacion.Riesgos)</div>
+                }
+                @if (sim.Validacion.Advertencias.Any())
+                {
+                    <div class="mt-1 small text-info">Advertencias: @string.Join(" | ", sim.Validacion.Advertencias)</div>
+                }
+                <div class="mt-1 small text-secondary">El plan NO se ha ejecutado (Regla 3: el Planner nunca ejecuta acciones directamente).</div>
+            </div>
+        </div>
+    }
+
     @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
     @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
 

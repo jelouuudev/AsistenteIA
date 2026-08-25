@@ -77,7 +77,8 @@ public class PlannerController : Controller
         var (userId, ip) = GetUserInfo();
         try
         {
-            ViewBag.Plan = await _apiService.SimularPlanAsync(id, userId, ip);
+            ViewBag.Plan = await _apiService.GetPlanAsync(id, userId, ip);
+            ViewBag.Simulacion = await _apiService.SimularPlanAsync(id, userId, ip);
         }
         catch (Exception ex)
         {
