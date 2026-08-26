@@ -145,7 +145,14 @@ public class PlannerEngine : IPlannerEngine
                         await SincronizarPlanStepsAsync(plan.IdPlan, idExecution.ToString(), CancellationToken.None);
                         await Task.Delay(3000, CancellationToken.None);
                     }
-                    await grafoTask; // propaga excepción si falló
+                    await grafoTask; // EjecutarGrafoAsync NO lanza: finaliza la ejecución como Completado/Error.
+
+                    // El Orchestrator finaliza la ejecución como Completado o Error (no propaga
+                    // la excepción), así que el éxito se determina por el ESTADO resultante.
+                    var execResult = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
+                    if (execResult?.Estado != "Completado")
+                        throw new Exception(execResult?.Error ?? "La ejecución del Orchestrator falló.");
+
                     exito = true;
                     break;
                 }
