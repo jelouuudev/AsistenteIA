@@ -98,7 +98,12 @@ public class PlannerEngine : IPlannerEngine
         var plan = await _planRepo.GetByIdAsync(idPlan, ct)
                    ?? throw new InvalidOperationException($"Plan {idPlan} no encontrado.");
 
-        // Regla 1: validar antes de ejecutar.
+        // Guarda anti-doble-ejecución (Bug #1006): si el plan ya está EnEjecucion, no volver a
+        // dispararlo. Evita dos backgrounds concurrentes que compiten por el mismo AgentExecution
+        // y producen carreras de DbContext ("A second operation was started on this context...").
+        if (plan.Estado == "EnEjecucion")
+            throw new InvalidOperationException($"El plan {idPlan} ya está en ejecución.");
+
         var validacion = await ValidarPlanAsync(plan, ct);
         if (!validacion.Valido)
             throw new InvalidOperationException("El plan no pasó la validación: " + string.Join("; ", validacion.Errores));
@@ -158,9 +163,27 @@ public class PlannerEngine : IPlannerEngine
         };
     }
 
-    /// <summary>Ejecuta el grafo del Orchestrator con la política de reintentos del Supervisor
-    /// (Actividad 7). Corre DENTRO de un scope propio (ver EjecutarPlanAsync), por lo que sus
-    /// repos y DbContext son válidos durante toda la ejecución en segundo plano.</summary>
+    /// <summary>Ejecuta el grafo del Orchestrator DENTRO de un scope propio (su propio DbContext)
+    /// y devuelve el estado final de la ejecución ("Completado"/"Error"). Aplica un tope de
+    /// seguridad de 60s: si el grafo se cuelga, se trata como fallo para reintentar.</summary>
+    private async Task<string> EjecutarGrafoEnScopeAsync(int idExecution, AgentRequest request)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<IAgentOrchestrator>();
+        var execRepo = scope.ServiceProvider.GetRequiredService<IAgentExecutionRepository>();
+
+        var grafoTask = orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
+        var timeoutGrafo = TimeSpan.FromSeconds(60);
+        var completado = await Task.WhenAny(grafoTask, Task.Delay(timeoutGrafo, CancellationToken.None));
+        if (completado != grafoTask)
+            throw new TimeoutException(
+                $"El grafo excedió el tiempo máximo ({timeoutGrafo.TotalSeconds}s). Posiblemente Ollama no responde.");
+        await grafoTask; // EjecutarGrafoAsync NO lanza: finaliza como Completado/Error.
+
+        var execResult = await execRepo.GetByIdAsync(idExecution, CancellationToken.None);
+        return execResult?.Estado ?? "Error";
+    }
+
     public async Task EjecutarGrafoConReintentosAsync(int idPlan, int idExecution, AgentRequest request)
     {
         var plan = await _planRepo.GetByIdAsync(idPlan, CancellationToken.None)
@@ -170,23 +193,17 @@ public class PlannerEngine : IPlannerEngine
         Exception? ultimoError = null;
         for (int intento = 1; intento <= _supervisor.MaxReintentos + 1; intento++)
         {
-            Task? grafoTask = null;
             try
             {
-                // Ejecuta el grafo y aplica un tope de seguridad: si se cuelga (p.ej. Ollama
-                // caído), no esperamos indefinidamente; lo tratamos como fallo para reintentar.
-                grafoTask = _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
-                var timeoutGrafo = TimeSpan.FromSeconds(60);
-                var completado = await Task.WhenAny(grafoTask, Task.Delay(timeoutGrafo, CancellationToken.None));
-                if (completado != grafoTask)
-                    throw new TimeoutException(
-                        $"El grafo excedió el tiempo máximo ({timeoutGrafo.TotalSeconds}s). Posiblemente Ollama no responde.");
-                await grafoTask; // EjecutarGrafoAsync NO lanza: finaliza como Completado/Error.
+                // Cada intento corre en su PROPIO scope (su propio DbContext). Así, si un intento
+                // anterior sigue vivo cuando arranca el siguiente (el grafo no se cancela al vencer
+                // el WhenAny), NO comparten el DbContext y no hay carrera
+                // ("A second operation was started on this context instance").
+                var estadoGrafo = await EjecutarGrafoEnScopeAsync(idExecution, request);
 
                 // El Orchestrator finaliza como Completado o Error; el éxito se determina por estado.
-                var execResult = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
-                if (execResult?.Estado != "Completado")
-                    throw new Exception(execResult?.Error ?? "La ejecución del Orchestrator falló.");
+                if (estadoGrafo != "Completado")
+                    throw new Exception($"La ejecución del Orchestrator falló (estado: {estadoGrafo}).");
 
                 exito = true;
                 break;
