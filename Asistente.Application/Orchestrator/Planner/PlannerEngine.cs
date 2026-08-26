@@ -123,34 +123,42 @@ public class PlannerEngine : IPlannerEngine
             $"Plan delegado al Agent Orchestrator. IdExecution={idExecution}.", ct);
 
         // Grafo en segundo plano (fire-and-forget): NO bloquea la respuesta del Planner.
-        // Al terminar, sincroniza el estado del plan con la ejecución del Orchestrator.
+        // Si el grafo falla, el Execution Supervisor (Actividad 7) aplica la política de
+        // reintentos configurada (Máx reintentos=2, intervalo=5000ms) antes de marcar Fallido.
         _ = Task.Run(async () =>
         {
-            try
+            bool exito = false;
+            Exception? ultimoError = null;
+            for (int intento = 1; intento <= _supervisor.MaxReintentos + 1; intento++)
             {
-                await _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
-
-                var exec = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
-                plan.Estado = exec?.Estado switch
+                try
                 {
-                    "Completado" => "Completado",
-                    "Error" => "Fallido",
-                    _ => plan.Estado
-                };
-                plan.FechaFin = exec?.FechaFin;
-                plan.TiempoTotalMs = exec?.TiempoTotalMs;
-                await _planRepo.UpdateAsync(plan, CancellationToken.None);
-                await RegistrarLogAsync(plan.IdPlan, null, "PlanFinalizado",
-                    $"Plan finalizado con estado {plan.Estado}. IdExecution={idExecution}.", CancellationToken.None);
+                    await _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
+                    exito = true;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    ultimoError = ex;
+                    if (intento <= _supervisor.MaxReintentos)
+                    {
+                        await _supervisor.RegistrarReintentoPlanAsync(plan, intento, ex.Message, CancellationToken.None);
+                        await Task.Delay(_supervisor.IntervaloMs, CancellationToken.None);
+                    }
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error al ejecutar el grafo del plan {IdPlan}", idPlan);
-                plan.Estado = "Fallido";
-                await _planRepo.UpdateAsync(plan, CancellationToken.None);
-                await RegistrarLogAsync(plan.IdPlan, null, "PlanError",
-                    $"Error en la ejecución: {ex.Message}", CancellationToken.None);
-            }
+
+            var exec = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
+            plan.Estado = exito && exec?.Estado == "Completado" ? "Completado"
+                        : (!exito ? "Fallido" : plan.Estado);
+            plan.FechaFin = exec?.FechaFin ?? DateTime.UtcNow;
+            plan.TiempoTotalMs = exec?.TiempoTotalMs;
+            await _planRepo.UpdateAsync(plan, CancellationToken.None);
+            await RegistrarLogAsync(plan.IdPlan, null, exito ? "PlanFinalizado" : "PlanError",
+                exito
+                    ? $"Plan finalizado con estado {plan.Estado}. IdExecution={idExecution}."
+                    : $"Plan falló tras {_supervisor.MaxReintentos} reintentos: {ultimoError?.Message}",
+                CancellationToken.None);
         });
 
         return new AgentExecutionResult

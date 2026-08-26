@@ -32,6 +32,17 @@ public class ExecutionSupervisor
         _tiempoEntreIntentosMs = tiempoEntreIntentosMs;
     }
 
+    /// <summary>Máximo de reintentos configurado (Actividad 7).</summary>
+    public int MaxReintentos => _maxReintentos;
+
+    /// <summary>Intervalo entre reintentos (ms).</summary>
+    public int IntervaloMs => _tiempoEntreIntentosMs;
+
+    /// <summary>Registra un reintento a nivel de plan (cuando el grafo completo falla).</summary>
+    public async Task RegistrarReintentoPlanAsync(Plan plan, int intento, string error, CancellationToken ct)
+        => await RegistrarAsync(plan.IdPlan, null, "Reintento",
+            $"Plan falló ({error}). Reintento {intento}/{_maxReintentos}.", ct);
+
     /// <summary>Registra el inicio de la supervisión de un plan.</summary>
     public async Task IniciarAsync(Plan plan, CancellationToken ct)
     {
