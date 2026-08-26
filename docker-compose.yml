@@ -45,7 +45,7 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
-    restart: "no"
+    restart: "always"
     # Temporal para demo punto 7: 'restart: always' reiniciaba Ollama solo tras docker stop,
     # impidiendo demostrar reintentos del Planner (el plan corria con Ollama arriba). Restaurar a 'always'.
     # Nota: en Windows con GPU NVIDIA usar: deploy.resources.reservations.devices

@@ -164,21 +164,21 @@ public class PlannerEngine : IPlannerEngine
     }
 
     /// <summary>Ejecuta el grafo del Orchestrator DENTRO de un scope propio (su propio DbContext)
-    /// y devuelve el estado final de la ejecución ("Completado"/"Error"). Aplica un tope de
-    /// seguridad de 60s: si el grafo se cuelga, se trata como fallo para reintentar.</summary>
+    /// y devuelve el estado final de la ejecución ("Completado"/"Error"). El scope se mantiene
+    /// VIVO hasta que el grafo termina: el grafo ya aplica su propio timeout por nodo
+    /// (ConfiguracionOrchestrator.MaxTiempoTotalMs), por lo que NO debemos cortarlo nosotros.
+    /// Un tope de seguridad muy amplio (2h) solo protege contra un cuelgue absoluto del grafo
+    /// sin matar el DbContext del scope (en ese caso cancelamos y dejamos que el grafo termine).</summary>
     private async Task<string> EjecutarGrafoEnScopeAsync(int idExecution, AgentRequest request)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var orchestrator = scope.ServiceProvider.GetRequiredService<IAgentOrchestrator>();
         var execRepo = scope.ServiceProvider.GetRequiredService<IAgentExecutionRepository>();
 
-        var grafoTask = orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
-        var timeoutGrafo = TimeSpan.FromSeconds(60);
-        var completado = await Task.WhenAny(grafoTask, Task.Delay(timeoutGrafo, CancellationToken.None));
-        if (completado != grafoTask)
-            throw new TimeoutException(
-                $"El grafo excedió el tiempo máximo ({timeoutGrafo.TotalSeconds}s). Posiblemente Ollama no responde.");
-        await grafoTask; // EjecutarGrafoAsync NO lanza: finaliza como Completado/Error.
+        using var ctsSeguridad = new CancellationTokenSource(TimeSpan.FromHours(2));
+        var grafoTask = orchestrator.EjecutarGrafoAsync(idExecution, request, ctsSeguridad.Token);
+        // Esperamos SIEMPRE a que el grafo finalice (Completado/Error); el scope sobrevive.
+        await grafoTask;
 
         var execResult = await execRepo.GetByIdAsync(idExecution, CancellationToken.None);
         return execResult?.Estado ?? "Error";
