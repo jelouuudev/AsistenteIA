@@ -28,6 +28,7 @@ public class PlannerEngine : IPlannerEngine
     private readonly IPlanExecutionLogRepository _logRepo;
     private readonly IAgentOrchestrator _orchestrator;
     private readonly IAsistenteRepository _asistenteRepo;
+    private readonly IAgentExecutionRepository _execRepo;
     private readonly ILogger<PlannerEngine> _logger;
 
     public PlannerEngine(
@@ -41,6 +42,7 @@ public class PlannerEngine : IPlannerEngine
         IPlanExecutionLogRepository logRepo,
         IAgentOrchestrator orchestrator,
         IAsistenteRepository asistenteRepo,
+        IAgentExecutionRepository execRepo,
         ILogger<PlannerEngine> logger)
     {
         _builder = builder;
@@ -53,6 +55,7 @@ public class PlannerEngine : IPlannerEngine
         _logRepo = logRepo;
         _orchestrator = orchestrator;
         _asistenteRepo = asistenteRepo;
+        _execRepo = execRepo;
         _logger = logger;
     }
 
@@ -109,15 +112,53 @@ public class PlannerEngine : IPlannerEngine
             PermitirColaboracion = true
         };
 
-        // Ejecuta el grafo a través del Orchestrator (fire-and-forget interno del propio Orchestrator).
-        var resultado = await _orchestrator.ExecuteAsync(request, ct);
-        plan.IdExecution = resultado.IdExecution.ToString();
+        // Crear la ejecución YA para obtener el IdExecution de inmediato (no esperar el grafo,
+        // que en CPU tarda minutos). Así el Planner muestra el IdExecution al segundo 1 y el
+        // usuario puede enlazar a Trazas del Orchestrator desde el inicio (RF §19 punto 5).
+        var idExecution = await _orchestrator.IniciarAsync(request, ct);
+        plan.IdExecution = idExecution.ToString();
+        plan.Estado = "EnEjecucion";
         await _planRepo.UpdateAsync(plan, ct);
         await RegistrarLogAsync(plan.IdPlan, null, "PlanEjecutado",
-            $"Plan delegado al Agent Orchestrator. IdExecution={resultado.IdExecution}.", ct);
+            $"Plan delegado al Agent Orchestrator. IdExecution={idExecution}.", ct);
 
-        await _supervisor.FinalizarAsync(plan, resultado.Exitoso, resultado.Error, ct);
-        return resultado;
+        // Grafo en segundo plano (fire-and-forget): NO bloquea la respuesta del Planner.
+        // Al terminar, sincroniza el estado del plan con la ejecución del Orchestrator.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
+
+                var exec = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
+                plan.Estado = exec?.Estado switch
+                {
+                    "Completado" => "Completado",
+                    "Error" => "Fallido",
+                    _ => plan.Estado
+                };
+                plan.FechaFin = exec?.FechaFin;
+                plan.TiempoTotalMs = exec?.TiempoTotalMs;
+                await _planRepo.UpdateAsync(plan, CancellationToken.None);
+                await RegistrarLogAsync(plan.IdPlan, null, "PlanFinalizado",
+                    $"Plan finalizado con estado {plan.Estado}. IdExecution={idExecution}.", CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al ejecutar el grafo del plan {IdPlan}", idPlan);
+                plan.Estado = "Fallido";
+                await _planRepo.UpdateAsync(plan, CancellationToken.None);
+                await RegistrarLogAsync(plan.IdPlan, null, "PlanError",
+                    $"Error en la ejecución: {ex.Message}", CancellationToken.None);
+            }
+        });
+
+        return new AgentExecutionResult
+        {
+            IdExecution = idExecution,
+            Estado = "EnEjecucion",
+            Exitoso = false
+        };
     }
 
     public async Task<SimulacionPlan> SimularAsync(int idPlan, CancellationToken cancellationToken = default)
