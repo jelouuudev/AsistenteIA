@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Services;
 using Asistente.Application.Services.Workflows;
@@ -105,7 +106,8 @@ public class ChatServiceTests
             _mockAuditoriaIA.Object,
             _mockMetricas.Object,
             _mockUsuarioFuente.Object,
-            new Lazy<Asistente.Application.Interfaces.IAgentOrchestrator>(() => _mockAgentOrchestrator.Object));
+            new Lazy<Asistente.Application.Interfaces.IAgentOrchestrator>(() => _mockAgentOrchestrator.Object),
+            new Mock<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>().Object);
     }
 
     [Fact]

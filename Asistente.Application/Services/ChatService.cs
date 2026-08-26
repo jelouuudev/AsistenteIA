@@ -6,6 +6,7 @@ using Asistente.Domain.Enums;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Asistente.Application.Services;
 
@@ -34,6 +35,7 @@ public class ChatService : IChatService
     private readonly IMetricasIARepository _metricasIARepository;
     private readonly IUsuarioFuenteRepository _usuarioFuenteRepository;
     private readonly Lazy<IAgentOrchestrator> _agentOrchestrator;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public ChatService(
         IConversacionRepository conversacionRepository,
@@ -58,7 +60,8 @@ public class ChatService : IChatService
         IAuditoriaIARepository auditoriaIARepository,
         IMetricasIARepository metricasIARepository,
         IUsuarioFuenteRepository usuarioFuenteRepository,
-        Lazy<IAgentOrchestrator> agentOrchestrator)
+        Lazy<IAgentOrchestrator> agentOrchestrator,
+        IServiceScopeFactory scopeFactory)
     {
         _conversacionRepository = conversacionRepository;
         _mensajeRepository = mensajeRepository;
@@ -83,6 +86,7 @@ public class ChatService : IChatService
         _metricasIARepository = metricasIARepository;
         _usuarioFuenteRepository = usuarioFuenteRepository;
         _agentOrchestrator = agentOrchestrator;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task<MensajeResponse> ProcesarMensajeAsync(MensajeRequest request, CancellationToken cancellationToken = default)
@@ -288,7 +292,11 @@ public class ChatService : IChatService
                     }
                     else
                     {
-                    var decisionWf = await _workflowDecision.DecidirAsync(request.Mensaje, cancellationToken);
+                    // La decisión de workflow es determinista (keywords) y usa el DbContext.
+                    // Se ejecuta en un scope AISLADO para no competir por el DbContext compartido
+                    // del ChatService con las consultas RAG/SQL que corren a continuación
+                    // (evita "A second operation was started on this context instance").
+                    var decisionWf = await DecidirWorkflowAisladoAsync(request.Mensaje, cancellationToken);
                     if (decisionWf.RequiereWorkflow && decisionWf.IdWorkflow.HasValue)
                     {
                         ejecucionWorkflow = await _workflowEngine.EjecutarAsync(decisionWf.IdWorkflow.Value, request.UsuarioPropietario, idAsistenteEfectivo, confirmado: false, cancellationToken: cancellationToken);
@@ -626,6 +634,17 @@ public class ChatService : IChatService
         }
 
         return response;
+    }
+
+    /// <summary>Decide el workflow en un scope AISLADO: la decisión es determinista (keywords) y
+    /// hace una lectura al DbContext. Aislarla evita competir por el DbContext compartido del
+    /// ChatService con las consultas RAG/SQL que corren en el mismo ProcesarMensajeAsync
+    /// (EF Core prohíbe operaciones concurrentes sobre la misma instancia de DbContext).</summary>
+    private async Task<WorkflowDecision> DecidirWorkflowAisladoAsync(string mensaje, CancellationToken ct)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IWorkflowDecisionService>();
+        return await svc.DecidirAsync(mensaje, ct);
     }
 
     private async Task<string?> ConstruirSystemPromptAsync(AsistenteDto asistente)
