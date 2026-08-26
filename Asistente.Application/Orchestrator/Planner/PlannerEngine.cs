@@ -29,6 +29,7 @@ public class PlannerEngine : IPlannerEngine
     private readonly IAgentOrchestrator _orchestrator;
     private readonly IAsistenteRepository _asistenteRepo;
     private readonly IAgentExecutionRepository _execRepo;
+    private readonly IAgentExecutionStepRepository _execStepRepo;
     private readonly ILogger<PlannerEngine> _logger;
 
     public PlannerEngine(
@@ -43,6 +44,7 @@ public class PlannerEngine : IPlannerEngine
         IAgentOrchestrator orchestrator,
         IAsistenteRepository asistenteRepo,
         IAgentExecutionRepository execRepo,
+        IAgentExecutionStepRepository execStepRepo,
         ILogger<PlannerEngine> logger)
     {
         _builder = builder;
@@ -56,6 +58,7 @@ public class PlannerEngine : IPlannerEngine
         _orchestrator = orchestrator;
         _asistenteRepo = asistenteRepo;
         _execRepo = execRepo;
+        _execStepRepo = execStepRepo;
         _logger = logger;
     }
 
@@ -131,9 +134,18 @@ public class PlannerEngine : IPlannerEngine
             Exception? ultimoError = null;
             for (int intento = 1; intento <= _supervisor.MaxReintentos + 1; intento++)
             {
+                Task? grafoTask = null;
                 try
                 {
-                    await _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
+                    // Ejecuta el grafo en su propia tarea y, en paralelo, sondea el progreso
+                    // del Orchestrator para reflejarlo en vivo en los PlanStep (DAG en vivo).
+                    grafoTask = _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
+                    while (!grafoTask.IsCompleted)
+                    {
+                        await SincronizarPlanStepsAsync(plan.IdPlan, idExecution.ToString(), CancellationToken.None);
+                        await Task.Delay(3000, CancellationToken.None);
+                    }
+                    await grafoTask; // propaga excepción si falló
                     exito = true;
                     break;
                 }
@@ -147,6 +159,9 @@ public class PlannerEngine : IPlannerEngine
                     }
                 }
             }
+
+            // Reflejo final (estados definitivos).
+            await SincronizarPlanStepsAsync(plan.IdPlan, idExecution.ToString(), CancellationToken.None);
 
             var exec = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
             plan.Estado = exito && exec?.Estado == "Completado" ? "Completado"
@@ -167,6 +182,58 @@ public class PlannerEngine : IPlannerEngine
             Estado = "EnEjecucion",
             Exitoso = false
         };
+    }
+
+    /// <summary>Sincroniza el estado de los PlanStep con los AgentExecutionStep del Orchestrator
+    /// (el Orchestrator escribe el progreso fino en su propia tabla; el Planner lo refleja para
+    /// que el DAG se vea en vivo). Mapea por Orden del paso. Cuando la ejecución del Orchestrator
+    /// alcanza un estado terminal, propaga ese resultado a TODOS los pasos del plan (el plan es
+    /// una abstracción de 7 pasos que se delega a un grafo de 3 nodos; no mapean 1:1).</summary>
+    public async Task SincronizarPlanStepsAsync(int idPlan, string idExecution, CancellationToken ct = default)
+    {
+        if (!int.TryParse(idExecution, out var idExec)) return;
+        var planSteps = await _stepRepo.GetByPlanAsync(idPlan, ct);
+        if (planSteps.Count == 0) return;
+        var execSteps = await _execStepRepo.GetByExecutionAsync(idExec, ct);
+        var exec = await _execRepo.GetByIdAsync(idExec, ct);
+
+        // Mapeo fino por Orden (progreso en vivo de los nodos que el Orchestrator ejecuta).
+        foreach (var ps in planSteps)
+        {
+            var es = execSteps.FirstOrDefault(e => e.Orden == ps.Orden);
+            if (es == null) continue;
+            var nuevo = es.Estado switch
+            {
+                "Completado" => "Completado",
+                "Error" => "Error",
+                "EnEjecucion" => "EnEjecucion",
+                _ => ps.Estado
+            };
+            if (ps.Estado != nuevo)
+            {
+                ps.Estado = nuevo;
+                if (!string.IsNullOrWhiteSpace(es.Resultado)) ps.Resultado = es.Resultado;
+                await _stepRepo.UpdateAsync(ps, ct);
+            }
+        }
+
+        // Propagación terminal: si el Orchestrator terminó, el plan completo refleja ese resultado.
+        if (exec?.Estado == "Completado")
+        {
+            foreach (var ps in planSteps.Where(p => p.Estado != "Completado"))
+            {
+                ps.Estado = "Completado";
+                await _stepRepo.UpdateAsync(ps, ct);
+            }
+        }
+        else if (exec?.Estado == "Error")
+        {
+            foreach (var ps in planSteps.Where(p => p.Estado is "Pendiente" or "EnEjecucion"))
+            {
+                ps.Estado = "Error";
+                await _stepRepo.UpdateAsync(ps, ct);
+            }
+        }
     }
 
     public async Task<SimulacionPlan> SimularAsync(int idPlan, CancellationToken cancellationToken = default)

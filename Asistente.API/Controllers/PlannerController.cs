@@ -160,6 +160,17 @@ public class PlannerController : ControllerBase
     {
         var plan = await _planRepo.GetByIdAsync(id, ct);
         if (plan == null) return NotFound();
+
+        // Sincroniza el progreso fino del Orchestrator en los PlanStep (para que el DAG
+        // refleje los estados reales al recargar un plan ya ejecutado/cancelado).
+        if (!string.IsNullOrWhiteSpace(plan.IdExecution)
+            && (plan.Estado == "Completado" || plan.Estado == "Fallido" || plan.Estado == "Cancelado"))
+        {
+            try { await _planner.SincronizarPlanStepsAsync(id, plan.IdExecution, ct); }
+            catch { /* no bloquea la lectura si la sincronización falla */ }
+            plan = await _planRepo.GetByIdAsync(id, ct) ?? plan;
+        }
+
         return Ok(ToDto(plan));
     }
 

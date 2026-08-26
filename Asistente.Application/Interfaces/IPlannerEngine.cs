@@ -29,6 +29,10 @@ public interface IPlannerEngine
     /// participantes, herramientas y riesgos. No delega al Orchestrator (Regla 3).</summary>
     Task<SimulacionPlan> SimularAsync(int idPlan, CancellationToken cancellationToken = default);
 
+    /// <summary>Sincroniza el estado de los PlanStep con los AgentExecutionStep del Orchestrator
+    /// para que el DAG del Planner refleje el progreso real (en vivo o al recargar).</summary>
+    Task SincronizarPlanStepsAsync(int idPlan, string idExecution, CancellationToken cancellationToken = default);
+
     /// <summary>Registra un evento en el log de auditoría del plan (Regla 5 / Sección 13).</summary>
     Task RegistrarLogAsync(int idPlan, int? idStep, string evento, string? detalle, CancellationToken cancellationToken = default);
 }
