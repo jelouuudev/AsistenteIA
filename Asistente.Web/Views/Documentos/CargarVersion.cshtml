@@ -1,0 +1,56 @@
+@model Asistente.Shared.DocumentoDto
+@{
+    ViewData["Title"] = $"Cargar Nueva Versión - {Model.Nombre}";
+}
+
+<a asp-action="Detalle" asp-route-id="@Model.IdDocumento" class="text-secondary small text-decoration-none mb-3 d-inline-block">
+    <i class="bi bi-arrow-left"></i> Volver al detalle
+</a>
+
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card border-0 shadow-lg" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <i class="bi bi-file-earmark-arrow-up-fill fs-4" style="color:#818cf8;"></i>
+                    <h5 class="text-white fw-bold mb-0">Subir Nueva Versión</h5>
+                </div>
+
+                <div class="alert alert-info border-0 mb-4"
+                     style="background:rgba(129,140,248,0.08);border-left:4px solid #818cf8 !important;color:#c7d2fe;font-size:0.85rem;" role="alert">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    Subir un nuevo archivo incrementará la versión actual a <strong>v@(Model.VersionActual + 1)</strong>. Las versiones anteriores seguirán disponibles para descarga y auditoría.
+                </div>
+
+                <form asp-action="CargarVersion" asp-route-id="@Model.IdDocumento" method="post" enctype="multipart/form-data">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small fw-medium">Documento Seleccionado</label>
+                        <input type="text" class="form-control form-control-sm border-0 px-3 py-2 text-white-50"
+                               style="background:rgba(15,23,42,0.4);border-radius:8px;border:1px solid rgba(255,255,255,0.03);"
+                               value="@Model.Nombre" readonly />
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="archivo" class="form-label text-secondary small fw-medium">Seleccionar Archivo PDF</label>
+                        <input type="file" name="archivo" id="archivo" accept=".pdf" class="form-control form-control-sm border-0 text-white"
+                               style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);padding: 7px 12px;" required />
+                        <div class="form-text text-secondary" style="font-size:0.75rem;">Únicamente archivos con extensión .pdf son permitidos.</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <a asp-action="Detalle" asp-route-id="@Model.IdDocumento" class="btn btn-sm w-100 py-2 text-secondary border-0"
+                           style="background:rgba(255,255,255,0.05);border-radius:8px;font-weight:500;">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-sm w-100 py-2 text-white border-0 fw-semibold"
+                                style="background:linear-gradient(135deg,#6366f1,#a855f7);border-radius:8px;box-shadow:0 4px 12px rgba(99,102,241,0.2);">
+                            Subir Archivo
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

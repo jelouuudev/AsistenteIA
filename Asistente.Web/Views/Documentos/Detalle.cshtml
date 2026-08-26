@@ -1,0 +1,220 @@
+@model Asistente.Shared.DocumentoDto
+@{
+    ViewData["Title"] = $"Detalle: {Model.Nombre}";
+    var versiones = ViewBag.Versiones as IEnumerable<Asistente.Shared.DocumentoVersionDto> ?? new List<Asistente.Shared.DocumentoVersionDto>();
+    var auditorias = ViewBag.Auditorias as IEnumerable<Asistente.Shared.AuditoriaDocumentalDto> ?? new List<Asistente.Shared.AuditoriaDocumentalDto>();
+}
+
+<!-- Cabecera de Navegación -->
+<div class="mb-4">
+    <a asp-action="Index" class="text-secondary small text-decoration-none d-inline-flex align-items-center gap-1 mb-2">
+        <i class="bi bi-chevron-left"></i> Volver al listado
+    </a>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+            <div class="d-flex align-items-center gap-2">
+                <h4 class="text-white fw-bold mb-0">@Model.Nombre</h4>
+                @switch (Model.Estado)
+                {
+                    case "Activo":
+                        <span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">Activo</span>
+                        break;
+                    case "Archivado":
+                        <span class="badge" style="background:rgba(107,114,128,0.15);color:#9ca3af;border:1px solid rgba(107,114,128,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">Archivado</span>
+                        break;
+                    case "Eliminado":
+                        <span class="badge bg-danger rounded-pill px-3 py-1 text-xs">Eliminado</span>
+                        break;
+                }
+            </div>
+            <p class="text-secondary small mb-0">Código del Documento: <span class="text-light font-monospace fw-semibold">@Model.Codigo</span></p>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+            <a asp-action="Editar" asp-route-id="@Model.IdDocumento" class="btn btn-sm px-3 py-2 fw-semibold"
+               style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);color:#cbd5e1;border-radius:10px;">
+                <i class="bi bi-pencil me-1"></i> Editar Metadatos
+            </a>
+            <a asp-action="CargarVersion" asp-route-id="@Model.IdDocumento" class="btn btn-sm px-3 py-2 fw-semibold text-white"
+               style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.2);">
+                <i class="bi bi-upload me-1"></i> Nueva Versión
+            </a>
+
+            <!-- Acciones de Estado -->
+            <div class="dropdown">
+                <button class="btn btn-sm px-3 py-2 fw-semibold text-white dropdown-toggle" type="button" data-bs-toggle="dropdown"
+                        style="background:rgba(129,140,248,0.1);color:#818cf8;border:1px solid rgba(129,140,248,0.2);border-radius:10px;">
+                    Cambiar Estado
+                </button>
+                <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" style="background:#1e293b;border:1px solid rgba(255,255,255,0.07);">
+                    @if (Model.Estado != "Activo")
+                    {
+                        <li>
+                            <form asp-action="Activar" asp-route-id="@Model.IdDocumento" method="post" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="dropdown-item"><i class="bi bi-check-circle me-2 text-success"></i>Activar</button>
+                            </form>
+                        </li>
+                    }
+                    @if (Model.Estado != "Archivado")
+                    {
+                        <li>
+                            <form asp-action="Archivar" asp-route-id="@Model.IdDocumento" method="post" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="dropdown-item"><i class="bi bi-archive me-2 text-warning"></i>Archivar (Desactivar)</button>
+                            </form>
+                        </li>
+                    }
+                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                    <li>
+                        <form asp-action="Eliminar" asp-route-id="@Model.IdDocumento" method="post" class="d-inline"
+                              onsubmit="return confirm('¿Está seguro de que desea eliminar lógicamente este documento y todo su historial?');">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Eliminar</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Panel Metadatos -->
+    <div class="col-lg-4">
+        <div class="card border-0 h-100 shadow-sm" style="background:rgba(30,41,59,0.5);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-bold mb-3 border-bottom pb-2" style="border-color:rgba(255,255,255,0.07) !important;">Ficha Técnica</h6>
+                
+                <div class="mb-3">
+                    <span class="text-secondary small d-block">Categoría</span>
+                    <span class="text-light fw-medium">@Model.CategoriaNombre</span>
+                </div>
+                <div class="mb-3">
+                    <span class="text-secondary small d-block">Fecha de Registro</span>
+                    <span class="text-light fw-medium">@Model.FechaRegistro.ToLocalTime().ToString("g")</span>
+                </div>
+                <div class="mb-3">
+                    <span class="text-secondary small d-block">Procesamiento de IA</span>
+                    @if (Model.PendienteProcesamiento)
+                    {
+                        <span class="badge" style="background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">
+                            Pendiente de Procesamiento (Etapa 7)
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">
+                            Procesado
+                        </span>
+                    }
+                </div>
+                <div class="mb-3">
+                    <span class="text-secondary small d-block">Versión Actual</span>
+                    <span class="badge bg-secondary font-monospace">v@(Model.VersionActual)</span>
+                </div>
+                <div class="mb-3">
+                    <span class="text-secondary small d-block">Descripción</span>
+                    <p class="text-light small mb-0" style="white-space: pre-line;">
+                        @(string.IsNullOrEmpty(Model.Descripcion) ? "Sin descripción registrada." : Model.Descripcion)
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel de Versiones y Auditoría -->
+    <div class="col-lg-8">
+        <div class="card border-0 mb-4" style="background:rgba(30,41,59,0.5);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-bold mb-3 border-bottom pb-2" style="border-color:rgba(255,255,255,0.07) !important;">
+                    <i class="bi bi-clock-history me-2" style="color:#818cf8;"></i>Historial de Versiones
+                </h6>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.07);color:#94a3b8;font-size:0.8rem;">
+                                <th class="py-2" style="background:transparent;">Versión</th>
+                                <th class="py-2" style="background:transparent;">Nombre Archivo</th>
+                                <th class="py-2" style="background:transparent;">Tamaño</th>
+                                <th class="py-2" style="background:transparent;">Fecha Carga</th>
+                                <th class="py-2 text-end" style="background:transparent;">Descarga</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ver in versiones)
+                            {
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td class="py-3 font-monospace fw-bold" style="background:transparent;color:#cbd5e1;">v@(ver.NumeroVersion)</td>
+                                    <td class="py-3" style="background:transparent;">
+                                        <div class="text-white small text-truncate" style="max-width:250px;" title="@ver.NombreArchivo">@ver.NombreArchivo</div>
+                                        <div class="text-secondary font-monospace" style="font-size:0.68rem;" title="SHA-256 Hash">SHA256: @ver.HashArchivo</div>
+                                    </td>
+                                    <td class="py-3 text-secondary small" style="background:transparent;">@ver.TamanoFormateado</td>
+                                    <td class="py-3 text-secondary small" style="background:transparent;">@ver.FechaCarga.ToLocalTime().ToString("g")</td>
+                                    <td class="py-3 text-end" style="background:transparent;">
+                                        <a asp-action="Descargar" asp-route-id="@Model.IdDocumento" asp-route-versionId="@ver.IdVersion"
+                                           class="btn btn-sm btn-icon" style="background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                            @if (!versiones.Any())
+                            {
+                                <tr>
+                                    <td colspan="5" class="text-center py-4 text-secondary">
+                                        <i class="bi bi-file-earmark-pdf fs-3 d-block mb-1 opacity-25"></i>
+                                        No hay versiones cargadas para este documento.
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auditoría Histórica Específica -->
+        <div class="card border-0" style="background:rgba(30,41,59,0.5);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-bold mb-3 border-bottom pb-2" style="border-color:rgba(255,255,255,0.07) !important;">
+                    <i class="bi bi-shield-check me-2" style="color:#818cf8;"></i>Auditoría del Documento
+                </h6>
+                <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                    <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.07);color:#94a3b8;font-size:0.8rem;">
+                                <th class="py-2" style="background:transparent;">Fecha</th>
+                                <th class="py-2" style="background:transparent;">Acción</th>
+                                <th class="py-2" style="background:transparent;">Descripción</th>
+                                <th class="py-2 text-end" style="background:transparent;">IP Origen</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var aud in auditorias)
+                            {
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);font-size:0.8rem;">
+                                    <td class="py-2 text-secondary" style="background:transparent;">@aud.FechaAccion.ToLocalTime().ToString("g")</td>
+                                    <td class="py-2" style="background:transparent;">
+                                        <span class="badge text-uppercase" style="background:rgba(99,102,241,0.12);color:#a5b4fc;font-size:0.65rem;border:1px solid rgba(99,102,241,0.2);">
+                                            @aud.Accion
+                                        </span>
+                                    </td>
+                                    <td class="py-2 text-light" style="background:transparent;">@aud.Descripcion</td>
+                                    <td class="py-2 text-secondary text-end font-monospace" style="background:transparent;">@(aud.DireccionIP ?? "127.0.0.1")</td>
+                                </tr>
+                            }
+                            @if (!auditorias.Any())
+                            {
+                                <tr>
+                                    <td colspan="4" class="text-center py-3 text-secondary">No hay auditorías registradas.</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

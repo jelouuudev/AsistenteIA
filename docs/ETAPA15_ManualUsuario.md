@@ -26,3 +26,19 @@
 
 ## 8. Seguridad
 - No compartas tu contraseña. El sistema bloquea intentos de inyección de prompts y accesos no autorizados.
+
+## 9. Integración con Proyecto1 (Control de Activos Fijos)
+El AsistenteIA puede consultar en vivo el sistema de Control de Activos Fijos (Proyecto1) a través de una conexión SQL Server autorizada:
+- **Conexión:** `Activos Fijos (Proyecto1)` — servidor `asistentesql,1433`, base de datos `ControlActivos`, usuario `app_activos`, autenticación SQL (solo lectura).
+- **Tabla autorizada:** `Activos` (esquema `dbo`).
+- **Cómo usarlo:** en el chat del asistente "Asistente General", pregunta en lenguaje natural, por ejemplo: *"muéstrame los activos fijos registrados"*. El `SqlQueryTool` consulta la base real y devuelve los registros con sus estados (ACTIVO / INACTIVO).
+- El asistente distingue dos fuentes: **datos estructurados** (BD en vivo vía SQL) y **conocimiento** (RAG documental, p. ej. preguntas de RRHH como "permisos remunerados").
+
+## 10. Video instructivo
+Existe un video instructivo (formato híbrido: instalación rápida con Docker + demo de uso) que muestra:
+1. Levantar el stack con `docker compose --profile prod up -d` y verificar los contenedores con `docker ps`.
+2. Acceder a la web (`http://localhost:5206`) e iniciar sesión.
+3. Consultar activos fijos en vivo desde el Proyecto1.
+4. Usar RAG para temas de conocimiento (ej. permisos remunerados).
+5. Iniciar sesión con el usuario del Ingeniero.
+El guion completo está en `docs/ETAPA15_GuionVideo_Hibrido.md`. Recuerda: el video no debe mostrar contraseñas en pantalla.

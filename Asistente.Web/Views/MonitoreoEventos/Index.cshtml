@@ -1,0 +1,144 @@
+@model Asistente.Shared.MonitoreoEventosDto
+@{
+    ViewData["Title"] = "Monitoreo de Eventos";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-speedometer2 me-2" style="color:#818cf8;"></i>Panel de Monitoreo - Motor de Eventos</h4>
+        <p class="text-secondary small mb-0">Eventos, reglas, tareas y ejecuciones automáticas</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="EventosProcesados" class="btn btn-outline-light btn-sm"><i class="bi bi-list-check me-1"></i>Eventos Procesados</a>
+        <a asp-action="Configuracion" class="btn btn-outline-light btn-sm"><i class="bi bi-sliders me-1"></i>Configuración</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:14px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Eventos / Activos</div>
+                <div class="text-white fw-bold fs-4">@Model.TotalEventos <span class="text-success fs-6">/ @Model.EventosActivos</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:14px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Reglas / Activas</div>
+                <div class="text-white fw-bold fs-4">@Model.TotalReglas <span class="text-success fs-6">/ @Model.ReglasActivas</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:14px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Exitosos / Errores</div>
+                <div class="text-white fw-bold fs-4"><span class="text-success">@Model.EventosExitosos</span> <span class="text-danger fs-6">/ @Model.EventosConError</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:14px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Tareas / Activas</div>
+                <div class="text-white fw-bold fs-4">@Model.TotalTareas <span class="text-success fs-6">/ @Model.TareasActivas</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-header bg-transparent border-secondary">
+                <span class="text-white fw-semibold"><i class="bi bi-link-45deg me-2"></i>Reglas activas</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm mb-0" style="background:transparent;">
+                        <thead><tr class="text-secondary"><th class="px-3">Evento</th><th>Flujo</th><th class="text-center">Prio</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in Model.ReglasActivasDetalle)
+                            {
+                                <tr>
+                                    <td class="px-3 text-white-50 small">@r.NombreEvento</td>
+                                    <td class="text-white-50 small">@r.NombreWorkflow</td>
+                                    <td class="text-center text-secondary">@r.Prioridad</td>
+                                </tr>
+                            }
+                            @if (!Model.ReglasActivasDetalle.Any())
+                            {
+                                <tr><td colspan="3" class="text-center text-secondary py-3">Sin reglas activas.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-header bg-transparent border-secondary">
+                <span class="text-white fw-semibold"><i class="bi bi-calendar-check me-2"></i>Tareas programadas</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm mb-0" style="background:transparent;">
+                        <thead><tr class="text-secondary"><th class="px-3">Nombre</th><th>Cron</th><th>Estado</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in Model.TareasDetalle)
+                            {
+                                <tr>
+                                    <td class="px-3 text-white-50 small">@t.Nombre</td>
+                                    <td><span class="font-monospace text-secondary small">@t.ExpresionCron</span></td>
+                                    <td>@(t.Activa ? "Activa" : "Inactiva")</td>
+                                </tr>
+                            }
+                            @if (!Model.TareasDetalle.Any())
+                            {
+                                <tr><td colspan="3" class="text-center text-secondary py-3">Sin tareas programadas.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 mt-3" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-header bg-transparent border-secondary">
+        <span class="text-white fw-semibold"><i class="bi bi-clock-history me-2"></i>Últimos eventos procesados</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-sm mb-0 align-middle" style="background:transparent;">
+                <thead><tr class="text-secondary"><th class="px-3">Evento</th><th>Fecha</th><th>Estado</th><th>Tiempo (ms)</th></tr></thead>
+                <tbody>
+                    @foreach (var e in Model.UltimosEventosProcesados)
+                    {
+                        <tr>
+                            <td class="px-3 text-white-50 small">@e.NombreEvento</td>
+                            <td class="text-secondary small">@e.FechaHora.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>
+                                @if (e.Estado == "Completado")
+                                { <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;">Completado</span> }
+                                else if (e.Estado == "Error")
+                                { <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:20px;">Error</span> }
+                                else
+                                { <span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border-radius:20px;">@e.Estado</span> }
+                            </td>
+                            <td class="text-secondary small">@e.TiempoProcesamiento</td>
+                        </tr>
+                    }
+                    @if (!Model.UltimosEventosProcesados.Any())
+                    {
+                        <tr><td colspan="4" class="text-center text-secondary py-3">Aún no hay eventos procesados.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

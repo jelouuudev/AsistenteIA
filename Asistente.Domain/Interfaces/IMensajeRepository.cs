@@ -6,4 +6,5 @@ public interface IMensajeRepository
 {
     Task<Mensaje> CreateAsync(Mensaje mensaje);
     Task<IEnumerable<Mensaje>> GetByConversacionIdAsync(int conversacionId);
+    Task<int> CountByConversacionIdAsync(int conversacionId);
 }

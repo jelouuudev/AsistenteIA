@@ -1,0 +1,68 @@
+@model IEnumerable<Asistente.Shared.AsistenteDto>
+@{
+    ViewData["Title"] = "Asociar Herramientas a Asistentes";
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-link-45deg me-2" style="color:#818cf8;"></i>Asociación de Herramientas</h4>
+    <p class="text-secondary small mb-0">Configure qué herramientas puede utilizar cada asistente</p>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Asistente</th>
+                        <th class="text-secondary fw-normal py-3">Modelo IA</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3 text-end px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="d-flex align-items-center justify-content-center rounded-circle"
+                                         style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#a855f7);font-weight:bold;font-size:0.9rem;">
+                                        <i class="bi bi-robot"></i>
+                                    </div>
+                                    <span class="fw-semibold text-white">@a.Nombre</span>
+                                </div>
+                            </td>
+                            <td><span class="badge" style="background:rgba(129,140,248,0.2);color:#a5b4fc;border:1px solid rgba(129,140,248,0.3);border-radius:20px;font-size:0.72rem;padding:3px 10px;">@a.ModeloIA</span></td>
+                            <td>
+                                @if (a.Activo)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;">Activo</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;padding:4px 10px;">Inactivo</span>
+                                }
+                            </td>
+                            <td class="text-end px-4">
+                                <a asp-action="Gestionar" asp-route-idAsistente="@a.IdAsistente"
+                                   class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:8px;">
+                                    <i class="bi bi-tools me-1"></i> Gestionar herramientas
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="4" class="text-center text-secondary py-5">
+                                <i class="bi bi-robot fs-1 d-block mb-2 opacity-25"></i>
+                                No hay asistentes registrados.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

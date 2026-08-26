@@ -1,0 +1,194 @@
+@model Asistente.Shared.DashboardIndexacionDto
+@{
+    ViewData["Title"] = "Monitoreo RAG";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-speedometer2 me-2" style="color:#10b981;"></i>Monitoreo RAG</h4>
+        <p class="text-secondary small mb-0">Dashboard de búsqueda semántica y recuperación</p>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(99,102,241,0.15);border-radius:16px;border:1px solid rgba(99,102,241,0.2);">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#818cf8;">@Model.TotalDocumentosIndexados</div>
+                <div class="text-secondary small">Documentos Indexados</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(16,185,129,0.15);border-radius:16px;border:1px solid rgba(16,185,129,0.2);">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#6ee7b7;">@Model.TotalChunksIndexados</div>
+                <div class="text-secondary small">Chunks Indexados</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(168,85,247,0.15);border-radius:16px;border:1px solid rgba(168,85,247,0.2);">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#c084fc;">@Model.TotalEmbeddings</div>
+                <div class="text-secondary small">Total Embeddings</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(251,191,36,0.15);border-radius:16px;border:1px solid rgba(251,191,36,0.2);">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#fcd34d;">@($"{Model.TiempoPromedioIndexacionMs:F0}ms")</div>
+                <div class="text-secondary small">Tiempo Promedio</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-0" style="background:rgba(251,191,36,0.15);border-radius:16px;border:1px solid rgba(251,191,36,0.2);">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold" style="color:#fcd34d;">@Model.PendientesIndexacion</div>
+                <div class="text-secondary small">Pendientes</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0" style="background:rgba(99,102,241,0.15);border-radius:16px;border:1px solid rgba(99,102,241,0.2);">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold" style="color:#818cf8;">@Model.EnProcesoIndexacion</div>
+                <div class="text-secondary small">En Proceso</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0" style="background:rgba(239,68,68,0.15);border-radius:16px;border:1px solid rgba(239,68,68,0.2);">
+            <div class="card-body text-center py-3">
+                <div class="fs-3 fw-bold" style="color:#fca5a5;">@Model.ConErrorIndexacion</div>
+                <div class="text-secondary small">Con Error</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 mb-4" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-4">
+        <h6 class="text-white mb-3"><i class="bi bi-search me-2" style="color:#818cf8;"></i>Búsqueda Semántica de Prueba</h6>
+        <div class="mb-3">
+            <input type="text" id="busquedaInput" class="form-control" placeholder="Escribe tu consulta para buscar en los documentos..."
+                   style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;" />
+        </div>
+        <button id="btnBuscar" class="btn px-4 py-2 fw-semibold"
+                style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
+            <i class="bi bi-search me-1"></i> Buscar
+        </button>
+        <div id="resultadosBusqueda" class="mt-3"></div>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-4">
+        <h6 class="text-white mb-3"><i class="bi bi-info-circle me-2" style="color:#818cf8;"></i>Estado del Sistema</h6>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="d-flex align-items-center gap-2">
+                    <div id="statusChroma" class="rounded-circle" style="width:12px;height:12px;background:#6ee7b7;"></div>
+                    <span class="text-secondary">ChromaDB</span>
+                    <span id="statusChromaText" class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;font-size:0.7rem;">Conectado</span>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle" style="width:12px;height:12px;background:#6ee7b7;"></div>
+                    <span class="text-secondary">Ollama</span>
+                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;font-size:0.7rem;">Activo</span>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle" style="width:12px;height:12px;background:#6ee7b7;"></div>
+                    <span class="text-secondary">SQL Server</span>
+                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;font-size:0.7rem;">Conectado</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    document.getElementById('btnBuscar').addEventListener('click', async function() {
+        const consulta = document.getElementById('busquedaInput').value.trim();
+        if (!consulta) {
+            alert('Escribe una consulta para buscar');
+            return;
+        }
+
+        const resultadosDiv = document.getElementById('resultadosBusqueda');
+        resultadosDiv.innerHTML = '<div class="text-center"><div class="spinner-border" style="color:#818cf8;" role="status"></div><p class="text-secondary small mt-2">Buscando...</p></div>';
+
+        try {
+            const response = await fetch('/Monitoreo/Buscar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ consulta: consulta, topK: 5 })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Error ${response.status}: ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log('Respuesta de la API:', data);
+
+            if (!data || !data.fragmentos) {
+                resultadosDiv.innerHTML = '<div class="alert alert-warning border-0" style="background:rgba(251,191,36,0.15);color:#fcd34d;border-radius:12px;"><i class="bi bi-exclamation-triangle me-2"></i>La API no devolvió resultados válidos. Revisa la consola del navegador para más detalles.</div>';
+                return;
+            }
+
+            if (data.totalResultados === 0 || data.fragmentos.length === 0) {
+                resultadosDiv.innerHTML = '<div class="alert alert-warning border-0" style="background:rgba(251,191,36,0.15);color:#fcd34d;border-radius:12px;"><i class="bi bi-exclamation-triangle me-2"></i>No se encontraron resultados para tu consulta.</div>';
+                return;
+            }
+
+            let html = `<div class="alert alert-success border-0 mb-3" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border-radius:12px;"><i class="bi bi-check-circle me-2"></i>Se encontraron ${data.totalResultados} fragmentos en ${data.tiempoMs}ms</div>`;
+
+            data.fragmentos.forEach((frag, index) => {
+                html += `
+                    <div class="card border-0 mb-2" style="background:rgba(0,0,0,0.2);border-radius:12px;border:1px solid rgba(255,255,255,0.05);">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border-radius:20px;font-size:0.7rem;">#${index + 1}</span>
+                                <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;font-size:0.7rem;">Score: ${(frag.puntajeSimilitud * 100).toFixed(1)}%</span>
+                            </div>
+                            <p class="text-white small mb-2">${frag.texto}</p>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <span class="text-secondary" style="font-size:0.7rem;"><i class="bi bi-file-earmark me-1"></i>${frag.documentoNombre || 'Documento'}</span>
+                                <span class="text-secondary" style="font-size:0.7rem;"><i class="bi bi-file-earmark-text me-1"></i>Pág. ${frag.paginaInicial || '?'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            resultadosDiv.innerHTML = html;
+        } catch (error) {
+            console.error('Error completo:', error);
+            resultadosDiv.innerHTML = `
+                <div class="alert alert-danger border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:12px;">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Error:</strong> ${error.message}
+                    <br><small>Revisa la consola del navegador (F12) para más detalles</small>
+                </div>`;
+        }
+    });
+
+    document.getElementById('busquedaInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            document.getElementById('btnBuscar').click();
+        }
+    });
+</script>
+}

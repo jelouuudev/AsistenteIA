@@ -1,0 +1,138 @@
+@model IEnumerable<Asistente.Shared.FuenteConocimientoDto>
+@{
+    ViewData["Title"] = "Fuentes de Conocimiento";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-book me-2" style="color:#818cf8;"></i>Fuentes de Conocimiento</h4>
+        <p class="text-secondary small mb-0">Administracion de fuentes de conocimiento del sistema RAG</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="Dashboard" class="btn btn-sm px-4 py-2 fw-semibold"
+           style="background:linear-gradient(135deg,#10b981,#059669);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(16,185,129,0.3);">
+            <i class="bi bi-speedometer2 me-1"></i> Dashboard
+        </a>
+        <a asp-action="Crear" class="btn btn-sm px-4 py-2 fw-semibold"
+           style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+            <i class="bi bi-plus-lg me-1"></i> Nueva Fuente
+        </a>
+    </div>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:12px;">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Nombre</th>
+                        <th class="text-secondary fw-normal py-3">Codigo</th>
+                        <th class="text-secondary fw-normal py-3">Tipo</th>
+                        <th class="text-secondary fw-normal py-3">Prioridad</th>
+                        <th class="text-secondary fw-normal py-3">Documentos</th>
+                        <th class="text-secondary fw-normal py-3">Asistentes</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3 text-end px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="d-flex align-items-center justify-content-center rounded-circle"
+                                         style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#a855f7);font-weight:bold;font-size:0.9rem;">
+                                        @f.Nombre[0].ToString().ToUpper()
+                                    </div>
+                                    <span class="fw-semibold text-white">@f.Nombre</span>
+                                </div>
+                            </td>
+                            <td><span class="badge" style="background:rgba(129,140,248,0.2);color:#a5b4fc;border:1px solid rgba(129,140,248,0.3);border-radius:20px;font-size:0.72rem;padding:3px 10px;">@f.Codigo</span></td>
+                            <td class="text-secondary small">@f.Tipo</td>
+                            <td class="text-center"><span class="badge bg-warning text-dark rounded-pill">@f.Prioridad</span></td>
+                            <td class="text-center text-secondary">@f.TotalDocumentos</td>
+                            <td class="text-center text-secondary">@f.TotalAsistentes</td>
+                            <td>
+                                @if (f.Activo)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>Activo
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>Inactivo
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-end px-4">
+                                <div class="d-flex gap-1 justify-content-end">
+                                    <a asp-action="Editar" asp-route-id="@f.IdFuente"
+                                       class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:8px;" title="Editar">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a asp-action="Documentos" asp-route-id="@f.IdFuente"
+                                       class="btn btn-sm" style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.2);border-radius:8px;" title="Documentos">
+                                        <i class="bi bi-file-earmark-text"></i>
+                                    </a>
+                                    <a asp-action="Asistentes" asp-route-id="@f.IdFuente"
+                                       class="btn btn-sm" style="background:rgba(251,191,36,0.15);color:#fcd34d;border:1px solid rgba(251,191,36,0.2);border-radius:8px;" title="Asistentes">
+                                        <i class="bi bi-robot"></i>
+                                    </a>
+                                    @if (f.Activo)
+                                    {
+                                        <form asp-action="Desactivar" asp-route-id="@f.IdFuente" method="post" class="d-inline"
+                                              onsubmit="return confirm('Desactivar la fuente @f.Nombre?')">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.2);border-radius:8px;" title="Desactivar">
+                                                <i class="bi bi-toggle-off"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="Activar" asp-route-id="@f.IdFuente" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2);border-radius:8px;" title="Activar">
+                                                <i class="bi bi-toggle-on"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="8" class="text-center text-secondary py-5">
+                                <i class="bi bi-book fs-1 d-block mb-2 opacity-25"></i>
+                                No hay fuentes de conocimiento registradas. <a asp-action="Crear" class="text-decoration-none" style="color:#818cf8;">Cree la primera.</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

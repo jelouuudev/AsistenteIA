@@ -1,0 +1,102 @@
+@model IEnumerable<Asistente.Shared.EventoEmpresarialDto>
+@{
+    ViewData["Title"] = "Eventos Empresariales";
+    var lista = Model.ToList();
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-lightning-charge-fill me-2" style="color:#818cf8;"></i>Motor de Eventos Empresariales</h4>
+        <p class="text-secondary small mb-0">Registre eventos y automatice procesos sin intervención del usuario</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-controller="MonitoreoEventos" asp-action="Index" class="btn btn-outline-light btn-sm"><i class="bi bi-speedometer2 me-1"></i>Monitoreo</a>
+        <a asp-action="Crear" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Nuevo Evento</a>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Nombre</th>
+                        <th class="text-secondary fw-normal py-3">Código</th>
+                        <th class="text-secondary fw-normal py-3">Categoría</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Reglas</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3 text-end pe-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in lista)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3">
+                                <div class="text-white fw-semibold">@e.Nombre</div>
+                                @if (!string.IsNullOrEmpty(e.Descripcion))
+                                {
+                                    <div class="text-secondary small" style="max-width:320px;">@e.Descripcion</div>
+                                }
+                            </td>
+                            <td><span class="font-monospace text-white small">@e.Codigo</span></td>
+                            <td><span class="text-secondary small">@e.Categoria</span></td>
+                            <td class="text-center text-secondary">@e.CantidadReglas</td>
+                            <td>
+                                @if (e.Activo)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;">Activo</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.25);border-radius:20px;">Inactivo</span>
+                                }
+                            </td>
+                            <td class="text-end pe-4">
+                                <div class="d-flex gap-1 justify-content-end flex-wrap">
+                                    <a asp-controller="ReglasEvento" asp-action="Index" class="btn btn-outline-light btn-sm py-1 px-2" title="Ver reglas"><i class="bi bi-link-45deg"></i></a>
+                                    <form asp-action="Disparar" method="post" class="d-inline" onsubmit="return confirm('¿Disparar el evento @e.Codigo?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="codigo" value="@e.Codigo" />
+                                        <button type="submit" class="btn btn-outline-info btn-sm py-1 px-2" title="Disparar evento (prueba)"><i class="bi bi-play-fill"></i></button>
+                                    </form>
+                                    @if (e.Activo)
+                                    {
+                                        <form asp-action="Desactivar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@e.IdEvento" />
+                                            <button type="submit" class="btn btn-outline-warning btn-sm py-1 px-2" title="Desactivar"><i class="bi bi-pause-fill"></i></button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="Activar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@e.IdEvento" />
+                                            <button type="submit" class="btn btn-outline-success btn-sm py-1 px-2" title="Activar"><i class="bi bi-play-fill"></i></button>
+                                        </form>
+                                    }
+                                    <form asp-action="Eliminar" method="post" class="d-inline" onsubmit="return confirm('¿Eliminar el evento @e.Nombre?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@e.IdEvento" />
+                                        <button type="submit" class="btn btn-outline-danger btn-sm py-1 px-2" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (!lista.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary py-5">
+                                <i class="bi bi-lightning-charge fs-1 d-block mb-2 opacity-25"></i>
+                                Aún no hay eventos empresariales. Haga clic en <strong>Nuevo Evento</strong> para crear uno.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

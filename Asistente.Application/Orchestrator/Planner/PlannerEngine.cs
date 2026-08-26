@@ -8,6 +8,7 @@ using Asistente.Application.Orchestrator;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Asistente.Application.Orchestrator.Planner;
 
@@ -31,6 +32,7 @@ public class PlannerEngine : IPlannerEngine
     private readonly IAgentExecutionRepository _execRepo;
     private readonly IAgentExecutionStepRepository _execStepRepo;
     private readonly ILogger<PlannerEngine> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public PlannerEngine(
         PlanBuilder builder,
@@ -45,7 +47,8 @@ public class PlannerEngine : IPlannerEngine
         IAsistenteRepository asistenteRepo,
         IAgentExecutionRepository execRepo,
         IAgentExecutionStepRepository execStepRepo,
-        ILogger<PlannerEngine> logger)
+        ILogger<PlannerEngine> logger,
+        IServiceScopeFactory scopeFactory)
     {
         _builder = builder;
         _validator = validator;
@@ -60,6 +63,7 @@ public class PlannerEngine : IPlannerEngine
         _execRepo = execRepo;
         _execStepRepo = execStepRepo;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task<Plan> GenerarPlanAsync(string objetivo, int idUsuario, CancellationToken ct = default)
@@ -126,61 +130,24 @@ public class PlannerEngine : IPlannerEngine
             $"Plan delegado al Agent Orchestrator. IdExecution={idExecution}.", ct);
 
         // Grafo en segundo plano (fire-and-forget): NO bloquea la respuesta del Planner.
-        // Si el grafo falla, el Execution Supervisor (Actividad 7) aplica la política de
-        // reintentos configurada (Máx reintentos=2, intervalo=5000ms) antes de marcar Fallido.
+        // IMPORTANTE: el trabajo en background debe correr en su PROPIO scope (su propio
+        // DbContext). Los servicios del scope de la request HTTP se disponen al retornar la
+        // respuesta; usarlos en un Task.Run disparado causaba ObjectDisposedException silenciosa
+        // (el plan quedaba EnEjecucion para siempre y nunca se reintentaba). Por eso resolvemos
+        // un PlannerEngine fresco desde un scope nuevo dentro del propio background.
+        var idPlanLocal = plan.IdPlan;
         _ = Task.Run(async () =>
         {
-            bool exito = false;
-            Exception? ultimoError = null;
-            for (int intento = 1; intento <= _supervisor.MaxReintentos + 1; intento++)
+            try
             {
-                Task? grafoTask = null;
-                try
-                {
-                    // Ejecuta el grafo en su propia tarea y, en paralelo, sondea el progreso
-                    // del Orchestrator para reflejarlo en vivo en los PlanStep (DAG en vivo).
-                    grafoTask = _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
-                    while (!grafoTask.IsCompleted)
-                    {
-                        await SincronizarPlanStepsAsync(plan.IdPlan, idExecution.ToString(), CancellationToken.None);
-                        await Task.Delay(3000, CancellationToken.None);
-                    }
-                    await grafoTask; // EjecutarGrafoAsync NO lanza: finaliza la ejecución como Completado/Error.
-
-                    // El Orchestrator finaliza la ejecución como Completado o Error (no propaga
-                    // la excepción), así que el éxito se determina por el ESTADO resultante.
-                    var execResult = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
-                    if (execResult?.Estado != "Completado")
-                        throw new Exception(execResult?.Error ?? "La ejecución del Orchestrator falló.");
-
-                    exito = true;
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    ultimoError = ex;
-                    if (intento <= _supervisor.MaxReintentos)
-                    {
-                        await _supervisor.RegistrarReintentoPlanAsync(plan, intento, ex.Message, CancellationToken.None);
-                        await Task.Delay(_supervisor.IntervaloMs, CancellationToken.None);
-                    }
-                }
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var engine = scope.ServiceProvider.GetRequiredService<IPlannerEngine>();
+                await engine.EjecutarGrafoConReintentosAsync(idPlanLocal, idExecution, request);
             }
-
-            // Reflejo final (estados definitivos).
-            await SincronizarPlanStepsAsync(plan.IdPlan, idExecution.ToString(), CancellationToken.None);
-
-            var exec = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
-            plan.Estado = exito && exec?.Estado == "Completado" ? "Completado"
-                        : (!exito ? "Fallido" : plan.Estado);
-            plan.FechaFin = exec?.FechaFin ?? DateTime.UtcNow;
-            plan.TiempoTotalMs = exec?.TiempoTotalMs;
-            await _planRepo.UpdateAsync(plan, CancellationToken.None);
-            await RegistrarLogAsync(plan.IdPlan, null, exito ? "PlanFinalizado" : "PlanError",
-                exito
-                    ? $"Plan finalizado con estado {plan.Estado}. IdExecution={idExecution}."
-                    : $"Plan falló tras {_supervisor.MaxReintentos} reintentos: {ultimoError?.Message}",
-                CancellationToken.None);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error irrecuperable en background del plan {IdPlan}", idPlanLocal);
+            }
         });
 
         return new AgentExecutionResult
@@ -189,6 +156,66 @@ public class PlannerEngine : IPlannerEngine
             Estado = "EnEjecucion",
             Exitoso = false
         };
+    }
+
+    /// <summary>Ejecuta el grafo del Orchestrator con la política de reintentos del Supervisor
+    /// (Actividad 7). Corre DENTRO de un scope propio (ver EjecutarPlanAsync), por lo que sus
+    /// repos y DbContext son válidos durante toda la ejecución en segundo plano.</summary>
+    public async Task EjecutarGrafoConReintentosAsync(int idPlan, int idExecution, AgentRequest request)
+    {
+        var plan = await _planRepo.GetByIdAsync(idPlan, CancellationToken.None)
+                   ?? throw new InvalidOperationException($"Plan {idPlan} no encontrado en background.");
+
+        bool exito = false;
+        Exception? ultimoError = null;
+        for (int intento = 1; intento <= _supervisor.MaxReintentos + 1; intento++)
+        {
+            Task? grafoTask = null;
+            try
+            {
+                // Ejecuta el grafo y aplica un tope de seguridad: si se cuelga (p.ej. Ollama
+                // caído), no esperamos indefinidamente; lo tratamos como fallo para reintentar.
+                grafoTask = _orchestrator.EjecutarGrafoAsync(idExecution, request, CancellationToken.None);
+                var timeoutGrafo = TimeSpan.FromSeconds(60);
+                var completado = await Task.WhenAny(grafoTask, Task.Delay(timeoutGrafo, CancellationToken.None));
+                if (completado != grafoTask)
+                    throw new TimeoutException(
+                        $"El grafo excedió el tiempo máximo ({timeoutGrafo.TotalSeconds}s). Posiblemente Ollama no responde.");
+                await grafoTask; // EjecutarGrafoAsync NO lanza: finaliza como Completado/Error.
+
+                // El Orchestrator finaliza como Completado o Error; el éxito se determina por estado.
+                var execResult = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
+                if (execResult?.Estado != "Completado")
+                    throw new Exception(execResult?.Error ?? "La ejecución del Orchestrator falló.");
+
+                exito = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                ultimoError = ex;
+                if (intento <= _supervisor.MaxReintentos)
+                {
+                    await _supervisor.RegistrarReintentoPlanAsync(plan, intento, ex.Message, CancellationToken.None);
+                    await Task.Delay(_supervisor.IntervaloMs, CancellationToken.None);
+                }
+            }
+        }
+
+        // Reflejo final (estados definitivos).
+        await SincronizarPlanStepsAsync(plan.IdPlan, idExecution.ToString(), CancellationToken.None);
+
+        var exec = await _execRepo.GetByIdAsync(idExecution, CancellationToken.None);
+        plan.Estado = exito && exec?.Estado == "Completado" ? "Completado"
+                    : (!exito ? "Fallido" : plan.Estado);
+        plan.FechaFin = exec?.FechaFin ?? DateTime.UtcNow;
+        plan.TiempoTotalMs = exec?.TiempoTotalMs;
+        await _planRepo.UpdateAsync(plan, CancellationToken.None);
+        await RegistrarLogAsync(plan.IdPlan, null, exito ? "PlanFinalizado" : "PlanError",
+            exito
+                ? $"Plan finalizado con estado {plan.Estado}. IdExecution={idExecution}."
+                : $"Plan falló tras {_supervisor.MaxReintentos} reintentos: {ultimoError?.Message}",
+            CancellationToken.None);
     }
 
     /// <summary>Sincroniza el estado de los PlanStep con los AgentExecutionStep del Orchestrator

@@ -1,0 +1,73 @@
+@model Asistente.Shared.ConfiguracionOrchestratorDto
+@{
+    ViewData["Title"] = "Configuración del Orquestador";
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-sliders me-2" style="color:#818cf8;"></i>Configuración del Tool Orchestrator</h4>
+    <p class="text-secondary small mb-0">Políticas de autorización, prioridad y límites de ejecución</p>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:12px;">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <form asp-action="Guardar" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="form-check form-switch mb-4">
+                        <input asp-for="Habilitado" class="form-check-input" type="checkbox" id="chkHabilitado" checked />
+                        <label class="form-check-label text-white" for="chkHabilitado">Motor de Herramientas habilitado</label>
+                        <div class="form-text text-secondary small">Si se desactiva, ninguna herramienta será ejecutada por el asistente.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Prioridad" class="form-label text-secondary small">Prioridad (orden de resolución)</label>
+                        <input asp-for="Prioridad" type="number" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                        <span asp-validation-for="Prioridad" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="TiempoMaximoEjecucionMs" class="form-label text-secondary small">Tiempo máximo de ejecución (ms)</label>
+                        <input asp-for="TiempoMaximoEjecucionMs" type="number" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                        <span asp-validation-for="TiempoMaximoEjecucionMs" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="MaxEjecucionesSimultaneas" class="form-label text-secondary small">Cantidad máxima de ejecuciones simultáneas</label>
+                        <input asp-for="MaxEjecucionesSimultaneas" type="number" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                        <span asp-validation-for="MaxEjecucionesSimultaneas" class="text-danger small"></span>
+                    </div>
+
+                    <div class="form-check form-switch mb-4">
+                        <input asp-for="RequiereAutorizacion" class="form-check-input" type="checkbox" id="chkAuth" checked />
+                        <label class="form-check-label text-white" for="chkAuth">Requiere autorización (permisos y asociación al asistente)</label>
+                        <div class="form-text text-secondary small">Si está activo, una herramienta con RequierePermiso=true solo se ejecuta si está autorizada para el asistente.</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-sm px-4 py-2 fw-semibold"
+                                style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
+                            <i class="bi bi-save me-1"></i> Guardar Configuración
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

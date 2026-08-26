@@ -1,0 +1,53 @@
+@model Asistente.Shared.CrearReglaEventoRequest
+@{
+    ViewData["Title"] = "Nueva Regla de Automatización";
+    var eventos = (List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>)ViewBag.Eventos;
+    var workflows = (List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>)ViewBag.Workflows;
+}
+
+<div class="mb-4">
+    <a asp-action="Index" class="text-secondary text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver a reglas</a>
+</div>
+
+<h4 class="text-white fw-bold mb-1"><i class="bi bi-link-45deg me-2" style="color:#818cf8;"></i>Configurar Regla de Automatización</h4>
+<p class="text-secondary small">Asocie un evento a un flujo de trabajo. Cuando ocurra el evento válido, el flujo se ejecutará automáticamente.</p>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);max-width:720px;">
+    <div class="card-body p-4">
+        <form asp-action="Crear" method="post">
+            @Html.AntiForgeryToken()
+            <div class="mb-3">
+                <label class="form-label text-white-50 small">Evento origen *</label>
+                <select asp-for="IdEvento" class="form-select bg-dark text-light border-secondary" asp-items="@eventos">
+                    <option value="0">Seleccione un evento...</option>
+                </select>
+                <span asp-validation-for="IdEvento" class="text-danger small"></span>
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-white-50 small">Flujo de trabajo asociado *</label>
+                <select asp-for="IdWorkflow" class="form-select bg-dark text-light border-secondary" asp-items="@workflows">
+                    <option value="0">Seleccione un flujo...</option>
+                </select>
+                <span asp-validation-for="IdWorkflow" class="text-danger small"></span>
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-white-50 small">Condición (opcional)</label>
+                <input asp-for="Condicion" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="Ej: Categoria == 'Error'  |  Prioridad >= 3" />
+                <div class="form-text text-secondary">Deje vacío para ejecutar siempre. Soporta ==, !=, &gt;=, &lt;=, &gt;, &lt; y el separador | (Y lógico).</div>
+            </div>
+            <div class="mb-4">
+                <label class="form-label text-white-50 small">Prioridad</label>
+                <input asp-for="Prioridad" type="number" min="1" class="form-control bg-dark text-light border-secondary" style="max-width:120px;" />
+                <div class="form-text text-secondary">Mayor número = se evalúa primero.</div>
+            </div>
+            <div class="form-check form-switch mb-4">
+                <input asp-for="Activa" class="form-check-input" role="switch" id="activaSwitch" />
+                <label class="form-check-label text-white-50 small" for="activaSwitch">Regla activa</label>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Guardar Regla</button>
+                <a asp-action="Index" class="btn btn-outline-light">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>

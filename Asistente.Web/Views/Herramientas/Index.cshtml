@@ -1,0 +1,147 @@
+@model IEnumerable<Asistente.Shared.HerramientaDto>
+@{
+    ViewData["Title"] = "Motor de Herramientas";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-tools me-2" style="color:#818cf8;"></i>Motor de Herramientas (Tool Orchestrator)</h4>
+        <p class="text-secondary small mb-0">Registro, activación y monitoreo de herramientas empresariales desacopladas</p>
+    </div>
+    <a asp-action="Crear" class="btn btn-sm px-4 py-2 fw-semibold"
+       style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+        <i class="bi bi-plus-lg me-1"></i> Nueva Herramienta
+    </a>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:12px;">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Herramienta</th>
+                        <th class="text-secondary fw-normal py-3">Categoría</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Permiso</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Ejecuciones</th>
+                        <th class="text-secondary fw-normal py-3 text-center">T. Prom. (ms)</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Errores</th>
+                        <th class="text-secondary fw-normal py-3">Última</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3 text-end px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var h in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="d-flex align-items-center justify-content-center rounded-circle"
+                                         style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#a855f7);font-weight:bold;font-size:0.9rem;">
+                                        <i class="bi bi-gear"></i>
+                                    </div>
+                                    <div>
+                                        <span class="fw-semibold text-white">@h.Nombre</span>
+                                        <div class="small text-secondary font-monospace">@h.Codigo</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><span class="badge" style="background:rgba(129,140,248,0.2);color:#a5b4fc;border:1px solid rgba(129,140,248,0.3);border-radius:20px;font-size:0.72rem;padding:3px 10px;">@h.Categoria</span></td>
+                            <td class="text-center">
+                                @if (h.RequierePermiso)
+                                {
+                                    <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.3);border-radius:20px;font-size:0.72rem;padding:3px 10px;" title="Requiere validación de permisos/autorización antes de ejecutarse">
+                                        <i class="bi bi-lock-fill me-1"></i>Sí
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);border-radius:20px;font-size:0.72rem;padding:3px 10px;" title="No requiere validación de permisos adicional">
+                                        <i class="bi bi-unlock me-1"></i>No
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-center text-secondary">@h.TotalEjecuciones</td>
+                            <td class="text-center text-secondary">@(h.TiempoPromedioMs.ToString("F0"))</td>
+                            <td class="text-center">
+                                @if (h.Errores > 0)
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;">@h.Errores</span>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">0</span>
+                                }
+                            </td>
+                            <td class="text-secondary small">@(h.UltimaEjecucion?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+                            <td>
+                                @if (h.Activa)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>Activa
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>Inactiva
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-end px-4">
+                                <div class="d-flex gap-1 justify-content-end">
+                                    @if (h.Activa)
+                                    {
+                                        <form asp-action="Desactivar" asp-route-id="@h.IdHerramienta" method="post" class="d-inline"
+                                              onsubmit="return confirm('Desactivar la herramienta @h.Nombre? El asistente dejará de usarla.')">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.2);border-radius:8px;" title="Desactivar">
+                                                <i class="bi bi-toggle-off"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="Activar" asp-route-id="@h.IdHerramienta" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2);border-radius:8px;" title="Activar">
+                                                <i class="bi bi-toggle-on"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-secondary py-5">
+                                <i class="bi bi-tools fs-1 d-block mb-2 opacity-25"></i>
+                                No hay herramientas registradas. <a asp-action="Crear" class="text-decoration-none" style="color:#818cf8;">Registre la primera.</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

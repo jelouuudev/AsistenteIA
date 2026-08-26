@@ -26,5 +26,28 @@ public class ConversacionConfiguration : IEntityTypeConfiguration<Conversacion>
             .IsRequired()
             .HasConversion(new EnumToStringConverter<EstadoConversacion>())
             .HasMaxLength(20);
+
+        builder.Property(c => c.Titulo)
+            .HasMaxLength(200);
+
+        builder.Property(c => c.UsuarioPropietario)
+            .IsRequired();
+
+        builder.Property(c => c.FechaUltimaActividad);
+
+        builder.Property(c => c.ResumenContexto)
+            .HasColumnType("nvarchar(max)");
+
+        builder.Property(c => c.TotalMensajes)
+            .IsRequired()
+            .HasDefaultValue(0);
+
+        builder.Property(c => c.IdAsistente);
+        
+        builder.Property(c => c.UltimoDocumentoPreferido)
+            .HasMaxLength(100);
+
+        builder.HasIndex(c => c.UsuarioPropietario);
+        builder.HasIndex(c => c.FechaUltimaActividad);
     }
 }

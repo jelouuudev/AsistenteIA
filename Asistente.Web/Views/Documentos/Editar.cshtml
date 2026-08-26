@@ -1,0 +1,63 @@
+@model Asistente.Shared.ActualizarDocumentoRequest
+@{
+    ViewData["Title"] = "Editar Documento";
+}
+
+<a asp-action="Detalle" asp-route-id="@ViewBag.DocumentoId" class="text-secondary small text-decoration-none mb-3 d-inline-block">
+    <i class="bi bi-arrow-left"></i> Volver al detalle
+</a>
+
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card border-0 shadow-lg" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-4">
+                    <i class="bi bi-pencil-square fs-4" style="color:#818cf8;"></i>
+                    <h5 class="text-white fw-bold mb-0">Editar Metadatos del Documento</h5>
+                </div>
+
+                <form asp-action="Editar" asp-route-id="@ViewBag.DocumentoId" method="post">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="text-danger small mb-3"></div>
+
+                    <div class="mb-3">
+                        <label asp-for="Nombre" class="form-label text-secondary small fw-medium">Nombre del Documento</label>
+                        <input asp-for="Nombre" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                               style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);" />
+                        <span asp-validation-for="Nombre" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="IdCategoria" class="form-label text-secondary small fw-medium">Categoría</label>
+                        <select asp-for="IdCategoria" asp-items="ViewBag.Categorias" class="form-select form-select-sm border-0 px-3 py-2 text-white"
+                                style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);">
+                        </select>
+                        <span asp-validation-for="IdCategoria" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-4">
+                        <label asp-for="Descripcion" class="form-label text-secondary small fw-medium">Descripción</label>
+                        <textarea asp-for="Descripcion" rows="4" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                                  style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);resize:none;"></textarea>
+                        <span asp-validation-for="Descripcion" class="text-danger small"></span>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <a asp-action="Detalle" asp-route-id="@ViewBag.DocumentoId" class="btn btn-sm w-100 py-2 text-secondary border-0"
+                           style="background:rgba(255,255,255,0.05);border-radius:8px;font-weight:500;">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-sm w-100 py-2 text-white border-0 fw-semibold"
+                                style="background:linear-gradient(135deg,#6366f1,#a855f7);border-radius:8px;box-shadow:0 4px 12px rgba(99,102,241,0.2);">
+                            Guardar Cambios
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

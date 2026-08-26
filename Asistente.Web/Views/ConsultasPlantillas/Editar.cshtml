@@ -1,0 +1,69 @@
+@model Asistente.Shared.ActualizarConsultaPlantillaRequest
+@{
+    ViewData["Title"] = "Editar Plantilla";
+    var conexiones = (IEnumerable<Asistente.Shared.ConexionBaseDatosDto>)ViewBag.Conexiones;
+    var plantillaId = (int)ViewBag.PlantillaId;
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-pencil me-2" style="color:#818cf8;"></i>Editar Plantilla de Consulta</h4>
+    <p class="text-secondary small mb-0">Modifique la plantilla @Model.Nombre</p>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-4">
+        <form asp-action="Editar" asp-route-id="@plantillaId" method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            <div class="mb-3">
+                <label asp-for="Nombre" class="form-label text-secondary small">Nombre de la plantilla</label>
+                <input asp-for="Nombre" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                <span asp-validation-for="Nombre" class="text-danger small"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Descripcion" class="form-label text-secondary small">Descripción</label>
+                <input asp-for="Descripcion" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="IdConexion" class="form-label text-secondary small">Conexión (opcional)</label>
+                <select asp-for="IdConexion" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;">
+                    <option value="">Todas las conexiones</option>
+                    @foreach (var c in conexiones)
+                    {
+                        <option value="@c.IdConexion" selected="@(c.IdConexion == Model.IdConexion)">@c.Nombre</option>
+                    }
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="ConsultaSql" class="form-label text-secondary small">Consulta SQL</label>
+                <textarea asp-for="ConsultaSql" class="form-control bg-dark text-white border-secondary font-monospace" rows="4"
+                          style="border-radius:10px;font-size:0.85rem;"></textarea>
+                <span asp-validation-for="ConsultaSql" class="text-danger small"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Parametros" class="form-label text-secondary small">Parámetros (opcional)</label>
+                <input asp-for="Parametros" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+            </div>
+
+            <div class="form-check form-switch mb-3">
+                <input asp-for="Activa" class="form-check-input" type="checkbox" />
+                <label class="form-check-label text-secondary" asp-for="Activa">Plantilla activa</label>
+            </div>
+
+            <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn px-4 py-2 fw-semibold"
+                        style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+                    <i class="bi bi-check-lg me-1"></i> Guardar
+                </button>
+                <a asp-action="Index" class="btn px-4 py-2 fw-semibold"
+                   style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#cbd5e1;border-radius:10px;">
+                    Cancelar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>

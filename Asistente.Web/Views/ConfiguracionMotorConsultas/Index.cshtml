@@ -1,0 +1,97 @@
+@model Asistente.Shared.ConfiguracionMotorConsultasDto
+@{
+    ViewData["Title"] = "Configuración del Motor de Consultas";
+    var conexiones = (IEnumerable<Asistente.Shared.ConexionBaseDatosDto>)ViewBag.Conexiones;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-sliders me-2" style="color:#818cf8;"></i>Configuración del Motor de Consultas</h4>
+        <p class="text-secondary small mb-0">Límites y conexión predeterminada para consultas empresariales</p>
+    </div>
+    <a asp-controller="ConsultasEmpresariales" asp-action="Index" class="btn btn-sm px-4 py-2 fw-semibold"
+       style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#cbd5e1;border-radius:10px;">
+        <i class="bi bi-arrow-left me-1"></i> Motor de Consultas
+    </a>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:12px;">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <form asp-controller="ConfiguracionMotorConsultas" asp-action="Guardar" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <input type="hidden" name="Activo" value="@Model.Activo.ToString()" />
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label text-secondary small">Tiempo máximo de ejecución (segundos)</label>
+                            <input type="number" name="TiempoMaximoEjecucionSegundos" class="form-control bg-dark text-white border-secondary"
+                                   style="border-radius:10px;" value="@Model.TiempoMaximoEjecucionSegundos" min="1" max="120" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label text-secondary small">Máximo de registros devueltos</label>
+                            <input type="number" name="MaximoRegistros" class="form-control bg-dark text-white border-secondary"
+                                   style="border-radius:10px;" value="@Model.MaximoRegistros" min="1" max="10000" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label text-secondary small">Consultas simultáneas máximas</label>
+                            <input type="number" name="MaxConsultasSimultaneas" class="form-control bg-dark text-white border-secondary"
+                                   style="border-radius:10px;" value="@Model.MaxConsultasSimultaneas" min="1" max="50" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label text-secondary small">Conexión predeterminada</label>
+                            <select name="IdConexionPredeterminada" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;">
+                                <option value="">— Ninguna —</option>
+                                @foreach (var c in conexiones)
+                                {
+                                    <option value="@c.IdConexion" selected="@(c.IdConexion == Model.IdConexionPredeterminada)">@c.Nombre</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="submit" class="btn px-4 py-2 fw-semibold"
+                                style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+                            <i class="bi bi-check-lg me-1"></i> Guardar Configuración
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-semibold mb-3"><i class="bi bi-shield-check me-2" style="color:#10b981;"></i>Políticas de seguridad</h6>
+                <ul class="text-secondary small mb-0" style="line-height:1.9;">
+                    <li>Solo se permiten consultas <strong>SELECT</strong> de solo lectura.</li>
+                    <li>Se bloquean operaciones INSERT, UPDATE, DELETE, DDL y procedimientos.</li>
+                    <li>Solo se consultan tablas y vistas autorizadas por el administrador.</li>
+                    <li>El resultado se limita al máximo de registros configurado.</li>
+                    <li>Todas las consultas quedan registradas en auditoría.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,88 @@
+@{
+    ViewData["Title"] = "Reglas de colaboración";
+}
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-link-45deg me-2" style="color:#818cf8;"></i>Reglas de colaboración entre agentes</h4>
+    <p class="text-secondary small mb-0">Define qué agentes pueden colaborar (Regla 3). Deny by default.</p>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:12px;">
+        @TempData["SuccessMessage"]<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card border-0 mb-4" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-semibold mb-3">Crear regla</h6>
+                <form asp-action="CrearRegla" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label text-secondary small">Agente origen</label>
+                            <select name="agenteOrigen" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;">
+                                @foreach (var a in (IEnumerable<AgenteSimpleDto>)(ViewBag.Agentes ?? new List<AgenteSimpleDto>()))
+                                { <option value="@a.IdAsistente">@a.Nombre</option> }
+                            </select>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label text-secondary small">Agente destino</label>
+                            <select name="agenteDestino" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;">
+                                @foreach (var a in (IEnumerable<AgenteSimpleDto>)(ViewBag.Agentes ?? new List<AgenteSimpleDto>()))
+                                { <option value="@a.IdAsistente">@a.Nombre</option> }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input name="permitido" class="form-check-input" type="checkbox" id="chkPerm" value="true" checked />
+                        <label class="form-check-label text-white" for="chkPerm">Permitido</label>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input name="activa" class="form-check-input" type="checkbox" id="chkAct" value="true" checked />
+                        <label class="form-check-label text-white" for="chkAct">Activa</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Prioridad</label>
+                        <input name="prioridad" type="number" value="100" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                    </div>
+                    <button type="submit" class="btn btn-sm px-4 py-2 fw-semibold" style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
+                        <i class="bi bi-plus-lg me-1"></i> Crear regla
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-semibold mb-3">Reglas activas</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-dark align-middle">
+                        <thead><tr><th>Origen → Destino</th><th>Perm.</th><th></th></tr></thead>
+                        <tbody>
+                        @foreach (var r in (IEnumerable<AgentCollaborationRuleDto>)(ViewBag.Reglas ?? new List<AgentCollaborationRuleDto>()))
+                        {
+                            <tr>
+                                <td>@r.NombreOrigen → @r.NombreDestino</td>
+                                <td>@(r.Permitido ? "✓" : "✗")</td>
+                                <td>
+                                    <form asp-action="EliminarRegla" method="post" style="display:inline;">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.IdRule" />
+                                        <button class="btn btn-sm btn-outline-danger">Eliminar</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<a asp-action="Index" class="btn btn-sm btn-outline-light mt-2"><i class="bi bi-arrow-left me-1"></i> Volver al Orchestrator</a>

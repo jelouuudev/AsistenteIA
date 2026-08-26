@@ -1,0 +1,175 @@
+@model Asistente.Shared.DocumentoProcesadoDto
+@{
+    ViewData["Title"] = "Detalle Procesamiento";
+    var chunks = ViewBag.Chunks as IEnumerable<Asistente.Shared.DocumentoChunkDto>;
+}
+
+<style>
+    .proc-card {
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 12px;
+        padding: 1.2rem;
+    }
+    .proc-card h6 { color: #818cf8; font-weight: 600; margin-bottom: 0.8rem; }
+    .info-row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #94a3b8; font-size: 0.88rem; }
+    .info-value { color: #e2e8f0; font-weight: 500; font-size: 0.88rem; }
+    .chunk-card {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.8rem;
+    }
+    .chunk-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .chunk-num { color: #818cf8; font-weight: 600; font-size: 0.85rem; }
+    .chunk-meta { color: #64748b; font-size: 0.8rem; }
+    .chunk-texto { color: #cbd5e1; font-size: 0.88rem; line-height: 1.5; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+    .badge-estado { padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; }
+    .badge-pendiente { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .badge-proceso { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+    .badge-procesado { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+    .badge-error { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+    .btn-action {
+        background: rgba(129,140,248,0.1);
+        border: 1px solid rgba(129,140,248,0.2);
+        color: #818cf8;
+        border-radius: 6px;
+        padding: 6px 14px;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+    .btn-action:hover { background: rgba(129,140,248,0.2); color: #fff; }
+    .btn-reprocess {
+        background: rgba(251,191,36,0.1);
+        border: 1px solid rgba(251,191,36,0.2);
+        color: #fbbf24;
+    }
+    .btn-reprocess:hover { background: rgba(251,191,36,0.2); color: #fff; }
+    .page-header { border-bottom: 1px solid rgba(255,255,255,0.07); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+</style>
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <a asp-action="Index" style="color:#818cf8;text-decoration:none;font-size:0.85rem;">
+            <i class="bi bi-arrow-left me-1"></i>Volver al monitoreo
+        </a>
+        <h5 class="mt-2 mb-0" style="color:#e2e8f0;font-weight:600;">
+            <i class="bi bi-file-earmark-text me-2" style="color:#818cf8;"></i>@Model.DocumentoNombre
+        </h5>
+        <small style="color:#64748b;">Código: @Model.DocumentoCodigo | Versión: @Model.NumeroVersion</small>
+    </div>
+    <div class="d-flex gap-2">
+        @if (Model.Estado == "Procesado" || Model.Estado == "Error")
+        {
+            <form asp-action="Reprocesar" asp-route-id="@Model.IdDocumentoProcesado" method="post" class="d-inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn-action btn-reprocess" onclick="return confirm('¿Desea reprocesar este documento?')">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Reprocesar
+                </button>
+            </form>
+        }
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="proc-card">
+            <h6><i class="bi bi-info-circle me-1"></i>Información del Procesamiento</h6>
+            <div class="info-row">
+                <span class="info-label">Estado</span>
+                <span class="info-value">
+                    @switch (Model.Estado)
+                    {
+                        case "Pendiente":
+                            <span class="badge-estado badge-pendiente">Pendiente</span>
+                            break;
+                        case "EnProceso":
+                            <span class="badge-estado badge-proceso">En Proceso</span>
+                            break;
+                        case "Procesado":
+                            <span class="badge-estado badge-procesado">Procesado</span>
+                            break;
+                        case "Error":
+                            <span class="badge-estado badge-error">Error</span>
+                            break;
+                    }
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Archivo</span>
+                <span class="info-value">@Model.NombreArchivo</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Fecha Inicio</span>
+                <span class="info-value">@Model.FechaInicio.ToString("dd/MM/yyyy HH:mm:ss")</span>
+            </div>
+            @if (Model.FechaFin.HasValue)
+            {
+                <div class="info-row">
+                    <span class="info-label">Fecha Fin</span>
+                    <span class="info-value">@Model.FechaFin.Value.ToString("dd/MM/yyyy HH:mm:ss")</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Duración</span>
+                    <span class="info-value">@((Model.FechaFin.Value - Model.FechaInicio).TotalSeconds.ToString("N1"))s</span>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="proc-card">
+            <h6><i class="bi bi-bar-chart me-1"></i>Estadísticas</h6>
+            <div class="info-row">
+                <span class="info-label">Total Páginas</span>
+                <span class="info-value" style="color:#60a5fa;">@Model.TotalPaginas</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Total Chunks</span>
+                <span class="info-value" style="color:#34d399;">@Model.TotalChunks</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Total Caracteres</span>
+                <span class="info-value">@Model.TotalCaracteres.ToString("N0")</span>
+            </div>
+            @if (!string.IsNullOrEmpty(Model.Observaciones))
+            {
+                <div class="info-row">
+                    <span class="info-label">Observaciones</span>
+                    <span class="info-value" style="@(Model.Estado == "Error" ? "color:#fca5a5;" : "")">@Model.Observaciones</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="proc-card">
+    <h6><i class="bi bi-braces me-1"></i>Chunks Generados (@(chunks?.Count() ?? 0))</h6>
+
+    @if (chunks != null && chunks.Any())
+    {
+        @foreach (var chunk in chunks.OrderBy(c => c.Orden))
+        {
+            <div class="chunk-card">
+                <div class="chunk-header">
+                    <span class="chunk-num">Chunk #@chunk.NumeroChunk</span>
+                    <span class="chunk-meta">
+                        Páginas @chunk.PaginaInicial - @chunk.PaginaFinal |
+                        @chunk.TotalCaracteres.ToString("N0") caracteres |
+                        Orden: @chunk.Orden
+                    </span>
+                </div>
+                <div class="chunk-texto">@chunk.Texto</div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="text-center py-4">
+            <i class="bi bi-inbox fs-1" style="color:#475569;"></i>
+            <p class="mt-2" style="color:#64748b;">No hay chunks generados para este procesamiento.</p>
+        </div>
+    }
+</div>

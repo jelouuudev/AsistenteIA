@@ -1,0 +1,62 @@
+@model Asistente.Shared.CrearFuenteConocimientoRequest
+@{
+    ViewData["Title"] = "Nueva Fuente de Conocimiento";
+}
+
+<div class="mb-4">
+    <a asp-action="Index" class="text-decoration-none" style="color:#818cf8;"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+    <h4 class="text-white fw-bold mt-2"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Nueva Fuente de Conocimiento</h4>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-4">
+        <form asp-action="Crear" method="post">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label asp-for="Nombre" class="form-label text-secondary small">Nombre</label>
+                    <input asp-for="Nombre" class="form-control" style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;" />
+                    <span asp-validation-for="Nombre" class="text-danger small"></span>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label asp-for="Codigo" class="form-label text-secondary small">Codigo</label>
+                    <input asp-for="Codigo" class="form-control" style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;" />
+                    <span asp-validation-for="Codigo" class="text-danger small"></span>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Descripcion" class="form-label text-secondary small">Descripcion</label>
+                <textarea asp-for="Descripcion" class="form-control" rows="3" style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;"></textarea>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label asp-for="Tipo" class="form-label text-secondary small">Tipo</label>
+                    <select asp-for="Tipo" class="form-select" style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;">
+                        <option value="Manual">Manual</option>
+                        <option value="Procedimiento">Procedimiento</option>
+                        <option value="FAQ">FAQ</option>
+                        <option value="Politica">Politica</option>
+                        <option value="Normativa">Normativa</option>
+                        <option value="DocumentacionTecnica">Documentacion Tecnica</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label asp-for="Prioridad" class="form-label text-secondary small">Prioridad (1=mas alta)</label>
+                    <input asp-for="Prioridad" type="number" min="1" max="10" class="form-control" style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;" />
+                </div>
+            </div>
+
+            <div class="d-flex gap-2 mt-3">
+                <button type="submit" class="btn px-4 py-2 fw-semibold"
+                        style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
+                    <i class="bi bi-check-lg me-1"></i> Crear Fuente
+                </button>
+                <a asp-action="Index" class="btn px-4 py-2" style="background:rgba(255,255,255,0.1);color:white;border-radius:10px;">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>

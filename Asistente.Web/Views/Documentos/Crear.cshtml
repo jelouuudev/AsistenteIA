@@ -1,0 +1,89 @@
+@model Asistente.Web.Controllers.CrearDocumentoConArchivoModel
+@{
+    ViewData["Title"] = "Subir Documento";
+}
+
+<a asp-action="Index" class="text-secondary small text-decoration-none mb-3 d-inline-block">
+    <i class="bi bi-arrow-left"></i> Volver al listado
+</a>
+
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-7">
+        <div class="card border-0 shadow-lg" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4 p-md-5">
+                <div class="d-flex align-items-center gap-3 mb-4">
+                    <div class="d-flex align-items-center justify-content-center rounded-3"
+                         style="width:48px;height:48px;background:linear-gradient(135deg,#6366f1,#a855f7);">
+                        <i class="bi bi-file-earmark-arrow-up text-white fs-4"></i>
+                    </div>
+                    <div>
+                        <h5 class="text-white fw-bold mb-0">Subir Nuevo Documento</h5>
+                        <p class="text-secondary small mb-0">Carga un documento PDF e inicializa sus metadatos de clasificación.</p>
+                    </div>
+                </div>
+
+                <form asp-action="Crear" method="post" enctype="multipart/form-data">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="text-danger small mb-4"></div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label asp-for="Codigo" class="form-label text-secondary small fw-medium">Código Único</label>
+                            <input asp-for="Codigo" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                                   style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);"
+                                   placeholder="DOC-001" />
+                            <span asp-validation-for="Codigo" class="text-danger small"></span>
+                        </div>
+                        <div class="col-md-8">
+                            <label asp-for="Nombre" class="form-label text-secondary small fw-medium">Nombre del Documento</label>
+                            <input asp-for="Nombre" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                                   style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);"
+                                   placeholder="Nombre descriptivo..." />
+                            <span asp-validation-for="Nombre" class="text-danger small"></span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="IdCategoria" class="form-label text-secondary small fw-medium">Categoría</label>
+                            <select asp-for="IdCategoria" asp-items="ViewBag.Categorias" class="form-select form-select-sm border-0 px-3 py-2 text-white"
+                                    style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);">
+                                <option value="">Selecciona una categoría...</option>
+                            </select>
+                            <span asp-validation-for="IdCategoria" class="text-danger small"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Archivo" class="form-label text-secondary small fw-medium">Archivo PDF (Obligatorio)</label>
+                            <input asp-for="Archivo" type="file" accept=".pdf" class="form-control form-control-sm border-0 text-white"
+                                   style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);padding: 7px 12px;" />
+                            <span asp-validation-for="Archivo" class="text-danger small"></span>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label asp-for="Descripcion" class="form-label text-secondary small fw-medium">Descripción / Resumen</label>
+                        <textarea asp-for="Descripcion" rows="3" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                                  style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);resize:none;"
+                                  placeholder="Escribe detalles adicionales sobre el contenido o el propósito del documento..."></textarea>
+                        <span asp-validation-for="Descripcion" class="text-danger small"></span>
+                    </div>
+
+                    <div class="d-flex gap-3">
+                        <a asp-action="Index" class="btn btn-sm w-100 py-2 text-secondary border-0"
+                           style="background:rgba(255,255,255,0.05);border-radius:8px;font-weight:500;">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-sm w-100 py-2 text-white border-0 fw-semibold"
+                                style="background:linear-gradient(135deg,#6366f1,#a855f7);border-radius:8px;box-shadow:0 4px 12px rgba(99,102,241,0.2);">
+                            Crear y Cargar PDF
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

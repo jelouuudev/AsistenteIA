@@ -1,0 +1,115 @@
+@model Asistente.Shared.CrearConexionBaseDatosRequest
+@{
+    ViewData["Title"] = "Nueva Conexión";
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Nueva Conexión a Base de Datos</h4>
+    <p class="text-secondary small mb-0">Registre una conexión SQL Server para el motor de consultas</p>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:12px;">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <form id="crearConexionForm" asp-controller="ConexionesBaseDatos" asp-action="Crear" method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                    <div class="mb-3">
+                        <label asp-for="Nombre" class="form-label text-secondary small">Nombre de la conexión</label>
+                        <input asp-for="Nombre" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" placeholder="Ej: BaseDatos Principal" />
+                        <span asp-validation-for="Nombre" class="text-danger small"></span>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label asp-for="Servidor" class="form-label text-secondary small">Servidor</label>
+                            <input asp-for="Servidor" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" placeholder="Ej: localhost o 192.168.1.10" />
+                            <span asp-validation-for="Servidor" class="text-danger small"></span>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label asp-for="BaseDatos" class="form-label text-secondary small">Base de datos</label>
+                            <input asp-for="BaseDatos" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" placeholder="Ej: EmpresaDB" />
+                            <span asp-validation-for="BaseDatos" class="text-danger small"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-check form-switch mb-3">
+                        <input asp-for="AutenticacionWindows" class="form-check-input" type="checkbox" id="chkWindows" onchange="toggleAuth()" checked />
+                        <label class="form-check-label text-secondary" for="chkWindows">Autenticación de Windows (Trusted_Connection)</label>
+                    </div>
+
+                    <div id="authSql" style="display:none;">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="UsuarioConexion" class="form-label text-secondary small">Usuario SQL Server</label>
+                                <input asp-for="UsuarioConexion" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Contrasena" class="form-label text-secondary small">Contraseña</label>
+                                <input asp-for="Contrasena" type="password" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-4">
+                        <button id="guardarConexionBtn" type="submit" class="btn px-4 py-2 fw-semibold"
+                                style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+                            <i class="bi bi-check-lg me-1"></i> Guardar Conexión
+                        </button>
+                        <a asp-action="Index" class="btn px-4 py-2 fw-semibold"
+                           style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#cbd5e1;border-radius:10px;">
+                            Cancelar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-semibold mb-3"><i class="bi bi-info-circle me-2" style="color:#818cf8;"></i>Pasos siguientes</h6>
+                <ol class="text-secondary small mb-0" style="line-height:1.9;">
+                    <li>Guarde la conexión.</li>
+                    <li>Abra el <strong>Esquema</strong> de la conexión para descubrir tablas y vistas.</li>
+                    <li>Autorice las tablas y vistas que el motor podrá consultar.</li>
+                    <li>Ejecute consultas desde el <strong>Motor de Consultas</strong>.</li>
+                </ol>
+                <hr class="border-secondary" />
+                <p class="text-secondary small mb-0">
+                    <i class="bi bi-shield-lock me-1"></i> La cadena de conexión se almacena cifrada.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleAuth() {
+        var sql = document.getElementById('authSql');
+        sql.style.display = document.getElementById('chkWindows').checked ? 'none' : 'block';
+    }
+    toggleAuth();
+
+    document.getElementById('crearConexionForm').addEventListener('submit', function () {
+        const button = document.getElementById('guardarConexionBtn');
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Guardando conexión...';
+    });
+</script>

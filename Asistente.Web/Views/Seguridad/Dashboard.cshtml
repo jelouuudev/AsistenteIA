@@ -1,0 +1,41 @@
+@model Asistente.Shared.DashboardSeguridadDto
+@{
+    ViewData["Title"] = "Dashboard de Seguridad";
+}
+<div class="container-fluid py-4">
+    <h2 class="mb-4"><i class="bi bi-speedometer2 me-2"></i>Dashboard de Seguridad y Observabilidad</h2>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-info">Usuarios Activos</h6><h3>@Model.UsuariosActivos</h3></div></div></div>
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-info">Conversaciones</h6><h3>@Model.Conversaciones</h3></div></div></div>
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-info">Consultas</h6><h3>@Model.ConsultasRealizadas</h3></div></div></div>
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-info">Tiempo Prom. (ms)</h6><h3>@Model.TiempoPromedioRespuestaMs</h3></div></div></div>
+
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-warning">Uso Herramientas</h6><h3>@Model.UsoHerramientas</h3></div></div></div>
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-warning">Consultas SQL</h6><h3>@Model.ConsultasSql</h3></div></div></div>
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-warning">Workflows</h6><h3>@Model.WorkflowsEjecutados</h3></div></div></div>
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-danger">Errores</h6><h3>@Model.Errores</h3></div></div></div>
+        <div class="col-md-3"><div class="card bg-dark text-light"><div class="card-body"><h6 class="text-info">Eventos Procesados</h6><h3>@Model.EventosProcesados</h3></div></div></div>
+    </div>
+
+    <h4 class="mb-3">Últimas Auditorías</h4>
+    <div class="table-responsive">
+        <table class="table table-dark table-striped table-hover">
+            <thead><tr><th>Fecha</th><th>Usuario</th><th>Tipo</th><th>Módulo</th><th>Acción</th><th>Resultado</th><th>Descripción</th></tr></thead>
+            <tbody>
+            @foreach (var a in Model.UltimasAuditorias)
+            {
+                <tr>
+                    <td>@a.FechaHora.ToString("g")</td>
+                    <td>@a.UsuarioNombre</td>
+                    <td>@a.TipoOperacion</td>
+                    <td>@a.Modulo</td>
+                    <td>@a.Accion</td>
+                    <td><span class="badge @(a.Resultado == "Error" ? "bg-danger" : a.Resultado == "Bloqueado" ? "bg-warning" : "bg-success")">@a.Resultado</span></td>
+                    <td>@a.Descripcion</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

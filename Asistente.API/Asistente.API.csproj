@@ -7,11 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.25" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
@@ -19,6 +22,7 @@
     <ProjectReference Include="..\Asistente.Application\Asistente.Application.csproj" />
     <ProjectReference Include="..\Asistente.Infrastructure\Asistente.Infrastructure.csproj" />
     <ProjectReference Include="..\Asistente.Shared\Asistente.Shared.csproj" />
+    <ProjectReference Include="..\Asistente.Web\Asistente.Web.csproj" />
   </ItemGroup>
 
 </Project>

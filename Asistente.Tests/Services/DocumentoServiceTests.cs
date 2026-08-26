@@ -25,6 +25,7 @@ public class DocumentoServiceTests
     private readonly Mock<IFileStorageService> _fileStorageMock = new();
     private readonly Mock<IAuditoriaService> _auditoriaServiceMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
+    private readonly Mock<IDocumentoFuenteRepository> _documentoFuenteRepoMock = new();
     private readonly Mock<ILogger<DocumentoService>> _loggerMock = new();
     private readonly DocumentoService _service;
 
@@ -39,6 +40,7 @@ public class DocumentoServiceTests
             _fileStorageMock.Object,
             _auditoriaServiceMock.Object,
             _unitOfWorkMock.Object,
+            _documentoFuenteRepoMock.Object,
             _loggerMock.Object);
     }
 

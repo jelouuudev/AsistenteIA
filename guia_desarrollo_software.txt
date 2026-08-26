@@ -1,0 +1,205 @@
+Guia de Desarrollo de Software v3.1
+
+1. Introduccion
+Esta guia establece los estandares, procesos y mejores practicas que todos los desarrolladores de TechCorp deben seguir. El objetivo es mantener la calidad, consistencia y escalabilidad de nuestro codigo base.
+
+2. Estandares de Codigo
+2.1 Convenciones de Nomenclatura
+- Las clases deben seguir PascalCase: UserProfile, OrderService, NotificationHandler
+- Los metodos y propiedades deben usar camelCase: getUserById, calculateTotal, isValid
+- Las constantes deben usarse con UPPER_SNAKE_CASE: MAX_RETRY_COUNT, DEFAULT_TIMEOUT
+- Los campos privados deben usarse con _camelCase: _databaseConnection, _logger
+
+2.2 Estructura de Archivos
+- Cada archivo debe contener una sola clase publica
+- Los archivos de servicios deben tener su nombre finalizado con Service: UserService.cs, PaymentService.cs
+- Los archivos de repositorio deben tener su nombre finalizado con Repository: UserRepository.cs
+- Los archivos de controlador deben tener su nombre finalizado con Controller: AuthController.cs
+
+2.3 Proceso de Revision
+- El autor del codigo crea un Pull Request con la descripcion del cambio
+- Se asignan al menos dos revisores: uno del mismo equipo y otro de otro equipo
+- Los revisores tienen 48 horas para completar la revision
+- Si se solicitan cambios, el autor tiene 24 horas para realizar las correcciones
+
+2.4 Criterios de Aprobacion
+- El codigo cumple con los estandares de nomenclatura y formato
+- No existen vulnerabilidades de seguridad conocidas (injection, XSS, etc.)
+- Las pruebas unitarias cubren al menos el 80% del codigo nuevo
+- La documentacion esta actualizada si aplica
+- No hay duplicacion significativa del codigo con el que ya existe
+- El rendimiento no se ve afectado de manera significativa
+
+2.5 Documentacion
+- El README debe describir el proyecto, instrucciones de instalacion y uso basico
+- Los API Docs deben generarse automaticamente con Swagger/OpenAPI para todos los endpoints
+- El ARCHITECTURE.md debe incluir diagramas de arquitectura, decisiones de diseno y dependencias
+- El CHANGELOG debe incluir registro cronologico de cambios relevantes en cada version
+- Los README de cada microservicio deben describir las API, variables de entorno y como ejecutar localmente
+
+3. Control de Versiones con Git
+3.1 Ramas
+- main: rama de produccion, solo se aceptan merges aprobados
+- develop: rama de integracion, todos los features se mergean aqui
+- feature/nombre: rama para desarrollo de nueva funcionalidad
+- hotfix/nombre: rama para correcciones urgentes en produccion
+- release/nombre: rama para preparacion de release
+
+3.2 Commits
+- Mensajes de commit deben ser descriptivos y seguir el formato conventional commits
+- Ejemplo: feat: agregar sistema de autenticacion OAuth2
+- Ejemplo: fix: corregir error en calculo de impuestos
+- Ejemplo: docs: actualizar README con instrucciones de instalacion
+
+3.3 Pull Requests
+- Todo codigo debe pasar por Pull Request, no se aceptan pushes directos a main o develop
+- El PR debe tener descripcion clara del cambio y referencias a tickets de Jira
+- Los checks de CI deben pasar antes de merge
+- Al menos una aprobacion de reviewer es obligatoria
+
+4. Pruebas
+4.1 Tipos de Pruebas
+- Unitarias: Pruebas de unidades individuales de codigo
+- Integracion: Pruebas de interaccion entre componentes
+- E2E: Pruebas de flujo completo de usuario
+- Performance: Pruebas de carga y estres
+
+4.2 Cobertura
+- Cobertura minima de codigo: 80%
+- Cobertura de rama critica: 90%
+- Pruebas de seguridad obligatorias para endpoints publicos
+
+4.3 Frameworks
+- xUnit para proyectos .NET
+- Jest para proyectos JavaScript/TypeScript
+- pytest para proyectos Python
+- Postman para pruebas de API
+
+5. Seguridad
+5.1 Principios de Seguridad
+- No confiar en la entrada del usuario: siempre validar y sanitizar datos de entrada
+- Principio de minimo privilegio: cada componente solo debe tener los permisos necesarios
+- Defensa en profundidad: implementar multiples capas de proteccion
+- Seguridad por diseno: considerar amenazas desde la fase de diseno
+
+5.2 Practicas Obligatorias
+- Nunca almacenar contrasenas en texto plano. Usar bcrypt o Argon2
+- Utilizar parametrizacion en consultas SQL para prevenir inyeccion SQL
+- Implementar HTTPS en todos los endpoints de la API
+- Usar CORS configurado restrictivamente, no permitir origenes wildcard
+- Las llaves secretas y tokens deben almacenarse en variables de entorno o gestores de secretos como Azure Key Vault
+- Realizar analisis de dependencias para detectar vulnerabilidades conocidas (OWASP Dependency Check)
+
+5.3 Revision de Seguridad
+- Cada sprint incluye una revision de seguridad del codigo nuevo
+- Se realizan pruebas de penetracion trimestrales por el equipo de seguridad
+- Los hallazgos se documentan en Jira con prioridad asignada segun CVSS
+
+6. Despliegue y CI/CD
+6.1 Pipeline de CI/CD
+- Fase 1: Compilacion automatica al detectar cambios en la rama develop
+- Fase 2: Ejecucion de pruebas unitarias y de integracion
+- Fase 3: Analisis estatico con SonarQube y verificacion de cobertura minima
+- Fase 4: Build del artefacto Docker y push al registro de containers
+- Fase 5: Despliegue automatico a staging para validacion manual
+- Fase 6: Promocion a produccion con aprobacion del tech lead
+
+6.2 Entornos
+- Desarrollo: Maquina local del desarrollador con datos simulados
+- Staging: Replica exacta de produccion con datos de prueba anonimizados
+- Produccion: Entorno final con datos reales y alta disponibilidad
+
+6.3 Rollback
+- Todo despliegue debe poder revertirse en menos de 5 minutos
+- Se mantienen las ultimas 3 versiones de cada servicio como respaldo
+- En caso de incidente critico, el tech lead puede activar rollback inmediato sin aprobacion adicional
+
+7. Documentacion Tecnica
+7.1 Tipos de Documentacion
+- README: Descripcion del proyecto, instrucciones de instalacion y uso basico
+- API Docs: Generadas automaticamente con Swagger/OpenAPI para todos los endpoints
+- ARCHITECTURE.md: Diagramas de arquitectura, decisiones de diseno y dependencias
+- CHANGELOG: Registro cronologico de cambios relevantes en cada version
+- README de cada microservicio: Descripcion, endpoints, variables de entorno y como ejecutar localmente
+
+7.2 Estandares de Documentacion
+- Toda API REST debe tener documentacion Swagger actualizada
+- Los diagramas de arquitectura deben mantenerse en formato Mermaid o PlantUML
+- La documentacion se almacena en el repositorio del proyecto en una carpeta docs/
+- Los diagramas de secuencia deben cubrir los flujos criticos del negocio
+
+7.3 Responsabilidades
+- Cada desarrollador es responsable de documentar el codigo que escribe
+- Los tech leads revisan la documentacion como parte del proceso de merge
+- El equipo de arquitectura mantiene los diagramas de alto nivel actualizados trimestralmente
+
+8. Gestion de Dependencias
+8.1 Politica de Dependencias
+- Solo se permiten dependencias aprobadas por el comite tecnico
+- Todas las dependencias deben tener licencia compatible (MIT, Apache 2.0, BSD)
+- Se prefiere usar la menor cantidad de dependencias posible (principio de minimalismo)
+- Cada nueva dependencia debe ser justificada y documentada en el ADR (Architecture Decision Record)
+
+8.2 Actualizacion
+- Dependabot crea PRs automaticos para actualizaciones de seguridad cada semana
+- Las actualizaciones menores se revisan y mergean dentro de 5 dias habiles
+- Las actualizaciones mayores requieren pruebas de regresion completas antes de merge
+- Se realiza un audit de dependencias el primer lunes de cada mes
+
+8.3 Herramientas
+- NuGet para proyectos .NET con audit habilitado
+- npm audit y Snyk para proyectos JavaScript/TypeScript
+- pip-audit para proyectos Python
+- OWASP Dependency-Check como herramienta unificada de escaneo
+
+9. Metodologia Agil - Scrum
+9.1 Ceremonias Obligatorias
+- Sprint Planning (inicio del sprint): Definicion del objetivo y seleccion de historias de usuario
+- Daily Standup (diario): Sincronizacion de 15 minutos por equipo
+- Sprint Review (fin del sprint): Demostracion del incremento a stakeholders
+- Sprint Retrospective: Evaluacion del proceso y definicion de mejoras
+
+9.2 Duracion de Sprints
+- Cada sprint tiene una duracion fija de 2 semanas
+- Los sprints comienzan los lunes y terminan los viernes
+- No se deben extender sprints ni fusionar historias de usuario entre sprints
+
+9.3 Roles
+- Product Owner: Prioriza el backlog y representa las necesidades del negocio
+- Scrum Master: Facilita el proceso y elimina impedimentos
+- Development Team: Equipo auto-organizado de 5 a 9 personas
+
+9.4 Metricas
+- Velocidad del equipo: Historias de usuario completadas por sprint
+- Lead Time: Tiempo desde que se crea una historia hasta que se despliega
+- Bug Escape Rate: Numero de defectos que llegan a produccion
+- Sprint Goal Achievement: Porcentaje de sprints donde se alcanza el objetivo
+
+10. Preguntas Frecuentes
+P: Que pasa si un desarrollador no esta de acuerdo con una decision tecnica?
+R: Debe expresar su opinion durante la revision de diseno. Si despues de la discusion la decision se mantiene, debe acatarla y documentar las razones en el ADR correspondiente.
+
+P: Puedo usar un framework que no esta en la lista de aprobados?
+R: No directamente. Debes presentar una propuesta formal al comite tecnico con justificacion tecnica, benchmarks y analisis de riesgos. El comite evaluara en su proxima reunion mensual.
+
+P: Cual es el tiempo maximo permitido para resolver un bug critico en produccion?
+R: Los bugs criticos (servicio completamente caido o fuga de datos) deben resolverse en un plazo maximo de 4 horas. Los bugs altos tienen un SLA de 24 horas.
+
+P: Se permite trabajar de forma remota?
+R: Si, el trabajo remoto esta permitido hasta 3 dias por semana. Los martes y jueves son presenciales obligatorios para reuniones de equipo. Los desarrolladores senior pueden negociar condiciones adicionales con su manager.
+
+P: Que herramientas de comunicacion se usan internamente?
+R: Slack para comunicacion diaria, Microsoft Teams para reuniones, Jira para gestion de proyectos, Confluence para documentacion y GitHub para codigo fuente.
+
+P: Como se maneja la capacitacion continua del equipo?
+R: Cada desarrollador tiene un presupuesto anual de 500 USD para cursos, certificaciones y conferencias. Ademas, se realizan tech talks internas cada viernes por la tarde donde un miembro del equipo presenta un tema tecnico.
+
+11. Informacion de Contacto
+Para consultas, sugerencias o reportes relacionados con esta guia de desarrollo, contactar al equipo de Ingenieria de Software:
+Correo electronico: ingenieria@techcorp.com
+Canal de Slack: #dev-guidelines
+Telefono interno: ext. 7890
+Horario de atencion: Lunes a Viernes de 9:00 a 18:00
+Para emergencias tecnicas fuera de horario: +52 55 9876 5432
+Director de Ingenieria: Arq. Roberto Martinez
+Correo directo: roberto.martinez@techcorp.com

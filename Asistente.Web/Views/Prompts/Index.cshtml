@@ -1,0 +1,134 @@
+@model IEnumerable<Asistente.Shared.PromptSistemaDto>
+@{
+    ViewData["Title"] = "Prompts del Sistema";
+    var asistentes = ViewBag.Asistentes as IEnumerable<Asistente.Shared.AsistenteDto> ?? new List<Asistente.Shared.AsistenteDto>();
+    var asistenteSel = ViewBag.AsistenteSeleccionado as Asistente.Shared.AsistenteDto;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-file-text me-2" style="color:#818cf8;"></i>Prompts del Sistema</h4>
+        <p class="text-secondary small mb-0">@(asistenteSel != null ? $"Prompts para: {asistenteSel.Nombre}" : "Gestión de prompts del sistema")</p>
+    </div>
+    <a asp-action="Crear" asp-route-asistenteId="@(asistenteSel?.IdAsistente)" class="btn btn-sm px-4 py-2 fw-semibold"
+       style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+        <i class="bi bi-plus-lg me-1"></i> Nuevo Prompt
+    </a>
+</div>
+
+<div class="card border-0 mb-4" style="background:rgba(30,41,59,0.5);border-radius:12px;border:1px solid rgba(255,255,255,0.05);">
+    <div class="card-body py-3 px-4">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="text-secondary small mb-1">Filtrar por asistente</label>
+                <select name="asistenteId" class="form-select" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;min-width:220px;"
+                        onchange="this.form.submit()">
+                    <option value="">Todos los asistentes</option>
+                    @foreach (var a in asistentes)
+                    {
+                        <option value="@a.IdAsistente" selected="@(asistenteSel?.IdAsistente == a.IdAsistente)">@a.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="col-auto">
+                <a asp-action="Index" class="btn btn-sm" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">Limpiar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Nombre</th>
+                        <th class="text-secondary fw-normal py-3">Asistente</th>
+                        <th class="text-secondary fw-normal py-3">Versión</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3">Creado</th>
+                        <th class="text-secondary fw-normal py-3">Creado por</th>
+                        <th class="text-secondary fw-normal py-3 text-end px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3 fw-semibold text-white">@p.Nombre</td>
+                            <td class="text-secondary small">@(p.AsistenteNombre ?? "—")</td>
+                            <td><span class="badge" style="background:rgba(99,102,241,0.2);color:#818cf8;border:1px solid rgba(99,102,241,0.3);border-radius:20px;font-size:0.72rem;">v@p.Version</span></td>
+                            <td>
+                                @if (p.Activo)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>Activo
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8;border:1px solid rgba(100,116,139,0.25);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>Inactivo
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-secondary small">@p.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="text-secondary small">@p.UsuarioCreacion</td>
+                            <td class="text-end px-4">
+                                <div class="d-flex gap-1 justify-content-end">
+                                    <a asp-action="Editar" asp-route-id="@p.IdPrompt"
+                                       class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:8px;" title="Editar">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a asp-action="Historial" asp-route-id="@p.IdPrompt"
+                                       class="btn btn-sm" style="background:rgba(251,191,36,0.15);color:#fcd34d;border:1px solid rgba(251,191,36,0.2);border-radius:8px;" title="Historial">
+                                        <i class="bi bi-clock-history"></i>
+                                    </a>
+                                    <form asp-action="Duplicar" asp-route-id="@p.IdPrompt" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="btn btn-sm"
+                                                style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2);border-radius:8px;" title="Duplicar">
+                                            <i class="bi bi-copy"></i>
+                                        </button>
+                                    </form>
+                                    @if (!p.Activo)
+                                    {
+                                        <form asp-action="Activar" asp-route-id="@p.IdPrompt" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2);border-radius:8px;" title="Activar">
+                                                <i class="bi bi-toggle-on"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                    <form asp-action="Eliminar" asp-route-id="@p.IdPrompt" method="post" class="d-inline"
+                                          onsubmit="return confirm('¿Eliminar el prompt @p.Nombre? Esta acción no se puede deshacer.')">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="btn btn-sm"
+                                                style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.2);border-radius:8px;" title="Eliminar">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="7" class="text-center text-secondary py-5">
+                                <i class="bi bi-file-text fs-1 d-block mb-2 opacity-25"></i>
+                                No hay prompts registrados.
+                                @if (asistentes.Any(a => a.Activo))
+                                {
+                                    <a asp-action="Crear" class="text-decoration-none d-block mt-2" style="color:#818cf8;">Crear el primer prompt</a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

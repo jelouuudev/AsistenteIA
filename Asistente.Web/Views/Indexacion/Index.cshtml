@@ -1,0 +1,187 @@
+@model IEnumerable<Asistente.Shared.DocumentoIndexadoDto>
+@{
+    ViewData["Title"] = "Indexación";
+    var dashboard = ViewBag.Dashboard as Asistente.Shared.DashboardIndexacionDto;
+    var estadoFiltro = ViewBag.EstadoFiltro as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-database me-2" style="color:#818cf8;"></i>Indexación de Documentos</h4>
+        <p class="text-secondary small mb-0">Gestión de vectores y embeddings en ChromaDB</p>
+    </div>
+    <form asp-action="ReindexarTodos" method="post" class="d-inline">
+        @Html.AntiForgeryToken()
+        <button type="submit" class="btn btn-sm px-4 py-2 fw-semibold"
+                style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);"
+                onclick="return confirm('¿Reindexar todos los documentos?')">
+            <i class="bi bi-arrow-repeat me-1"></i> Reindexar Todos
+        </button>
+    </form>
+</div>
+
+@if (dashboard != null)
+{
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0" style="background:rgba(99,102,241,0.15);border-radius:16px;border:1px solid rgba(99,102,241,0.2);">
+                <div class="card-body text-center py-4">
+                    <div class="fs-1 fw-bold" style="color:#818cf8;">@dashboard.TotalDocumentosIndexados</div>
+                    <div class="text-secondary small">Documentos Indexados</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0" style="background:rgba(16,185,129,0.15);border-radius:16px;border:1px solid rgba(16,185,129,0.2);">
+                <div class="card-body text-center py-4">
+                    <div class="fs-1 fw-bold" style="color:#6ee7b7;">@dashboard.TotalChunksIndexados</div>
+                    <div class="text-secondary small">Chunks Indexados</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0" style="background:rgba(251,191,36,0.15);border-radius:16px;border:1px solid rgba(251,191,36,0.2);">
+                <div class="card-body text-center py-4">
+                    <div class="fs-1 fw-bold" style="color:#fcd34d;">@dashboard.PendientesIndexacion</div>
+                    <div class="text-secondary small">Pendientes</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0" style="background:rgba(168,85,247,0.15);border-radius:16px;border:1px solid rgba(168,85,247,0.2);">
+                <div class="card-body text-center py-4">
+                    <div class="fs-1 fw-bold" style="color:#c084fc;">@dashboard.TotalEmbeddings</div>
+                    <div class="text-secondary small">Total Embeddings</div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card border-0 mb-3" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-3">
+        <div class="d-flex gap-2 flex-wrap">
+            <a asp-action="Index" class="btn btn-sm @(string.IsNullOrEmpty(estadoFiltro) ? "btn-primary" : "")"
+               style="border-radius:8px;@(string.IsNullOrEmpty(estadoFiltro) ? "background:linear-gradient(135deg,#6366f1,#a855f7);border:none;" : "background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;")">
+                Todos
+            </a>
+            <a asp-action="Index" asp-route-estado="Indexado" class="btn btn-sm @(estadoFiltro == "Indexado" ? "btn-success" : "")"
+               style="border-radius:8px;@(estadoFiltro == "Indexado" ? "background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);" : "background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;")">
+                <i class="bi bi-check-circle me-1"></i>Indexados
+            </a>
+            <a asp-action="Index" asp-route-estado="Pendiente" class="btn btn-sm @(estadoFiltro == "Pendiente" ? "btn-warning" : "")"
+               style="border-radius:8px;@(estadoFiltro == "Pendiente" ? "background:rgba(251,191,36,0.2);color:#fcd34d;border:1px solid rgba(251,191,36,0.3);" : "background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;")">
+                <i class="bi bi-clock me-1"></i>Pendientes
+            </a>
+            <a asp-action="Index" asp-route-estado="Error" class="btn btn-sm @(estadoFiltro == "Error" ? "btn-danger" : "")"
+               style="border-radius:8px;@(estadoFiltro == "Error" ? "background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);" : "background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;")">
+                <i class="bi bi-x-circle me-1"></i>Error
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Documento</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3">Chunks</th>
+                        <th class="text-secondary fw-normal py-3">Embeddings</th>
+                        <th class="text-secondary fw-normal py-3">Fecha</th>
+                        <th class="text-secondary fw-normal py-3 text-end px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var doc in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="d-flex align-items-center justify-content-center rounded-circle"
+                                         style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#a855f7);font-weight:bold;font-size:0.9rem;">
+                                        <i class="bi bi-file-earmark-text"></i>
+                                    </div>
+                                    <div>
+                                        <span class="fw-semibold text-white d-block">@(doc.DocumentoNombre ?? $"Documento #{doc.IdDocumentoIndexado}")</span>
+                                        <small class="text-secondary">ID Procesado: @doc.IdDocumentoProcesado</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                @if (doc.Estado == "Indexado")
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-check-circle me-1"></i>@doc.Estado
+                                    </span>
+                                }
+                                else if (doc.Estado == "Error")
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-x-circle me-1"></i>@doc.Estado
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(251,191,36,0.2);color:#fcd34d;border:1px solid rgba(251,191,36,0.3);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-clock me-1"></i>@doc.Estado
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-center text-secondary">@doc.TotalChunks</td>
+                            <td class="text-center text-secondary">@doc.TotalEmbeddings</td>
+                            <td class="text-secondary small">@doc.FechaIndexacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="text-end px-4">
+                                <div class="d-flex gap-1 justify-content-end">
+                                    @if (doc.Estado != "Indexado")
+                                    {
+                                        <form asp-action="Indexar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="documentoProcesadoId" value="@doc.IdDocumentoProcesado" />
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2);border-radius:8px;" title="Indexar">
+                                                <i class="bi bi-database-add"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="Reindexar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="documentoProcesadoId" value="@doc.IdDocumentoProcesado" />
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:8px;" title="Reindexar">
+                                                <i class="bi bi-arrow-repeat"></i>
+                                            </button>
+                                        </form>
+                                        <form asp-action="EliminarIndice" method="post" class="d-inline"
+                                              onsubmit="return confirm('¿Eliminar índice de este documento?')">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="documentoProcesadoId" value="@doc.IdDocumentoProcesado" />
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.2);border-radius:8px;" title="Eliminar índice">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary py-5">
+                                <i class="bi bi-database fs-1 d-block mb-2 opacity-25"></i>
+                                No hay documentos para indexar.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

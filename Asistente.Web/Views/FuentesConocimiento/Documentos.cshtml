@@ -1,0 +1,98 @@
+@model IEnumerable<Asistente.Shared.DocumentoFuenteDto>
+@{
+    ViewData["Title"] = $"Documentos - {ViewBag.FuenteNombre}";
+}
+
+<div class="mb-4">
+    <a asp-action="Index" class="text-decoration-none" style="color:#818cf8;"><i class="bi bi-arrow-left me-1"></i>Volver a Fuentes</a>
+    <h4 class="text-white fw-bold mt-2"><i class="bi bi-file-earmark-text me-2" style="color:#a855f7;"></i>Documentos de: @ViewBag.FuenteNombre</h4>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border-radius:12px;">
+        @TempData["SuccessMessage"]<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:12px;">
+        @TempData["ErrorMessage"]<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="card border-0 mb-4" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-4">
+        <h6 class="text-white mb-3"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Asignar Documento</h6>
+        <form asp-action="AsignarDocumento" method="post" class="d-flex gap-2 align-items-end">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="idFuente" value="@ViewBag.FuenteId" />
+            <div class="flex-grow-1">
+                <label class="form-label text-secondary small">ID del Documento</label>
+                <input type="number" name="idDocumento" class="form-control" min="1" required
+                       style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;" />
+            </div>
+            <button type="submit" class="btn px-4 py-2 fw-semibold"
+                    style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
+                <i class="bi bi-link-45deg me-1"></i> Asignar
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">ID</th>
+                        <th class="text-secondary fw-normal py-3">Documento</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3 text-end px-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var df in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3 text-secondary">@df.IdDocumento</td>
+                            <td class="text-white fw-semibold">@(df.NombreDocumento ?? "Sin nombre")</td>
+                            <td>
+                                @if (df.Activo)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;padding:4px 10px;">Activo</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:20px;padding:4px 10px;">Inactivo</span>
+                                }
+                            </td>
+                            <td class="text-end px-4">
+                                <form asp-action="DesasignarDocumento" method="post" class="d-inline"
+                                      onsubmit="return confirm('Desasignar este documento?')">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="idFuente" value="@ViewBag.FuenteId" />
+                                    <input type="hidden" name="idDocumento" value="@df.IdDocumento" />
+                                    <button type="submit" class="btn btn-sm"
+                                            style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.2);border-radius:8px;" title="Desasignar">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="4" class="text-center text-secondary py-5">
+                                <i class="bi bi-file-earmark fs-1 d-block mb-2 opacity-25"></i>
+                                No hay documentos asignados a esta fuente.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

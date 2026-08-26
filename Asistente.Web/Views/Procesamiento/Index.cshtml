@@ -1,0 +1,271 @@
+@model IEnumerable<Asistente.Shared.DocumentoProcesadoDto>
+@{
+    ViewData["Title"] = "Motor de Procesamiento Documental";
+    var dashboard = ViewBag.Dashboard as Asistente.Shared.DashboardProcesamientoDto;
+    var estadoFiltro = ViewBag.EstadoFiltro as string;
+}
+
+<style>
+    .proc-card {
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 12px;
+        padding: 1.2rem;
+        transition: all 0.2s;
+    }
+    .proc-card:hover { border-color: rgba(129,140,248,0.3); }
+    .stat-card {
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 12px;
+        padding: 1.2rem;
+        text-align: center;
+    }
+    .stat-card .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .stat-card .stat-label {
+        color: #94a3b8;
+        font-size: 0.85rem;
+        margin-top: 0.3rem;
+    }
+    .badge-estado {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+    .badge-pendiente { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .badge-proceso { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+    .badge-procesado { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+    .badge-error { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+    .filter-btn {
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(255,255,255,0.07);
+        color: #94a3b8;
+        border-radius: 8px;
+        padding: 6px 16px;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+    .filter-btn:hover { color: #fff; border-color: rgba(129,140,248,0.3); }
+    .filter-btn.active { background: rgba(129,140,248,0.15); color: #818cf8; border-color: rgba(129,140,248,0.4); }
+    .table-proc { color: #e2e8f0; }
+    .table-proc th { background: rgba(15,23,42,0.5); color: #94a3b8; font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .table-proc td { border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; font-size: 0.9rem; }
+    .table-proc tr:hover td { background: rgba(129,140,248,0.05); }
+    .btn-action {
+        background: rgba(129,140,248,0.1);
+        border: 1px solid rgba(129,140,248,0.2);
+        color: #818cf8;
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 0.8rem;
+        transition: all 0.2s;
+    }
+    .btn-action:hover { background: rgba(129,140,248,0.2); color: #fff; }
+    .btn-action-reprocess {
+        background: rgba(251,191,36,0.1);
+        border: 1px solid rgba(251,191,36,0.2);
+        color: #fbbf24;
+    }
+    .btn-action-reprocess:hover { background: rgba(251,191,36,0.2); color: #fff; }
+    .page-header { border-bottom: 1px solid rgba(255,255,255,0.07); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+</style>
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1" style="color:#e2e8f0;font-weight:600;">
+            <i class="bi bi-gear-wide-connected me-2" style="color:#818cf8;"></i>Motor de Procesamiento Documental
+        </h4>
+        <small style="color:#64748b;">Monitoreo y gestión del procesamiento de documentos PDF</small>
+    </div>
+    <div class="d-flex gap-2">
+        <form asp-controller="Indexacion" asp-action="ReindexarTodos" method="post" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-action" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);color:#34d399;" onclick="return confirm('¿Indexar todos los documentos procesados en el Vector Store?')">
+                <i class="bi bi-database-add me-1"></i>Indexar Todos
+            </button>
+        </form>
+        <a asp-controller="Documentos" asp-action="Index" class="btn btn-action">
+            <i class="bi bi-file-earmark-text me-1"></i>Ir a Documentos
+        </a>
+    </div>
+</div>
+
+@if (dashboard != null)
+{
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="stat-value" style="color:#818cf8;">@dashboard.TotalDocumentos</div>
+                <div class="stat-label">Total Documentos</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="stat-value" style="color:#fbbf24;">@dashboard.Pendientes</div>
+                <div class="stat-label">Pendientes</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="stat-value" style="color:#34d399;">@dashboard.Procesados</div>
+                <div class="stat-label">Procesados</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="stat-value" style="color:#fca5a5;">@dashboard.ConError</div>
+                <div class="stat-label">Con Error</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-4">
+            <div class="stat-card">
+                <div class="stat-value" style="color:#34d399;font-size:1.5rem;">@dashboard.TotalChunks.ToString("N0")</div>
+                <div class="stat-label">Total Chunks Generados</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4">
+            <div class="stat-card">
+                <div class="stat-value" style="color:#60a5fa;font-size:1.5rem;">@dashboard.TotalCaracteres.ToString("N0")</div>
+                <div class="stat-label">Total Caracteres</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="stat-card">
+                <div class="stat-value" style="color:#c084fc;font-size:1.5rem;">@(dashboard.TotalDocumentos > 0 ? Math.Round((double)dashboard.Procesados / dashboard.TotalDocumentos * 100, 1) : 0)%</div>
+                <div class="stat-label">Tasa de Éxito</div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="d-flex gap-2 mb-3 flex-wrap">
+    <a asp-action="Index" class="filter-btn @(string.IsNullOrEmpty(estadoFiltro) ? "active" : "")">
+        <i class="bi bi-list-ul me-1"></i>Todos
+    </a>
+    <a asp-action="Index" asp-route-estado="Pendiente" class="filter-btn @(estadoFiltro == "Pendiente" ? "active" : "")">
+        <i class="bi bi-clock me-1"></i>Pendientes
+    </a>
+    <a asp-action="Index" asp-route-estado="EnProceso" class="filter-btn @(estadoFiltro == "EnProceso" ? "active" : "")">
+        <i class="bi bi-arrow-repeat me-1"></i>En Proceso
+    </a>
+    <a asp-action="Index" asp-route-estado="Procesado" class="filter-btn @(estadoFiltro == "Procesado" ? "active" : "")">
+        <i class="bi bi-check-circle me-1"></i>Procesados
+    </a>
+    <a asp-action="Index" asp-route-estado="Error" class="filter-btn @(estadoFiltro == "Error" ? "active" : "")">
+        <i class="bi bi-exclamation-triangle me-1"></i>Con Error
+    </a>
+</div>
+
+<div class="proc-card">
+    @if (Model != null && Model.Any())
+    {
+        <div class="table-responsive">
+            <table class="table table-proc mb-0">
+                <thead>
+                    <tr>
+                        <th>Documento</th>
+                        <th>Código</th>
+                        <th>Versión</th>
+                        <th>Estado</th>
+                        <th>Páginas</th>
+                        <th>Chunks</th>
+                        <th>Caracteres</th>
+                        <th>Fecha</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model)
+                    {
+                        <tr>
+                            <td>
+                                <span style="color:#e2e8f0;font-weight:500;">@item.DocumentoNombre</span>
+                            </td>
+                            <td><code style="color:#818cf8;">@item.DocumentoCodigo</code></td>
+                            <td><span style="color:#94a3b8;">v@(item.NumeroVersion)</span></td>
+                            <td>
+                                @switch (item.Estado)
+                                {
+                                    case "Pendiente":
+                                        <span class="badge-estado badge-pendiente">
+                                            <i class="bi bi-clock me-1"></i>Pendiente
+                                        </span>
+                                        break;
+                                    case "EnProceso":
+                                        <span class="badge-estado badge-proceso">
+                                            <i class="bi bi-arrow-repeat me-1"></i>En Proceso
+                                        </span>
+                                        break;
+                                    case "Procesado":
+                                        <span class="badge-estado badge-procesado">
+                                            <i class="bi bi-check-circle me-1"></i>Procesado
+                                        </span>
+                                        break;
+                                    case "Error":
+                                        <span class="badge-estado badge-error">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>Error
+                                        </span>
+                                        break;
+                                }
+                            </td>
+                            <td>@item.TotalPaginas</td>
+                            <td><strong style="color:#34d399;">@item.TotalChunks</strong></td>
+                            <td>@item.TotalCaracteres.ToString("N0")</td>
+                            <td><small style="color:#64748b;">@item.FechaInicio.ToString("dd/MM/yyyy HH:mm")</small></td>
+                            <td class="text-center">
+                                <div class="d-flex gap-1 justify-content-center">
+                                    <a asp-action="Detalle" asp-route-id="@item.IdDocumentoProcesado" class="btn-action" title="Ver detalle">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    @if (item.Estado == "Procesado")
+                                    {
+                                        <form asp-controller="Indexacion" asp-action="Indexar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="documentoProcesadoId" value="@item.IdDocumentoProcesado" />
+                                            <button type="submit" class="btn-action" title="Indexar en Vector Store" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);color:#34d399;" onclick="return confirm('¿Indexar este documento en el Vector Store?')">
+                                                <i class="bi bi-database-add"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                    @if (item.Estado == "Procesado" || item.Estado == "Error")
+                                    {
+                                        <form asp-action="Reprocesar" asp-route-id="@item.IdDocumentoProcesado" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn-action btn-action-reprocess" title="Reprocesar" onclick="return confirm('¿Desea reprocesar este documento?')">
+                                                <i class="bi bi-arrow-clockwise"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="text-center py-5">
+            <i class="bi bi-inbox fs-1" style="color:#475569;"></i>
+            <p class="mt-2" style="color:#64748b;">No hay documentos procesados para mostrar.</p>
+            <p style="color:#475569;font-size:0.85rem;">Los documentos se procesarán automáticamente cuando se registren en el sistema.</p>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        setTimeout(function () {
+            location.reload();
+        }, 60000);
+    </script>
+}

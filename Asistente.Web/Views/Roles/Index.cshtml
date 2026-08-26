@@ -1,0 +1,62 @@
+@model IEnumerable<Asistente.Shared.RolDto>
+@{
+    ViewData["Title"] = "Administración de Roles";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-shield-check me-2" style="color:#818cf8;"></i>Roles</h4>
+        <p class="text-secondary small mb-0">Perfiles de acceso del sistema</p>
+    </div>
+    <a asp-action="Crear" class="btn btn-sm px-4 py-2 fw-semibold"
+       style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+        <i class="bi bi-plus-lg me-1"></i> Nuevo Rol
+    </a>
+</div>
+
+<div class="row g-3">
+    @foreach (var rol in Model)
+    {
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);transition:transform 0.2s,box-shadow 0.2s;"
+                 onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 12px 24px rgba(0,0,0,0.3)'"
+                 onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="d-flex align-items-center justify-content-center rounded-circle"
+                             style="width:48px;height:48px;background:linear-gradient(135deg,#6366f1,#a855f7);">
+                            <i class="bi bi-shield-fill text-white fs-5"></i>
+                        </div>
+                        @if (rol.Activo)
+                        {
+                            <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;font-size:0.72rem;">
+                                Activo
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">
+                                Inactivo
+                            </span>
+                        }
+                    </div>
+                    <h6 class="text-white fw-bold mb-1">@rol.Nombre</h6>
+                    <p class="text-secondary small mb-3" style="min-height:2.5rem;">
+                        @(string.IsNullOrEmpty(rol.Descripcion) ? "Sin descripción." : rol.Descripcion)
+                    </p>
+                    <a asp-action="Editar" asp-route-id="@rol.IdRol" class="btn btn-sm w-100"
+                       style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:8px;">
+                        <i class="bi bi-pencil me-1"></i> Editar
+                    </a>
+                </div>
+            </div>
+        </div>
+    }
+    @if (!Model.Any())
+    {
+        <div class="col-12 text-center py-5 text-secondary">
+            <i class="bi bi-shield-x fs-1 d-block mb-2 opacity-25"></i>
+            No hay roles registrados.
+        </div>
+    }
+</div>

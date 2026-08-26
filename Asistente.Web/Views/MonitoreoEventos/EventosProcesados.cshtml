@@ -1,0 +1,57 @@
+@model IEnumerable<Asistente.Shared.EventoProcesadoDto>
+@{
+    ViewData["Title"] = "Eventos Procesados";
+    var lista = Model.ToList();
+}
+
+<div class="mb-4">
+    <a asp-action="Index" class="text-secondary text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver al panel</a>
+</div>
+
+<h4 class="text-white fw-bold mb-1"><i class="bi bi-list-check me-2" style="color:#818cf8;"></i>Auditoría de Eventos Procesados</h4>
+<p class="text-secondary small">Registro completo de ejecuciones automáticas disparadas por eventos.</p>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Evento</th>
+                        <th class="text-secondary fw-normal py-3">Fecha/Hora</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3">Flujo</th>
+                        <th class="text-secondary fw-normal py-3">Tiempo (ms)</th>
+                        <th class="text-secondary fw-normal py-3">Resultado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in lista)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3 text-white fw-semibold">@e.NombreEvento</td>
+                            <td class="text-secondary small">@e.FechaHora.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>
+                                @if (e.Estado == "Completado")
+                                { <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;">Completado</span> }
+                                else if (e.Estado == "Error")
+                                { <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:20px;">Error</span> }
+                                else if (e.Estado == "Reintentando" || e.Estado == "EnProceso")
+                                { <span class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;border-radius:20px;">@e.Estado</span> }
+                                else
+                                { <span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border-radius:20px;">@e.Estado</span> }
+                            </td>
+                            <td class="text-white-50 small">@(e.NombreWorkflow ?? "—")</td>
+                            <td class="text-secondary small">@e.TiempoProcesamiento</td>
+                            <td class="text-secondary small" style="max-width:300px;">@e.Resultado</td>
+                        </tr>
+                    }
+                    @if (!lista.Any())
+                    {
+                        <tr><td colspan="6" class="text-center text-secondary py-5">Aún no hay eventos procesados.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

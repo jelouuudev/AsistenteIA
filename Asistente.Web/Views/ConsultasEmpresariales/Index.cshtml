@@ -1,0 +1,185 @@
+@model Asistente.Shared.DashboardConsultasDto
+@{
+    ViewData["Title"] = "Motor de Consultas Empresariales";
+    var conexiones = (IEnumerable<Asistente.Shared.ConexionBaseDatosDto>)ViewBag.Conexiones;
+    var plantillas = (IEnumerable<Asistente.Shared.ConsultaPlantillaDto>)ViewBag.Plantillas;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-cpu me-2" style="color:#818cf8;"></i>Motor de Consultas Empresariales</h4>
+        <p class="text-secondary small mb-0">Consulte datos de SQL Server en lenguaje natural y ejecute consultas SQL</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="Historial" class="btn btn-sm px-4 py-2 fw-semibold"
+           style="background:linear-gradient(135deg,#10b981,#059669);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(16,185,129,0.3);">
+            <i class="bi bi-clock-history me-1"></i> Historial
+        </a>
+        <a asp-controller="ConexionesBaseDatos" asp-action="Index" class="btn btn-sm px-4 py-2 fw-semibold"
+           style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+            <i class="bi bi-database me-1"></i> Conexiones
+        </a>
+    </div>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show border-0" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:12px;">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["ConsultaResultado"] != null)
+{
+    <div class="card border-0 mb-4" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:16px;">
+        <div class="card-body p-4">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;">
+                    <i class="bi bi-check-circle-fill me-1"></i>@(TempData["ConsultaTipo"] ?? "Resultado")
+                </span>
+                @if (TempData["ConsultaRegistros"] != null)
+                {
+                    <span class="text-secondary small">@TempData["ConsultaRegistros"] registro(s)</span>
+                }
+            </div>
+            <p class="text-white mb-0">@TempData["ConsultaResultado"]</p>
+            @if (!string.IsNullOrEmpty(TempData["ConsultaSql"] as string))
+            {
+                <pre class="mt-3 mb-0 p-3" style="background:rgba(0,0,0,0.3);border-radius:10px;color:#a5b4fc;font-size:0.85rem;overflow-x:auto;">@TempData["ConsultaSql"]</pre>
+            }
+        </div>
+    </div>
+}
+@if (TempData["ConsultaError"] != null)
+{
+    <div class="alert alert-danger border-0 mb-4" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:12px;">
+        @TempData["ConsultaError"]
+    </div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-2 col-6">
+        <div class="card border-0 text-center h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <h2 class="text-white fw-bold mb-0">@Model.TotalConsultas</h2>
+                <div class="text-secondary small">Consultas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card border-0 text-center h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <h2 class="text-white fw-bold mb-0">@Model.TotalCompletadas</h2>
+                <div class="text-secondary small">Completadas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card border-0 text-center h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <h2 class="text-white fw-bold mb-0">@Model.TotalBloqueadas</h2>
+                <div class="text-secondary small">Bloqueadas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card border-0 text-center h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <h2 class="text-white fw-bold mb-0">@Model.TotalConexionesActivas</h2>
+                <div class="text-secondary small">Conexiones activas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card border-0 text-center h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <h2 class="text-white fw-bold mb-0">@Model.TotalTablasAutorizadas</h2>
+                <div class="text-secondary small">Tablas autorizadas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="card border-0 text-center h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <h2 class="text-white fw-bold mb-0">@Model.TotalPlantillas</h2>
+                <div class="text-secondary small">Plantillas</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-header bg-transparent border-0 pt-3 px-4">
+                <h6 class="text-white fw-semibold mb-0"><i class="bi bi-magic me-2" style="color:#818cf8;"></i>Consulta en lenguaje natural</h6>
+                <p class="text-secondary small mb-0">Ej: "¿Cuántos clientes hay?", "Total de pedidos pendientes"</p>
+            </div>
+            <div class="card-body p-4">
+                <form asp-action="ProcesarPregunta" method="post">
+                    @Html.AntiForgeryToken()
+                    <textarea name="pregunta" class="form-control bg-dark text-white border-secondary mb-3" rows="3"
+                              style="border-radius:10px;" placeholder="Escriba su pregunta sobre los datos de la empresa..."></textarea>
+                    <button type="submit" class="btn w-100 py-2 fw-semibold"
+                            style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+                        <i class="bi bi-search me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-4">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-header bg-transparent border-0 pt-3 px-4">
+                <h6 class="text-white fw-semibold mb-0"><i class="bi bi-terminal me-2" style="color:#10b981;"></i>Ejecutar consulta SQL</h6>
+                <p class="text-secondary small mb-0">Solo consultas SELECT sobre objetos autorizados</p>
+            </div>
+            <div class="card-body p-4">
+                <form asp-action="Ejecutar" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Conexión</label>
+                        <select name="idConexion" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;" required>
+                            @foreach (var c in conexiones)
+                            {
+                                <option value="@c.IdConexion">@c.Nombre</option>
+                            }
+                            @if (!conexiones.Any())
+                            {
+                                <option value="">No hay conexiones activas</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Plantilla (opcional)</label>
+                        <select name="idPlantilla" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;">
+                            <option value="">— Ninguna —</option>
+                            @foreach (var p in plantillas.Where(p => p.Activa))
+                            {
+                                <option value="@p.IdPlantilla">@p.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Consulta SQL</label>
+                        <textarea name="consultaSql" class="form-control bg-dark text-white border-secondary font-monospace" rows="3"
+                                  style="border-radius:10px;font-size:0.85rem;" placeholder="SELECT COUNT(*) FROM [dbo].[Clientes];"></textarea>
+                    </div>
+                    <button type="submit" class="btn w-100 py-2 fw-semibold"
+                            style="background:linear-gradient(135deg,#10b981,#059669);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(16,185,129,0.3);">
+                        <i class="bi bi-play-fill me-1"></i> Ejecutar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

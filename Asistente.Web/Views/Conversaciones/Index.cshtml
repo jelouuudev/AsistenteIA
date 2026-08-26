@@ -1,0 +1,126 @@
+@model IEnumerable<Asistente.Shared.ConversacionListDto>
+@{
+    ViewData["Title"] = "Mis Conversaciones";
+    var searchQuery = ViewBag.SearchQuery as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold" style="background:linear-gradient(90deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+        <i class="bi bi-chat-dots me-2"></i>Mis Conversaciones
+    </h2>
+    <a href="/Chat" class="btn" style="background:linear-gradient(135deg,#6366f1,#a855f7);color:white;border:none;border-radius:10px;">
+        <i class="bi bi-plus-lg"></i> Nueva Conversación
+    </a>
+</div>
+
+<form method="get" action="/Conversaciones" class="mb-4">
+    <div class="input-group">
+        <input type="text" name="q" class="form-control" placeholder="Buscar por título..." value="@searchQuery"
+               style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px 0 0 10px;" />
+        <button class="btn" type="submit" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;">
+            <i class="bi bi-search"></i> Buscar
+        </button>
+        @if (!string.IsNullOrEmpty(searchQuery))
+        {
+            <a href="/Conversaciones" class="btn" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;border-radius:0 10px 10px 0;">
+                <i class="bi bi-x-lg"></i>
+            </a>
+        }
+    </div>
+</form>
+
+@if (!Model.Any())
+{
+    <div class="text-center text-secondary py-5">
+        <i class="bi bi-chat-square-text fs-1 d-block mb-3" style="color:#818cf8;"></i>
+        <h5 class="text-white">No hay conversaciones</h5>
+        <p>Inicie una nueva conversación desde el asistente.</p>
+        <a href="/Chat" class="btn btn-primary mt-2">Ir al Asistente</a>
+    </div>
+}
+else
+{
+    <div class="row">
+        @foreach (var conv in Model)
+        {
+            <div class="col-12 mb-3">
+                <div class="card border-0" style="background:rgba(15,23,42,0.4);border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px;">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <h5 class="mb-0 text-white fw-semibold">
+                                        @(conv.Titulo ?? $"Conversación #{conv.IdConversacion}")
+                                    </h5>
+                                    <span class="badge @(conv.Estado == "Activa" ? "bg-success" : "bg-secondary")" style="font-size:0.7rem;">
+                                        @conv.Estado
+                                    </span>
+                                </div>
+                                <div class="d-flex gap-3 text-secondary small">
+                                    <span><i class="bi bi-calendar3"></i> @conv.FechaInicio.ToString("dd/MM/yyyy HH:mm")</span>
+                                    @if (conv.FechaUltimaActividad.HasValue)
+                                    {
+                                        <span><i class="bi bi-clock-history"></i> @conv.FechaUltimaActividad.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                                    }
+                                    <span><i class="bi bi-chat"></i> @conv.TotalMensajes mensajes</span>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <a href="/Chat?conversacion=@conv.IdConversacion" class="btn btn-sm"
+                                   style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:8px;">
+                                    <i class="bi bi-arrow-right"></i> Continuar
+                                </a>
+                                <button class="btn btn-sm btn-rename" data-id="@conv.IdConversacion" data-titulo="@(conv.Titulo ?? "")"
+                                        style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                @if (conv.Estado == "Activa")
+                                {
+                                    <form method="post" action="/Conversaciones/Archivar" class="d-inline">
+                                        <input type="hidden" name="id" value="@conv.IdConversacion" />
+                                        <button type="submit" class="btn btn-sm"
+                                                style="background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.2);border-radius:8px;"
+                                                onclick="return confirm('¿Archivar esta conversación?')">
+                                            <i class="bi bi-archive"></i>
+                                        </button>
+                                    </form>
+                                }
+                                <form method="post" action="/Conversaciones/Eliminar" class="d-inline">
+                                    <input type="hidden" name="id" value="@conv.IdConversacion" />
+                                    <button type="submit" class="btn btn-sm"
+                                            style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.2);border-radius:8px;"
+                                            onclick="return confirm('¿Eliminar esta conversación? Se eliminará lógicamente.')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@section Scripts {
+    <script>
+        document.querySelectorAll('.btn-rename').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const id = this.dataset.id;
+                const tituloActual = this.dataset.titulo;
+                const nuevoTitulo = prompt('Nuevo título:', tituloActual);
+                if (nuevoTitulo && nuevoTitulo.trim()) {
+                    const form = document.createElement('form');
+                    form.method = 'post';
+                    form.action = '/Conversaciones/Renombrar';
+                    form.innerHTML = `
+                        <input type="hidden" name="id" value="${id}" />
+                        <input type="hidden" name="titulo" value="${nuevoTitulo.trim()}" />
+                    `;
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            });
+        });
+    </script>
+}

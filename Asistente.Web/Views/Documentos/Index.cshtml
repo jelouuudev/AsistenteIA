@@ -1,0 +1,156 @@
+@model IEnumerable<Asistente.Shared.DocumentoDto>
+@{
+    ViewData["Title"] = "Gestión Documental";
+    var filtro = ViewBag.Filtro as Asistente.Shared.FiltroDocumentoRequest ?? new Asistente.Shared.FiltroDocumentoRequest();
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-file-earmark-text me-2" style="color:#818cf8;"></i>Gestor Documental</h4>
+        <p class="text-secondary small mb-0">Administra los documentos de conocimiento del Asistente IA</p>
+    </div>
+    <div class="d-flex gap-2">
+        @if (User.IsInRole("Administrador") || User.IsInRole("Supervisor"))
+        {
+            <a asp-action="AuditoriaCompleta" class="btn btn-sm px-3 py-2 fw-semibold"
+               style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);color:#cbd5e1;border-radius:10px;">
+                <i class="bi bi-journal-text me-1"></i> Auditoría Documental
+            </a>
+        }
+        <a asp-action="Crear" class="btn btn-sm px-4 py-2 fw-semibold"
+           style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+            <i class="bi bi-upload me-1"></i> Subir Documento
+        </a>
+    </div>
+</div>
+
+<!-- Filtros de Búsqueda -->
+<div class="card border-0 mb-4" style="background:rgba(30,41,59,0.4);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.05);">
+    <div class="card-body p-4">
+        <form asp-action="Index" method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label text-secondary small fw-medium">Buscar por Nombre o Código</label>
+                <input type="text" name="Nombre" value="@filtro.Nombre" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                       style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);"
+                       placeholder="Buscar..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label text-secondary small fw-medium">Categoría</label>
+                <select name="IdCategoria" asp-items="ViewBag.Categorias" class="form-select form-select-sm border-0 px-3 py-2 text-white"
+                        style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);">
+                    <option value="">Todas</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label text-secondary small fw-medium">Estado</label>
+                <select name="Estado" asp-items="ViewBag.Estados" class="form-select form-select-sm border-0 px-3 py-2 text-white"
+                        style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label text-secondary small fw-medium">Desde</label>
+                <input type="date" name="FechaDesde" value="@(filtro.FechaDesde?.ToString("yyyy-MM-dd"))" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                       style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label text-secondary small fw-medium">Hasta</label>
+                <input type="date" name="FechaHasta" value="@(filtro.FechaHasta?.ToString("yyyy-MM-dd"))" class="form-control form-control-sm border-0 px-3 py-2 text-white"
+                       style="background:rgba(15,23,42,0.8);border-radius:8px;border:1px solid rgba(255,255,255,0.05);" />
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-sm w-100 py-2 btn-primary border-0 fw-semibold"
+                        style="background:rgba(99,102,241,0.2);color:#818cf8;border:1px solid rgba(99,102,241,0.3);border-radius:8px;">
+                    <i class="bi bi-funnel-fill"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Listado de Documentos -->
+<div class="card border-0 shadow-lg" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead>
+                    <tr style="border-bottom: 2px solid rgba(255,255,255,0.07);color:#94a3b8;font-size:0.85rem;">
+                        <th class="py-3 px-4" style="background:transparent;">Código</th>
+                        <th class="py-3" style="background:transparent;">Nombre</th>
+                        <th class="py-3" style="background:transparent;">Categoría</th>
+                        <th class="py-3 text-center" style="background:transparent;">Versión</th>
+                        <th class="py-3 text-center" style="background:transparent;">Estado</th>
+                        <th class="py-3 text-center" style="background:transparent;">Procesamiento</th>
+                        <th class="py-3" style="background:transparent;">Fecha Registro</th>
+                        <th class="py-3 text-end px-4" style="background:transparent;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var doc in Model)
+                    {
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);transition:background-color 0.2s;">
+                            <td class="py-3 px-4 fw-semibold" style="background:transparent;color:#cbd5e1;font-size:0.88rem;">@doc.Codigo</td>
+                            <td class="py-3" style="background:transparent;">
+                                <div class="fw-bold text-white">@doc.Nombre</div>
+                                <div class="text-secondary small text-truncate" style="max-width:300px;">
+                                    @(string.IsNullOrEmpty(doc.Descripcion) ? "Sin descripción" : doc.Descripcion)
+                                </div>
+                            </td>
+                            <td class="py-3" style="background:transparent;">
+                                <span class="badge" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);color:#94a3b8;font-size:0.75rem;">
+                                    @doc.CategoriaNombre
+                                </span>
+                            </td>
+                            <td class="py-3 text-center text-white-50 font-monospace" style="background:transparent;">v@(doc.VersionActual)</td>
+                            <td class="py-3 text-center" style="background:transparent;">
+                                @switch (doc.Estado)
+                                {
+                                        case "Activo":
+                                        <span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">Activo</span>
+                                        break;
+                                    case "Archivado":
+                                        <span class="badge" style="background:rgba(107,114,128,0.15);color:#9ca3af;border:1px solid rgba(107,114,128,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">Archivado</span>
+                                        break;
+                                    default:
+                                        <span class="badge bg-danger">@doc.Estado</span>
+                                        break;
+                                }
+                            </td>
+                            <td class="py-3 text-center" style="background:transparent;">
+                                @if (doc.PendienteProcesamiento)
+                                {
+                                    <span class="badge" style="background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">
+                                        <i class="bi bi-clock me-1"></i> Pendiente
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 10px;font-size:0.72rem;">
+                                        <i class="bi bi-check-all me-1"></i> Procesado
+                                    </span>
+                                }
+                            </td>
+                            <td class="py-3 text-secondary small" style="background:transparent;">@doc.FechaRegistro.ToLocalTime().ToString("g")</td>
+                            <td class="py-3 text-end px-4" style="background:transparent;">
+                                <a asp-action="Detalle" asp-route-id="@doc.IdDocumento" class="btn btn-sm btn-icon"
+                                   style="background:rgba(129,140,248,0.1);color:#818cf8;border:1px solid rgba(129,140,248,0.15);border-radius:8px;"
+                                   title="Ver Detalle / Historial">
+                                    <i class="bi bi-eye"></i> Detalle
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="8" class="text-center py-5 text-secondary">
+                                <i class="bi bi-file-earmark-x fs-1 d-block mb-2 opacity-25"></i>
+                                No se encontraron documentos que coincidan con la búsqueda.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

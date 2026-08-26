@@ -1,0 +1,162 @@
+@model Asistente.Shared.CrearWorkflowRequest
+@{
+    ViewData["Title"] = "Nuevo Flujo de Trabajo";
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Nuevo Flujo de Trabajo</h4>
+    <p class="text-secondary small mb-0">Defina el proceso y sus pasos secuenciales</p>
+</div>
+
+<form asp-action="Crear" method="post" id="formWorkflow">
+    @Html.AntiForgeryToken()
+    <div class="row g-3">
+        <div class="col-lg-5">
+            <div class="card border-0 mb-3" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+                <div class="card-body">
+                    <h6 class="text-white fw-semibold mb-3"><i class="bi bi-info-circle me-2"></i>Datos del flujo</h6>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Nombre</label>
+                        <input asp-for="Nombre" class="form-control bg-transparent text-white border-secondary" />
+                        <span asp-validation-for="Nombre" class="text-danger small"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Código (único)</label>
+                        <input asp-for="Codigo" class="form-control bg-transparent text-white border-secondary font-monospace" />
+                        <span asp-validation-for="Codigo" class="text-danger small"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Descripción</label>
+                        <textarea asp-for="Descripcion" class="form-control bg-transparent text-white border-secondary" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Frases disparadoras (separadas por ;) para el chat</label>
+                        <input asp-for="Disparadores" class="form-control bg-transparent text-white border-secondary" placeholder="reporte de clientes;generar reporte" />
+                        <div class="form-text text-secondary">El asistente identificará este flujo cuando el mensaje contenga alguna de estas frases.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card border-0" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-white fw-semibold mb-0"><i class="bi bi-list-ol me-2"></i>Pasos del flujo</h6>
+                        <button type="button" class="btn btn-outline-light btn-sm" onclick="agregarPaso()"><i class="bi bi-plus-lg me-1"></i>Paso</button>
+                    </div>
+                    <div id="pasosContainer">
+                        @for (int i = 0; i < Model.Pasos.Count; i++)
+                        {
+                            <div class="paso-card border rounded p-3 mb-2" style="border-color:rgba(255,255,255,0.1);background:rgba(15,23,42,0.4);">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="badge bg-secondary">Paso @(i + 1)</span>
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('.paso-card').remove();reindex();"><i class="bi bi-x"></i></button>
+                                </div>
+                                <input type="hidden" name="Pasos[@i].Orden" value="@(i + 1)" />
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label text-secondary small">Nombre</label>
+                                        <input name="Pasos[@i].Nombre" value="@Model.Pasos[i].Nombre" class="form-control bg-transparent text-white border-secondary form-control-sm" />
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label text-secondary small">Herramienta</label>
+                                        <select name="Pasos[@i].Herramienta" class="form-control bg-transparent text-white border-secondary form-control-sm">
+                                            @foreach (var h in new[] { "SqlQueryTool", "DocumentSearchTool", "ReportTool", "CalculatorTool", "DateTimeTool" })
+                                            {
+                                                <option value="@h" selected="@(Model.Pasos[i].Herramienta == h)">@h</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <label class="form-label text-secondary small">Parámetros (JSON)</label>
+                                    <textarea name="Pasos[@i].Parametros" class="form-control bg-transparent text-white border-secondary form-control-sm font-monospace" rows="2">@Model.Pasos[i].Parametros</textarea>
+                                    <div class="form-text text-secondary">Use <code>{{resultado}}</code> para el resultado del paso anterior.</div>
+                                </div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-4">
+                                        <label class="form-label text-secondary small">Reintentos</label>
+                                        <input name="Pasos[@i].ReintentosMaximos" value="@Model.Pasos[i].ReintentosMaximos" type="number" min="0" max="10" class="form-control bg-transparent text-white border-secondary form-control-sm" />
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label text-secondary small">T. máx. (ms)</label>
+                                        <input name="Pasos[@i].TiempoMaximoMs" value="@Model.Pasos[i].TiempoMaximoMs" type="number" min="1000" step="1000" class="form-control bg-transparent text-white border-secondary form-control-sm" />
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label text-secondary small">Estrategia error</label>
+                                        <select name="Pasos[@i].EstrategiaError" class="form-control bg-transparent text-white border-secondary form-control-sm">
+                                            @foreach (var e in new[] { "Cancelar", "Omitir", "RegistrarIncidencia" })
+                                            {
+                                                <option value="@e" selected="@(Model.Pasos[i].EstrategiaError == e)">@e</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-check mt-2">
+                                    <input class="form-check-input" type="checkbox" name="Pasos[@i].RequiereConfirmacion" value="true" id="conf@(i)" checked="@Model.Pasos[i].RequiereConfirmacion" />
+                                    <label class="form-check-label text-secondary small" for="conf@(i)">Requiere confirmación del usuario</label>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 mt-3">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Guardar flujo</button>
+        <a asp-action="Index" class="btn btn-outline-light">Cancelar</a>
+    </div>
+</form>
+
+@section Scripts {
+<script>
+    function reindex() {
+        document.querySelectorAll('#pasosContainer .paso-card').forEach((card, idx) => {
+            card.querySelector('.badge').textContent = 'Paso ' + (idx + 1);
+            card.querySelectorAll('input,select,textarea').forEach(el => {
+                const campo = el.getAttribute('data-campo')
+                    || (el.name && el.name.includes('.') ? el.name.split('.').pop() : null);
+                if (campo) el.name = 'Pasos[' + idx + '].' + campo;
+            });
+        });
+    }
+    function agregarPaso() {
+        const cont = document.getElementById('pasosContainer');
+        const idx = cont.querySelectorAll('.paso-card').length;
+        const html = `<div class="paso-card border rounded p-3 mb-2" style="border-color:rgba(255,255,255,0.1);background:rgba(15,23,42,0.4);">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="badge bg-secondary">Paso ${idx + 1}</span>
+                <button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('.paso-card').remove();reindex();"><i class="bi bi-x"></i></button>
+            </div>
+            <input type="hidden" data-campo="Orden" value="${idx + 1}" />
+            <div class="row g-2">
+                <div class="col-6"><label class="form-label text-secondary small">Nombre</label><input data-campo="Nombre" class="form-control bg-transparent text-white border-secondary form-control-sm" /></div>
+                <div class="col-6"><label class="form-label text-secondary small">Herramienta</label>
+                    <select data-campo="Herramienta" class="form-control bg-transparent text-white border-secondary form-control-sm">
+                        <option>SqlQueryTool</option><option>DocumentSearchTool</option><option>ReportTool</option><option>CalculatorTool</option><option>DateTimeTool</option>
+                    </select></div>
+            </div>
+            <div class="mt-2"><label class="form-label text-secondary small">Parámetros (JSON)</label>
+                <textarea data-campo="Parametros" class="form-control bg-transparent text-white border-secondary form-control-sm font-monospace" rows="2">{}</textarea>
+                <div class="form-text text-secondary">Use {{resultado}} para el resultado del paso anterior.</div></div>
+            <div class="row g-2 mt-1">
+                <div class="col-4"><label class="form-label text-secondary small">Reintentos</label><input data-campo="ReintentosMaximos" value="1" type="number" min="0" max="10" class="form-control bg-transparent text-white border-secondary form-control-sm" /></div>
+                <div class="col-4"><label class="form-label text-secondary small">T. máx. (ms)</label><input data-campo="TiempoMaximoMs" value="60000" type="number" min="1000" step="1000" class="form-control bg-transparent text-white border-secondary form-control-sm" /></div>
+                <div class="col-4"><label class="form-label text-secondary small">Estrategia error</label>
+                    <select data-campo="EstrategiaError" class="form-control bg-transparent text-white border-secondary form-control-sm">
+                        <option>Cancelar</option><option>Omitir</option><option>RegistrarIncidencia</option></select></div>
+            </div>
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" data-campo="RequiereConfirmacion" value="true" id="conf${idx}" />
+                <label class="form-check-label text-secondary small" for="conf${idx}">Requiere confirmación del usuario</label>
+            </div>
+        </div>`;
+        cont.insertAdjacentHTML('beforeend', html);
+        reindex();
+    }
+    reindex();
+</script>
+}

@@ -1,0 +1,75 @@
+@model Asistente.Shared.CrearHerramientaRequest
+@{
+    ViewData["Title"] = "Nueva Herramienta";
+}
+
+<div class="mb-4">
+    <a asp-action="Index" class="text-decoration-none small mb-2 d-inline-block" style="color:#818cf8;"><i class="bi bi-arrow-left me-1"></i>Volver a Herramientas</a>
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Registrar Nueva Herramienta</h4>
+    <p class="text-secondary small mb-0">Registre una herramienta reutilizable del Motor de Herramientas (Tool Orchestrator)</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <form asp-action="Crear" method="post">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                    <div class="mb-3">
+                        <label asp-for="Nombre" class="form-label text-secondary small">Nombre de la herramienta</label>
+                        <input asp-for="Nombre" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" placeholder="Ej: Búsqueda Documental" />
+                        <span asp-validation-for="Nombre" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Codigo" class="form-label text-secondary small">Código (identificador único)</label>
+                        <input asp-for="Codigo" class="form-control bg-dark text-white border-secondary font-monospace" style="border-radius:10px;" placeholder="Ej: DocumentSearchTool" />
+                        <span asp-validation-for="Codigo" class="text-danger small"></span>
+                        <div class="form-text text-secondary small">Debe coincidir con el nombre de la implementación ITool en el código.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Descripcion" class="form-label text-secondary small">Descripción</label>
+                        <textarea asp-for="Descripcion" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;min-height:80px;" placeholder="Describe qué hace la herramienta"></textarea>
+                        <span asp-validation-for="Descripcion" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Categoria" class="form-label text-secondary small">Categoría</label>
+                        <select asp-for="Categoria" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;">
+                            <option value="ConsultaDocumental">ConsultaDocumental</option>
+                            <option value="ConsultaSQL">ConsultaSQL</option>
+                            <option value="Utilidad">Utilidad</option>
+                            <option value="Reporte">Reporte</option>
+                            <option value="Integracion">Integracion</option>
+                            <option value="Sistema">Sistema</option>
+                        </select>
+                        <span asp-validation-for="Categoria" class="text-danger small"></span>
+                    </div>
+
+                    <div class="form-check form-switch mb-3">
+                        <input asp-for="RequierePermiso" class="form-check-input" type="checkbox" id="chkPermiso" />
+                        <label class="form-check-label text-secondary" for="chkPermiso">Requiere permiso / autorización del asistente</label>
+                    </div>
+
+                    <div class="form-check form-switch mb-4">
+                        <input asp-for="Activa" class="form-check-input" type="checkbox" id="chkActiva" checked />
+                        <label class="form-check-label text-secondary" for="chkActiva">Herramienta activa (disponible para los asistentes)</label>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-sm px-4 py-2 fw-semibold"
+                                style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
+                            <i class="bi bi-save me-1"></i> Guardar Herramienta
+                        </button>
+                        <a asp-action="Index" class="btn btn-sm px-4 py-2" style="background:rgba(148,163,184,0.12);color:#cbd5e1;border:1px solid rgba(148,163,184,0.2);border-radius:10px;">
+                            Cancelar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,101 @@
+@model IEnumerable<Asistente.Shared.AsistenteDto>
+@{
+    ViewData["Title"] = "Dashboard Multiagente";
+    var stats = (ViewBag.Estadisticas as dynamic) ?? new { Total = 0, Publicados = 0, EnPrueba = 0, Borradores = 0, Deshabilitados = 0, Activos = 0, TotalVersiones = 0 };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-grid-1x2 me-2" style="color:#818cf8;"></i>Dashboard Multiagente</h4>
+        <p class="text-secondary small mb-0">Monitoreo de la plataforma de agentes (ETAPA 16)</p>
+    </div>
+    <a asp-action="Index" class="btn btn-sm px-4 py-2 fw-semibold"
+       style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:10px;">
+        <i class="bi bi-list-ul me-1"></i> Ver Agentes
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 p-3 h-100" style="background:rgba(30,41,59,0.6);border-radius:14px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="text-secondary small">Total de agentes</div>
+            <div class="fs-3 fw-bold text-white">@stats.Total</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 p-3 h-100" style="background:rgba(16,185,129,0.12);border-radius:14px;border:1px solid rgba(16,185,129,0.25);">
+            <div class="text-secondary small">Publicados</div>
+            <div class="fs-3 fw-bold" style="color:#6ee7b7;">@stats.Publicados</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 p-3 h-100" style="background:rgba(251,191,36,0.12);border-radius:14px;border:1px solid rgba(251,191,36,0.25);">
+            <div class="text-secondary small">En prueba</div>
+            <div class="fs-3 fw-bold" style="color:#fcd34d;">@stats.EnPrueba</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 p-3 h-100" style="background:rgba(45,212,191,0.12);border-radius:14px;border:1px solid rgba(45,212,191,0.25);">
+            <div class="text-secondary small">Versiones acumuladas</div>
+            <div class="fs-3 fw-bold" style="color:#5eead4;">@stats.TotalVersiones</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 p-3 h-100" style="background:rgba(148,163,184,0.12);border-radius:14px;border:1px solid rgba(148,163,184,0.25);">
+            <div class="text-secondary small">Borradores</div>
+            <div class="fs-3 fw-bold text-white">@stats.Borradores</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 p-3 h-100" style="background:rgba(239,68,68,0.1);border-radius:14px;border:1px solid rgba(239,68,68,0.2);">
+            <div class="text-secondary small">Deshabilitados</div>
+            <div class="fs-3 fw-bold" style="color:#fca5a5;">@stats.Deshabilitados</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 p-3 h-100" style="background:rgba(99,102,241,0.12);border-radius:14px;border:1px solid rgba(99,102,241,0.25);">
+            <div class="text-secondary small">Activos</div>
+            <div class="fs-3 fw-bold" style="color:#a5b4fc;">@stats.Activos</div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Código</th>
+                        <th class="text-secondary fw-normal py-3">Agente</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3">Versión</th>
+                        <th class="text-secondary fw-normal py-3">Fuentes</th>
+                        <th class="text-secondary fw-normal py-3">Herramientas</th>
+                        <th class="text-secondary fw-normal py-3">Workflows</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3"><span class="badge" style="background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.25);border-radius:6px;font-size:0.72rem;font-family:monospace;">@a.Codigo</span></td>
+                            <td class="px-4 py-3 fw-semibold text-white">@a.Nombre</td>
+                            <td>
+                                <span class="badge" style="background:rgba(148,163,184,0.2);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3);border-radius:20px;padding:4px 10px;">@a.Estado</span>
+                            </td>
+                            <td class="text-secondary">v@a.Version</td>
+                            <td class="text-secondary text-center">@(a.Fuentes?.Count ?? 0)</td>
+                            <td class="text-secondary text-center">@(a.Herramientas?.Count ?? 0)</td>
+                            <td class="text-secondary text-center">@(a.Workflows?.Count ?? 0)</td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr><td colspan="7" class="text-center text-secondary py-5">No hay agentes registrados.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

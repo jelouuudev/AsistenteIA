@@ -1,0 +1,23 @@
+@model IEnumerable<Asistente.Shared.PoliticaIADto>
+@{
+    ViewData["Title"] = "Políticas de IA";
+}
+<div class="container-fluid py-4">
+    <h2 class="mb-4"><i class="bi bi-shield-lock me-2"></i>Políticas de IA</h2>
+    <div class="table-responsive">
+        <table class="table table-dark table-striped table-hover">
+            <thead><tr><th>Nombre</th><th>Tipo</th><th>Valor</th><th>Activa</th></tr></thead>
+            <tbody>
+            @foreach (var p in Model)
+            {
+                <tr>
+                    <td>@p.Nombre</td>
+                    <td><span class="badge bg-info">@p.Tipo</span></td>
+                    <td><code>@p.Valor</code></td>
+                    <td>@(p.Activa ? "Sí" : "No")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

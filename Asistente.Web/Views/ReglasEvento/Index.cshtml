@@ -1,0 +1,91 @@
+@model IEnumerable<Asistente.Shared.ReglaEventoDto>
+@{
+    ViewData["Title"] = "Reglas de Automatización";
+    var lista = Model.ToList();
+}
+
+<div class="mb-4">
+    <a asp-controller="EventosEmpresariales" asp-action="Index" class="text-secondary text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver a eventos</a>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-link-45deg me-2" style="color:#818cf8;"></i>Reglas de Automatización</h4>
+        <p class="text-secondary small mb-0">Asocie eventos a flujos de trabajo con prioridad y condiciones</p>
+    </div>
+    <a asp-action="Crear" asp-route-idEvento="0" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Nueva Regla</a>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Evento</th>
+                        <th class="text-secondary fw-normal py-3">Flujo asociado</th>
+                        <th class="text-secondary fw-normal py-3">Condición</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Prioridad</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3 text-end pe-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in lista)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3 text-white fw-semibold">@r.NombreEvento</td>
+                            <td><span class="text-white small">@r.NombreWorkflow</span></td>
+                            <td><span class="font-monospace text-secondary small">@(string.IsNullOrEmpty(r.Condicion) ? "(siempre)" : r.Condicion)</span></td>
+                            <td class="text-center text-secondary">@r.Prioridad</td>
+                            <td>
+                                @if (r.Activa)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;">Activa</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.25);border-radius:20px;">Inactiva</span>
+                                }
+                            </td>
+                            <td class="text-end pe-4">
+                                <div class="d-flex gap-1 justify-content-end flex-wrap">
+                                    @if (r.Activa)
+                                    {
+                                        <form asp-action="Desactivar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@r.IdRegla" />
+                                            <button type="submit" class="btn btn-outline-warning btn-sm py-1 px-2" title="Desactivar"><i class="bi bi-pause-fill"></i></button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="Activar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@r.IdRegla" />
+                                            <button type="submit" class="btn btn-outline-success btn-sm py-1 px-2" title="Activar"><i class="bi bi-play-fill"></i></button>
+                                        </form>
+                                    }
+                                    <form asp-action="Eliminar" method="post" class="d-inline" onsubmit="return confirm('¿Eliminar la regla?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.IdRegla" />
+                                        <button type="submit" class="btn btn-outline-danger btn-sm py-1 px-2" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (!lista.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary py-5">
+                                <i class="bi bi-link-45deg fs-1 d-block mb-2 opacity-25"></i>
+                                Aún no hay reglas de automatización.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,108 @@
+@model IEnumerable<Asistente.Shared.WorkflowEjecucionDto>
+@{
+    ViewData["Title"] = "Monitoreo de Flujos de Trabajo";
+    var workflows = (IEnumerable<Asistente.Shared.WorkflowDto>?)ViewBag.Workflows ?? new List<Asistente.Shared.WorkflowDto>();
+    var lista = Model.ToList();
+    int total = lista.Count;
+    int exitosas = lista.Count(e => e.Estado == "Exitosa");
+    int errores = lista.Count(e => e.Estado == "Error" || e.Estado == "RequiereConfirmacion");
+    double tiempoProm = total > 0 ? lista.Where(e => e.TiempoTotalMs.HasValue).Average(e => (double)e.TiempoTotalMs!.Value) : 0;
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-diagram-3 me-2" style="color:#818cf8;"></i>Monitoreo del Motor de Flujos</h4>
+    <p class="text-secondary small mb-0">Auditoría de ejecuciones de workflows, tiempos y errores</p>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Total ejecuciones</div>
+                <div class="fs-3 fw-bold text-white">@total</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Exitosas</div>
+                <div class="fs-3 fw-bold" style="color:#6ee7b7;">@exitosas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Errores / Pendientes</div>
+                <div class="fs-3 fw-bold" style="color:#fca5a5;">@errores</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Tiempo prom. (ms)</div>
+                <div class="fs-3 fw-bold text-white">@tiempoProm.ToString("F0")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Inicio</th>
+                        <th class="text-secondary fw-normal py-3">Flujo</th>
+                        <th class="text-secondary fw-normal py-3">Usuario</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Tiempo (ms)</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3">Resultado / Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in lista)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3 text-secondary small">@e.FechaInicio.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                            <td class="text-white">@e.NombreWorkflow</td>
+                            <td class="text-secondary small">@e.IdUsuario</td>
+                            <td class="text-center text-secondary">@(e.TiempoTotalMs?.ToString() ?? "-")</td>
+                            <td>
+                                @if (e.Estado == "Exitosa")
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;">Exitosa</span>
+                                }
+                                else if (e.Estado == "RequiereConfirmacion")
+                                {
+                                    <span class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;border:1px solid rgba(251,191,36,0.25);border-radius:20px;">Pendiente conf.</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;">Error</span>
+                                }
+                            </td>
+                            <td class="text-secondary small" style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="@e.ResultadoFinal">@(string.IsNullOrEmpty(e.ResultadoFinal) ? "-" : (e.ResultadoFinal.Length > 120 ? e.ResultadoFinal.Substring(0, 120) + "..." : e.ResultadoFinal))</td>
+                        </tr>
+                    }
+                    @if (!lista.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary py-5">
+                                <i class="bi bi-diagram-3 fs-1 d-block mb-2 opacity-25"></i>
+                                Aún no hay ejecuciones de flujos registradas. Ejecute un workflow desde el chat.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="mt-3">
+    <a asp-controller="Workflows" asp-action="Index" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left me-1"></i>Volver a Flujos</a>
+</div>

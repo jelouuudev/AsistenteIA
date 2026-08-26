@@ -1,0 +1,81 @@
+@model Asistente.Shared.ConfiguracionMemoriaDto
+@{
+    ViewData["Title"] = "Configuración de Memoria";
+}
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="mb-4">
+            <h2 class="fw-bold" style="background:linear-gradient(90deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+                <i class="bi bi-memory me-2"></i>Configuración de Memoria Conversacional
+            </h2>
+            <p class="text-secondary">Configure cómo el sistema gestiona el contexto y la memoria de las conversaciones.</p>
+        </div>
+
+        <form method="post" action="/ConfiguracionMemoria/Guardar">
+            <div class="card border-0 mb-4" style="background:rgba(15,23,42,0.4);border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px;">
+                <div class="card-body p-4">
+                    <h5 class="text-white fw-semibold mb-3"><i class="bi bi-chat-dots me-2" style="color:#818cf8;"></i>Límites de Contexto</h5>
+
+                    <div class="mb-3">
+                        <label class="form-label text-white">Máximo de mensajes enviados al modelo</label>
+                        <input type="number" name="MaximoMensajesContexto" class="form-control" value="@Model.MaximoMensajesContexto" min="1" max="200"
+                               style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;" />
+                        <div class="form-text text-secondary">Cantidad máxima de mensajes recientes que se envían al modelo de IA.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-white">Máximo de tokens permitidos</label>
+                        <input type="number" name="MaximoTokensContexto" class="form-control" value="@Model.MaximoTokensContexto" min="256" max="64000"
+                               style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;" />
+                        <div class="form-text text-secondary">Límite aproximado de tokens para el contexto completo enviado al modelo.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 mb-4" style="background:rgba(15,23,42,0.4);border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px;">
+                <div class="card-body p-4">
+                    <h5 class="text-white fw-semibold mb-3"><i class="bi bi-file-text me-2" style="color:#818cf8;"></i>Resumen Automático</h5>
+
+                    <div class="mb-3">
+                        <label class="form-label text-white">Longitud máxima del resumen (caracteres)</label>
+                        <input type="number" name="LongitudResumen" class="form-control" value="@Model.LongitudResumen" min="50" max="5000"
+                               style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;" />
+                        <div class="form-text text-secondary">Cuando se genera un resumen automático, esta es la longitud máxima en caracteres.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 mb-4" style="background:rgba(15,23,42,0.4);border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px;">
+                <div class="card-body p-4">
+                    <h5 class="text-white fw-semibold mb-3"><i class="bi bi-eye me-2" style="color:#818cf8;"></i>Visualización</h5>
+
+                    <div class="mb-3">
+                        <label class="form-label text-white">Cantidad de conversaciones visibles</label>
+                        <input type="number" name="CantidadConversacionesVisibles" class="form-control" value="@Model.CantidadConversacionesVisibles" min="5" max="200"
+                               style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;" />
+                        <div class="form-text text-secondary">Número máximo de conversaciones que se muestran en el listado.</div>
+                    </div>
+
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="Activo" value="true" @(Model.Activo ? "checked" : "") id="configActivo"
+                               style="background:rgba(99,102,241,0.5);border-color:#6366f1;" />
+                        <label class="form-check-label text-white" for="configActivo">Configuración activa</label>
+                        <div class="form-text text-secondary">Si está desactivada, se usarán valores predeterminados.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn px-4 py-2"
+                        style="background:linear-gradient(135deg,#6366f1,#a855f7);color:white;border:none;border-radius:10px;">
+                    <i class="bi bi-check-lg"></i> Guardar Configuración
+                </button>
+                <a href="/Chat" class="btn px-4 py-2"
+                   style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;border-radius:10px;">
+                    <i class="bi bi-arrow-left"></i> Volver al Chat
+                </a>
+            </div>
+        </form>
+    </div>
+</div>

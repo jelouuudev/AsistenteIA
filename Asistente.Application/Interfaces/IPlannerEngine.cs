@@ -33,6 +33,11 @@ public interface IPlannerEngine
     /// para que el DAG del Planner refleje el progreso real (en vivo o al recargar).</summary>
     Task SincronizarPlanStepsAsync(int idPlan, string idExecution, CancellationToken cancellationToken = default);
 
+    /// <summary>Ejecuta el grafo del Orchestrator con la política de reintentos del Supervisor.
+    /// Corre DENTRO de un scope propio (el llamador debe crearlo). Expuesto para que el
+    /// fire-and-forget de EjecutarPlanAsync lo invoque desde un scope nuevo.</summary>
+    Task EjecutarGrafoConReintentosAsync(int idPlan, int idExecution, AgentRequest request);
+
     /// <summary>Registra un evento en el log de auditoría del plan (Regla 5 / Sección 13).</summary>
     Task RegistrarLogAsync(int idPlan, int? idStep, string evento, string? detalle, CancellationToken cancellationToken = default);
 }

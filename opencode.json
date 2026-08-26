@@ -1,0 +1,8 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instruction": "Answer concisely (1-3 lines max). Cite sources using `file_path:line_number`. Use bullet points for lists. No preamble, no conclusions.",
+  "permission": {
+    "edit": "allow",
+    "bash": "allow"
+  }
+}

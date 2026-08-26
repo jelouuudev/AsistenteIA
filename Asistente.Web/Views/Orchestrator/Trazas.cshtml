@@ -1,0 +1,72 @@
+@{
+    ViewData["Title"] = "Trazas de ejecución";
+}
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-activity me-2" style="color:#818cf8;"></i>Trazas de ejecución #@ViewBag.IdExecution</h4>
+    <p class="text-secondary small mb-0">Recorrido completo de cómo se construyó la respuesta (Regla 6 / Actividad 13)</p>
+</div>
+
+@if (ViewBag.Trazas is object)
+{
+    var t = (System.Text.Json.JsonElement)ViewBag.Trazas;
+    var estadoActual = t.GetProperty("estado").GetString();
+    <div class="card border-0 mb-3" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+        <div class="card-body p-4">
+            <p class="text-white"><strong>Agente principal:</strong> @t.GetProperty("agentePrincipal").GetString()</p>
+            <p class="text-white"><strong>Pregunta:</strong> @t.GetProperty("pregunta").GetString()</p>
+            <p class="text-white"><strong>Estado:</strong> <span class="badge bg-secondary">@t.GetProperty("estado").GetString()</span></p>
+        </div>
+    </div>
+
+    <div class="card border-0 mb-3" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+        <div class="card-body p-4">
+            <h6 class="text-white fw-semibold mb-3">Pasos del Execution Graph</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-dark align-middle">
+                    <thead><tr><th>Orden</th><th>Agente</th><th>Acción</th><th>Estado</th><th>Tiempo</th></tr></thead>
+                    <tbody>
+                    @foreach (var p in t.GetProperty("pasos").EnumerateArray())
+                    {
+                        <tr>
+                            <td>@p.GetProperty("orden").GetInt32()</td>
+                            <td>@p.GetProperty("agente").GetString()</td>
+                            <td>@p.GetProperty("accion").GetString()</td>
+                            <td><span class="badge bg-secondary">@p.GetProperty("estado").GetString()</span></td>
+                            <td>@p.GetProperty("tiempoMs").GetInt64() ms</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+        <div class="card-body p-4">
+            <h6 class="text-white fw-semibold mb-3">Eventos (trace)</h6>
+            <ul class="small text-secondary">
+                @foreach (var ev in t.GetProperty("trazas").EnumerateArray())
+                {
+                    <li><span class="text-info">[@ev.GetProperty("evento").GetString()]</span> @ev.GetProperty("detalle").GetString()</li>
+                }
+            </ul>
+            <h6 class="text-white fw-semibold mt-3">Respuesta final</h6>
+            <div class="border rounded p-3 bg-dark text-white" style="white-space:pre-wrap;">@t.GetProperty("respuestaFinal").GetString()</div>
+        </div>
+    </div>
+
+    @if (estadoActual == "EnProceso")
+    {
+        <div class="alert mt-3 mb-0" style="background:rgba(129,140,248,0.12);border:1px solid rgba(129,140,248,0.4);color:#c7d2fe;border-radius:12px;">
+            <i class="bi bi-arrow-repeat me-2"></i>Orquestación en curso… esta página se actualiza sola cada 10 segundos.
+        </div>
+        <script>
+            setTimeout(function () { location.reload(); }, 10000);
+        </script>
+    }
+}
+else
+{
+    <p class="text-secondary">No se encontraron trazas.</p>
+}
+<a asp-action="Index" class="btn btn-sm btn-outline-light mt-3"><i class="bi bi-arrow-left me-1"></i> Volver</a>

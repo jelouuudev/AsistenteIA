@@ -1,0 +1,104 @@
+@model IEnumerable<Asistente.Shared.EjecucionHerramientaDto>
+@{
+    ViewData["Title"] = "Monitoreo de Herramientas";
+    var herramientas = (IEnumerable<Asistente.Shared.HerramientaDto>?)ViewBag.Herramientas ?? new List<Asistente.Shared.HerramientaDto>();
+    var lista = Model.ToList();
+    int total = lista.Count;
+    int exitosas = lista.Count(e => e.Estado == "Exitosa");
+    int errores = lista.Count(e => e.Estado == "Error" || e.Estado == "Rechazada");
+    double tiempoProm = total > 0 ? lista.Average(e => (double)e.TiempoEjecucion) : 0;
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-activity me-2" style="color:#818cf8;"></i>Monitoreo del Motor de Herramientas</h4>
+    <p class="text-secondary small mb-0">Auditoría de ejecuciones, tiempos y errores</p>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Total ejecuciones</div>
+                <div class="fs-3 fw-bold text-white">@total</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Exitosas</div>
+                <div class="fs-3 fw-bold" style="color:#6ee7b7;">@exitosas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Errores / Rechazadas</div>
+                <div class="fs-3 fw-bold" style="color:#fca5a5;">@errores</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body">
+                <div class="text-secondary small">Tiempo prom. (ms)</div>
+                <div class="fs-3 fw-bold text-white">@tiempoProm.ToString("F0")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Fecha/Hora</th>
+                        <th class="text-secondary fw-normal py-3">Herramienta</th>
+                        <th class="text-secondary fw-normal py-3">Usuario</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Tiempo (ms)</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3">Resultado / Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in lista)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3 text-secondary small">@e.FechaHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                            <td><span class="font-monospace text-white small">@e.CodigoHerramienta</span></td>
+                            <td class="text-secondary small">@e.UsuarioNombre</td>
+                            <td class="text-center text-secondary">@e.TiempoEjecucion</td>
+                            <td>
+                                @if (e.Estado == "Exitosa")
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;">Exitosa</span>
+                                }
+                                else if (e.Estado == "Rechazada")
+                                {
+                                    <span class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;border:1px solid rgba(251,191,36,0.25);border-radius:20px;">Rechazada</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;">Error</span>
+                                }
+                            </td>
+                            <td class="text-secondary small" style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="@e.Resultado">@(e.Resultado.Length > 120 ? e.Resultado.Substring(0, 120) + "..." : e.Resultado)</td>
+                        </tr>
+                    }
+                    @if (!lista.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary py-5">
+                                <i class="bi bi-activity fs-1 d-block mb-2 opacity-25"></i>
+                                Aún no hay ejecuciones registradas. Use una herramienta desde el chat.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

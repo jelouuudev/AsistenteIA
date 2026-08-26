@@ -1,32 +1,94 @@
+@inject Asistente.Web.Services.IApiService ApiService
+@using System.Text.Json
+@using System.Security.Claims
 @{
     ViewData["Title"] = "Asistente IA";
+    var asistentes = System.Array.Empty<Asistente.Shared.AsistenteDto>();
+    var asistentesJson = "[]";
+
+    var userId = int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var uid) ? uid : 1;
+    var ip = Context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+    try
+    {
+        asistentes = (await ApiService.GetAgentesAutorizadosAsync(userId, userId, ip)).Where(a => a.Activo).ToArray();
+        asistentesJson = JsonSerializer.Serialize(asistentes.Select(a => new { a.IdAsistente, a.Nombre, a.MensajeBienvenida }));
+    }
+    catch { }
+
+    var conversacionesJson = ViewBag.ConversacionesJson as string ?? "[]";
+    var conversacionId = Context.Request.Query["conversacion"].FirstOrDefault();
 }
 
 <div class="container-fluid h-100 d-flex flex-column">
-    <div class="row flex-grow-1">
-        <div class="col-12 d-flex flex-column">
-            <div id="chat-container" class="flex-grow-1 overflow-auto mb-3 p-3 border rounded bg-light" style="max-height: 70vh;">
+    <div class="row flex-grow-1 g-0">
+        <!-- Sidebar de conversaciones -->
+        <div class="col-3 d-none d-lg-flex flex-column border-end" style="border-color:rgba(255,255,255,0.07) !important;background:rgba(15,23,42,0.6);">
+            <div class="p-3 border-bottom" style="border-color:rgba(255,255,255,0.07) !important;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0 fw-semibold text-white"><i class="bi bi-clock-history me-1"></i> Conversaciones</h6>
+                    <button id="btn-nueva-conversacion" class="btn btn-sm" title="Nueva conversación"
+                            style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:8px;">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+                <input type="text" id="buscar-conversaciones" class="form-control form-control-sm" placeholder="Buscar..."
+                       style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);border-radius:8px;" />
+            </div>
+            <div id="lista-conversaciones" class="overflow-auto flex-grow-1" style="max-height:calc(100vh - 250px);">
+            </div>
+            <div class="p-2 border-top text-center" style="border-color:rgba(255,255,255,0.07) !important;">
+                <a href="/Conversaciones" class="small text-decoration-none" style="color:#818cf8;">
+                    <i class="bi bi-list-ul"></i> Ver todas
+                </a>
+            </div>
+        </div>
+
+        <!-- Chat principal -->
+        <div class="col-12 col-lg-9 d-flex flex-column">
+            @if (asistentes.Any())
+            {
+                <div class="mb-2 px-2">
+                    <select id="asistente-selector" class="form-select form-select-sm" style="max-width:300px;background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;">
+                        <option value="">Seleccione un asistente...</option>
+                        @foreach (var a in asistentes)
+                        {
+                            <option value="@a.IdAsistente">@a.Nombre</option>
+                        }
+                    </select>
+                    <div class="form-check form-switch mt-2" title="ETAPA 17: el Agent Orchestrator coordina varios agentes para esta solicitud">
+                        <input class="form-check-input" type="checkbox" id="chk-colaboracion" />
+                        <label class="form-check-label text-secondary small" for="chk-colaboracion">Permitir colaboración multi-agente (Orchestrator)</label>
+                    </div>
+                </div>
+            }
+
+            <div id="chat-container" class="flex-grow-1 overflow-auto mb-3 p-3 border rounded" style="max-height: 60vh;background:rgba(15,23,42,0.4);border-color:rgba(255,255,255,0.07) !important;">
                 <div id="mensajes" class="d-flex flex-column">
-                    <div class="text-center text-muted py-5">
-                        <h5>Bienvenido al Asistente Inteligente Empresarial</h5>
-                        <p>Escriba su consulta y presione Enviar para comenzar.</p>
+                    <div class="text-center text-secondary py-5">
+                        <i class="bi bi-robot fs-1 d-block mb-2" style="color:#818cf8;"></i>
+                        <h5 class="text-white">Asistente Inteligente Empresarial</h5>
+                        <p>Seleccione un asistente y escriba su consulta para comenzar.</p>
                     </div>
                 </div>
             </div>
 
             <div id="loading-indicator" class="text-center d-none mb-2">
-                <div class="spinner-border text-primary" role="status">
+                <div class="spinner-border" style="color:#818cf8;" role="status">
                     <span class="visually-hidden">Generando respuesta...</span>
                 </div>
-                <p class="text-muted small">La IA está generando una respuesta...</p>
+                <p class="text-secondary small">La IA está generando una respuesta...</p>
             </div>
 
             <div class="input-group">
-                <input type="text" id="mensaje-input" class="form-control" placeholder="Escriba su mensaje aquí..." autofocus />
-                <button id="btn-enviar" class="btn btn-primary" type="button">
+                <input type="text" id="mensaje-input" class="form-control" placeholder="Escriba su mensaje aquí..." autofocus
+                       style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px 0 0 10px;" />
+                <button id="btn-enviar" class="btn" type="button"
+                        style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;">
                     <i class="bi bi-send"></i> Enviar
                 </button>
-                <button id="btn-limpiar" class="btn btn-outline-secondary" type="button">
+                <button id="btn-limpiar" class="btn" type="button"
+                        style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;border-radius:0 10px 10px 0;">
                     <i class="bi bi-eraser"></i> Limpiar
                 </button>
             </div>
@@ -35,5 +97,10 @@
 </div>
 
 @section Scripts {
-    <script src="~/js/chat.js"></script>
+    <script>
+        const asistentesData = @Html.Raw(asistentesJson);
+        const conversacionesData = @Html.Raw(conversacionesJson);
+        const conversacionInicial = @(conversacionId ?? "null");
+    </script>
+    <script src="~/js/chat.js" asp-append-version="true"></script>
 }

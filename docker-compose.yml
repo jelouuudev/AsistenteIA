@@ -45,7 +45,9 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
-    restart: always
+    restart: "no"
+    # Temporal para demo punto 7: 'restart: always' reiniciaba Ollama solo tras docker stop,
+    # impidiendo demostrar reintentos del Planner (el plan corria con Ollama arriba). Restaurar a 'always'.
     # Nota: en Windows con GPU NVIDIA usar: deploy.resources.reservations.devices
     # Para producción sin GPU, el modelo corre en CPU (más lento).
 
@@ -70,6 +72,8 @@ services:
       - Chroma__Url=${CHROMA_URL:-http://chromadb:8000}
       - JwtSettings__SecretKey=${JWT_SECRET}
       - ApiBaseUrl=http://api:5298
+    volumes:
+      - C:\AsistenteIA_Documentos:/AsistenteIA_Documentos
     restart: always
 
   web:
@@ -86,6 +90,8 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ApiBaseUrl=http://api:5298
       - ApiTimeoutSegundos=600
+    volumes:
+      - C:\AsistenteIA_Documentos:/AsistenteIA_Documentos
     restart: always
 
 volumes:

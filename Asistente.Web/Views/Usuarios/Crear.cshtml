@@ -1,0 +1,84 @@
+@model Asistente.Shared.CrearUsuarioRequest
+@{
+    ViewData["Title"] = "Crear Usuario";
+    var roles = ViewBag.Roles as List<Asistente.Shared.RolDto> ?? new List<Asistente.Shared.RolDto>();
+}
+
+<div class="d-flex align-items-center mb-4">
+    <a asp-action="Index" class="btn btn-sm me-3" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-person-plus me-2" style="color:#818cf8;"></i>Nuevo Usuario</h4>
+        <p class="text-secondary small mb-0">Completa los campos para crear un usuario</p>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card border-0 p-4" style="background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border-radius:20px;border:1px solid rgba(255,255,255,0.07);">
+            <form asp-action="Crear" method="post">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="alert" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:10px;border:none;"></div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Usuario *</label>
+                        <input asp-for="UsuarioNombre" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" placeholder="Ej: jdoe" />
+                        <span asp-validation-for="UsuarioNombre" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Correo electrónico *</label>
+                        <input asp-for="Correo" type="email" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" placeholder="usuario@empresa.com" />
+                        <span asp-validation-for="Correo" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Nombres *</label>
+                        <input asp-for="Nombres" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" placeholder="Ej: Juan" />
+                        <span asp-validation-for="Nombres" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Apellidos *</label>
+                        <input asp-for="Apellidos" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" placeholder="Ej: Pérez" />
+                        <span asp-validation-for="Apellidos" class="text-danger small"></span>
+                    </div>
+                    <div class="col-12">
+                        <label class="text-secondary small mb-1">Contraseña *</label>
+                        <input asp-for="Contrasena" type="password" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" placeholder="Mínimo 6 caracteres" />
+                        <span asp-validation-for="Contrasena" class="text-danger small"></span>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-secondary small mb-2">Roles asignados</label>
+                    <div class="d-flex flex-wrap gap-2 p-3" style="background:rgba(15,23,42,0.4);border-radius:10px;border:1px solid rgba(255,255,255,0.07);">
+                        @foreach (var rol in roles)
+                        {
+                            <div class="form-check form-check-inline m-0">
+                                <input class="form-check-input" type="checkbox" name="selectedRoles" value="@rol.Nombre" id="rol_@rol.IdRol"
+                                       @(Model.Roles?.Contains(rol.Nombre) == true ? "checked" : "") />
+                                <label class="form-check-label" for="rol_@rol.IdRol" style="color:#94a3b8;font-size:0.9rem;">
+                                    @rol.Nombre
+                                </label>
+                            </div>
+                        }
+                        @if (!roles.Any())
+                        {
+                            <span class="text-secondary small">No hay roles disponibles.</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 justify-content-end">
+                    <a asp-action="Index" class="btn px-4" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:10px;">
+                        Cancelar
+                    </a>
+                    <button type="submit" class="btn px-4 fw-semibold"
+                            style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+                        <i class="bi bi-check-lg me-1"></i> Crear Usuario
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

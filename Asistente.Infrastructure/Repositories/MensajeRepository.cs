@@ -27,4 +27,10 @@ public class MensajeRepository : IMensajeRepository
             .OrderBy(m => m.FechaHora)
             .ToListAsync();
     }
+
+    public async Task<int> CountByConversacionIdAsync(int conversacionId)
+    {
+        return await _context.Mensajes
+            .CountAsync(m => m.IdConversacion == conversacionId);
+    }
 }

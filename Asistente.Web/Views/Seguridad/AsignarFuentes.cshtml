@@ -1,0 +1,27 @@
+@model List<Asistente.Shared.FuenteAutorizadaDto>
+@{
+    ViewData["Title"] = "Asignar Fuentes";
+    int idUsuario = (int)ViewBag.IdUsuario;
+}
+<div class="container-fluid py-4">
+    <h2 class="mb-4"><i class="bi bi-book me-2"></i>Asignar Fuentes de Conocimiento al Usuario #@idUsuario</h2>
+    <form method="post" asp-action="AsignarFuentes" asp-route-idUsuario="@idUsuario">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover">
+                <thead><tr><th>#</th><th>Fuente</th><th>Autorizada</th></tr></thead>
+                <tbody>
+                @for (int i = 0; i < Model.Count; i++)
+                {
+                    <tr>
+                        <td>@Html.CheckBoxFor(m => m[i].Autorizada)</td>
+                        <td>@Model[i].Nombre</td>
+                        <td>@Html.HiddenFor(m => m[i].IdFuente) @Html.HiddenFor(m => m[i].Nombre)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Guardar asignaciones</button>
+        <a asp-controller="Usuarios" asp-action="Index" class="btn btn-secondary">Volver</a>
+    </form>
+</div>

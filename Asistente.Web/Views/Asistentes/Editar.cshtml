@@ -1,0 +1,200 @@
+@model Asistente.Shared.ActualizarAsistenteRequest
+@{
+    ViewData["Title"] = "Editar Asistente";
+    var asistenteId = (int)(ViewBag.AsistenteId ?? 0);
+    var asistenteNombre = (string)(ViewBag.AsistenteNombre ?? "");
+}
+
+<div class="d-flex align-items-center mb-4">
+    <a asp-action="Index" class="btn btn-sm me-3" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-pencil-square me-2" style="color:#818cf8;"></i>Editar: @asistenteNombre</h4>
+        <p class="text-secondary small mb-0">Modifique la configuración del asistente</p>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 p-4" style="background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border-radius:20px;border:1px solid rgba(255,255,255,0.07);">
+            <form asp-action="Editar" asp-route-id="@asistenteId" method="post">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="alert" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:10px;border:none;"></div>
+
+                <h6 class="text-white fw-semibold mb-3"><i class="bi bi-info-circle me-2" style="color:#818cf8;"></i>Información básica</h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Nombre *</label>
+                        <input asp-for="Nombre" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                        <span asp-validation-for="Nombre" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Modelo IA *</label>
+                        <input asp-for="ModeloIA" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                    </div>
+                    <div class="col-12">
+                        <label class="text-secondary small mb-1">Descripción</label>
+                        <textarea asp-for="Descripcion" class="form-control" rows="2" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Código *</label>
+                        <input asp-for="Codigo" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                        <span asp-validation-for="Codigo" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Objetivo</label>
+                        <input asp-for="Objetivo" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                    </div>
+                    <div class="col-12">
+                        <label class="text-secondary small mb-1">Prompt del sistema (instrucciones del agente)</label>
+                        <textarea asp-for="PromptSistema" class="form-control" rows="5" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;font-family:monospace;"></textarea>
+                        <small class="text-secondary">Define el comportamiento propio del agente. Tiene prioridad sobre el prompt genérico de la plataforma.</small>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch p-0 d-flex align-items-center gap-3"
+                             style="background:rgba(15,23,42,0.4);border-radius:10px;border:1px solid rgba(255,255,255,0.07);padding:12px 16px !important;">
+                            <input asp-for="Activo" class="form-check-input m-0" type="checkbox" id="activoSwitch" style="width:2.5rem;height:1.3rem;" />
+                            <label class="form-check-label" for="activoSwitch" style="color:#94a3b8;">Asistente activo</label>
+                        </div>
+                    </div>
+                </div>
+
+                <h6 class="text-white fw-semibold mb-3"><i class="bi bi-sliders me-2" style="color:#818cf8;"></i>Configuración de comportamiento</h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <label class="text-secondary small mb-1">Idioma</label>
+                        <select asp-for="Idioma" class="form-select" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;">
+                            <option value="es">Español</option>
+                            <option value="en">Inglés</option>
+                            <option value="pt">Portugués</option>
+                            <option value="fr">Francés</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-secondary small mb-1">Formalidad</label>
+                        <select asp-for="NivelFormalidad" class="form-select" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;">
+                            <option value="profesional">Profesional</option>
+                            <option value="formal">Formal</option>
+                            <option value="casual">Casual</option>
+                            <option value="amigable">Amigable</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-secondary small mb-1">Formato respuesta</label>
+                        <select asp-for="FormatoRespuesta" class="form-select" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;">
+                            <option value="texto">Texto</option>
+                            <option value="markdown">Markdown</option>
+                            <option value="html">HTML</option>
+                            <option value="json">JSON</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Longitud máxima (caracteres)</label>
+                        <input asp-for="LongitudMaximaRespuesta" type="number" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                    </div>
+                    <div class="col-12">
+                        <label class="text-secondary small mb-1">Restricciones</label>
+                        <textarea asp-for="Restricciones" class="form-control" rows="3" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label class="text-secondary small mb-1">Mensaje de bienvenida</label>
+                        <textarea asp-for="MensajeBienvenida" class="form-control" rows="2" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;"></textarea>
+                    </div>
+                </div>
+
+                <h6 class="text-white fw-semibold mb-3"><i class="bi bi-cpu me-2" style="color:#818cf8;"></i>Configuración del modelo IA</h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <label class="text-secondary small mb-1">Temperatura</label>
+                        <input asp-for="Temperatura" type="number" step="0.1" min="0" max="2" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-secondary small mb-1">Máx. tokens</label>
+                        <input asp-for="MaxTokens" type="number" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-secondary small mb-1">Timeout (segundos)</label>
+                        <input asp-for="TimeoutSegundos" type="number" class="form-control" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;" />
+                    </div>
+                </div>
+
+                <h6 class="text-white fw-semibold mb-3"><i class="bi bi-diagram-3 me-2" style="color:#818cf8;"></i>Asignaciones del agente (ETAPA 16)</h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Fuentes de conocimiento (RAG)</label>
+                        <div class="border rounded p-2" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);max-height:160px;overflow:auto;">
+                            @foreach (var f in (ViewBag.Fuentes as IEnumerable<Asistente.Shared.FuenteConocimientoDto>) ?? Enumerable.Empty<Asistente.Shared.FuenteConocimientoDto>())
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="Fuentes" id="fuente-@f.IdFuente" value="@f.IdFuente" checked="@(Model.Fuentes != null && Model.Fuentes.Contains(f.IdFuente))" />
+                                    <label class="form-check-label text-light small" for="fuente-@f.IdFuente">@f.Nombre</label>
+                                </div>
+                            }
+                        </div>
+                        <small class="text-secondary">El agente solo consultará estas fuentes (Regla 2).</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Herramientas</label>
+                        <div class="border rounded p-2" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);max-height:160px;overflow:auto;">
+                            @foreach (var h in (ViewBag.Herramientas as IEnumerable<Asistente.Shared.HerramientaDto>) ?? Enumerable.Empty<Asistente.Shared.HerramientaDto>())
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="Herramientas" id="herr-@h.IdHerramienta" value="@h.IdHerramienta" checked="@(Model.Herramientas != null && Model.Herramientas.Contains(h.IdHerramienta))" />
+                                    <label class="form-check-label text-light small" for="herr-@h.IdHerramienta">@h.Nombre</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Workflows</label>
+                        <div class="border rounded p-2" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);max-height:160px;overflow:auto;">
+                            @foreach (var w in (ViewBag.Workflows as IEnumerable<Asistente.Shared.WorkflowDto>) ?? Enumerable.Empty<Asistente.Shared.WorkflowDto>())
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="Workflows" id="wf-@w.IdWorkflow" value="@w.IdWorkflow" checked="@(Model.Workflows != null && Model.Workflows.Contains(w.IdWorkflow))" />
+                                    <label class="form-check-label text-light small" for="wf-@w.IdWorkflow">@w.Nombre</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-secondary small mb-1">Roles autorizados</label>
+                        <div class="border rounded p-2" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);max-height:160px;overflow:auto;">
+                            @foreach (var r in (ViewBag.Roles as IEnumerable<Asistente.Shared.RolDto>) ?? Enumerable.Empty<Asistente.Shared.RolDto>())
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="Roles" id="rol-@r.IdRol" value="@r.IdRol" checked="@(Model.Roles != null && Model.Roles.Contains(r.IdRol))" />
+                                    <label class="form-check-label text-light small" for="rol-@r.IdRol">@r.Nombre</label>
+                                </div>
+                            }
+                        </div>
+                        <small class="text-secondary">Usuarios con estos roles podrán usar el agente (Regla 1).</small>
+                    </div>
+                    <div class="col-12">
+                        <label class="text-secondary small mb-1">Usuarios autorizados (directos)</label>
+                        <div class="border rounded p-2" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);max-height:160px;overflow:auto;">
+                            @foreach (var u in (ViewBag.Usuarios as IEnumerable<Asistente.Shared.UsuarioDto>) ?? Enumerable.Empty<Asistente.Shared.UsuarioDto>())
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="Usuarios" id="usu-@u.IdUsuario" value="@u.IdUsuario" checked="@(Model.Usuarios != null && Model.Usuarios.Contains(u.IdUsuario))" />
+                                    <label class="form-check-label text-light small" for="usu-@u.IdUsuario">@u.Nombres @u.Apellidos</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 justify-content-end">
+                    <a asp-action="Index" class="btn px-4" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:10px;">
+                        Cancelar
+                    </a>
+                    <button type="submit" class="btn px-4 fw-semibold"
+                            style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+                        <i class="bi bi-check-lg me-1"></i> Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

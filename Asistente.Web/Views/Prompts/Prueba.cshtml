@@ -1,0 +1,132 @@
+@model Asistente.Shared.PruebaAsistenteRequest
+@{
+    ViewData["Title"] = "Probar Asistente";
+    var asistentes = ViewBag.Asistentes as IEnumerable<Asistente.Shared.AsistenteDto> ?? new List<Asistente.Shared.AsistenteDto>();
+    var prompts = ViewBag.Prompts as IEnumerable<Asistente.Shared.PromptSistemaDto> ?? new List<Asistente.Shared.PromptSistemaDto>();
+    var resultado = ViewBag.Resultado as Asistente.Shared.PruebaAsistenteResponse;
+}
+
+<div class="d-flex align-items-center mb-4">
+    <a asp-action="Index" asp-controller="Asistentes" class="btn btn-sm me-3" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-play-circle me-2" style="color:#818cf8;"></i>Panel de Pruebas</h4>
+        <p class="text-secondary small mb-0">Pruebe el comportamiento del asistente antes de ponerlo en producción</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card border-0 p-4" style="background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border-radius:20px;border:1px solid rgba(255,255,255,0.07);">
+            <h6 class="text-white fw-semibold mb-3"><i class="bi bi-gear me-2" style="color:#818cf8;"></i>Configuración de prueba</h6>
+            <form asp-action="Prueba" method="post">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="alert" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:10px;border:none;"></div>
+
+                <div class="mb-3">
+                    <label class="text-secondary small mb-1">Asistente *</label>
+                    <select asp-for="IdAsistente" class="form-select" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;"
+                            onchange="window.location.href='@Url.Action("Prueba")?asistenteId=' + this.value">
+                        <option value="">Seleccione un asistente</option>
+                        @foreach (var a in asistentes)
+                        {
+                            <option value="@a.IdAsistente" selected="@(Model.IdAsistente == a.IdAsistente)">@a.Nombre</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="text-secondary small mb-1">Versión del Prompt</label>
+                    <select asp-for="IdPrompt" class="form-select" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;">
+                        <option value="">Prompt activo (por defecto)</option>
+                        @foreach (var p in prompts)
+                        {
+                            <option value="@p.IdPrompt" selected="@(Model.IdPrompt == p.IdPrompt)">@p.Nombre (v@p.Version) @(p.Activo ? "— Activo" : "")</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="text-secondary small mb-1">Mensaje de prueba *</label>
+                    <textarea asp-for="Mensaje" class="form-control" rows="4"
+                              style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;"
+                              placeholder="Escriba un mensaje para probar el comportamiento del asistente..."></textarea>
+                    <span asp-validation-for="Mensaje" class="text-danger small"></span>
+                </div>
+
+                <button type="submit" class="btn w-100 fw-semibold"
+                        style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);padding:10px;">
+                    <i class="bi bi-send me-1"></i> Probar
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        @if (resultado != null)
+        {
+            <div class="card border-0 p-4 mb-3" style="background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border-radius:20px;border:1px solid rgba(255,255,255,0.07);">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="text-white fw-semibold mb-0"><i class="bi bi-chat-dots me-2" style="color:#818cf8;"></i>Respuesta</h6>
+                    @if (resultado.Exitoso)
+                    {
+                        <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 12px;">
+                            <i class="bi bi-check-circle me-1"></i> @resultado.TiempoRespuestaMs ms
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;padding:4px 12px;">
+                            <i class="bi bi-exclamation-circle me-1"></i> Error
+                        </span>
+                    }
+                </div>
+
+                @if (resultado.Exitoso)
+                {
+                    <div class="p-3 mb-3" style="background:rgba(15,23,42,0.5);border-radius:12px;border:1px solid rgba(255,255,255,0.07);">
+                        <p class="text-white mb-0" style="white-space:pre-wrap;">@resultado.Respuesta</p>
+                    </div>
+
+                    <div>
+                        <h6 class="text-secondary small fw-semibold mb-2">
+                            <i class="bi bi-eye me-1"></i> Prompt generado
+                            <button class="btn btn-sm ms-2" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.2);border-radius:6px;font-size:0.7rem;"
+                                    onclick="togglePrompt()">
+                                <i class="bi bi-eye-slash"></i> Mostrar/Ocultar
+                            </button>
+                        </h6>
+                        <pre id="prompt-generado" class="mb-0 text-secondary small" style="white-space:pre-wrap;max-height:300px;overflow-y:auto;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid rgba(255,255,255,0.05);padding:12px;font-size:0.78rem;line-height:1.4;display:none;">@resultado.PromptGenerado</pre>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:10px;border:none;">
+                        <i class="bi bi-exclamation-triangle me-2"></i> @resultado.Error
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="card border-0 p-5 d-flex align-items-center justify-content-center"
+                 style="background:rgba(30,41,59,0.5);backdrop-filter:blur(12px);border-radius:20px;border:1px solid rgba(255,255,255,0.07);min-height:300px;">
+                <div class="text-center text-secondary">
+                    <i class="bi bi-chat-square-text fs-1 d-block mb-3 opacity-25" style="color:#818cf8;"></i>
+                    <h6 class="text-white">Seleccione un asistente</h6>
+                    <p class="small">Escoja un asistente, escriba un mensaje y presione "Probar" para ver la respuesta aquí.</p>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function togglePrompt() {
+            const el = document.getElementById('prompt-generado');
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+    </script>
+}

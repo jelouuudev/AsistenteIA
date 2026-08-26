@@ -29,24 +29,47 @@ public class OllamaService : IOllamaService
 
     public async Task<string> SendMessageAsync(IEnumerable<Mensaje> historial, CancellationToken cancellationToken = default)
     {
-        var messages = historial.Select(m => new OllamaChatMessage
+        return await SendMessageAsync(historial, null, null, null, null, cancellationToken);
+    }
+
+    public async Task<string> SendMessageAsync(IEnumerable<Mensaje> historial, string? modelOverride = null, string? systemPrompt = null, double? temperature = null, int? maxTokens = null, CancellationToken cancellationToken = default)
+    {
+        var messages = new List<OllamaChatMessage>();
+
+        if (!string.IsNullOrWhiteSpace(systemPrompt))
+        {
+            messages.Add(new OllamaChatMessage
+            {
+                Role = "system",
+                Content = systemPrompt
+            });
+        }
+
+        messages.AddRange(historial.Select(m => new OllamaChatMessage
         {
             Role = m.Rol.ToString().ToLowerInvariant(),
             Content = m.Contenido
-        }).ToList();
+        }));
+
+        var model = modelOverride ?? _config.Modelo;
+
+        var options = new OllamaRequestOptions();
+        options.Temperature = temperature ?? _config.Temperatura;
+        options.NumPredict = maxTokens ?? _config.MaxTokens;
 
         var request = new OllamaChatRequest
         {
-            Model = _config.Modelo,
+            Model = model,
             Messages = messages,
-            Stream = false
+            Stream = false,
+            Options = options
         };
 
         var jsonContent = JsonSerializer.Serialize(request);
         var httpContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         _logger.LogInformation("Enviando mensaje a Ollama. Modelo: {Modelo}, URL: {Url}, Mensajes: {Cantidad}",
-            _config.Modelo, _config.Url, messages.Count);
+            model, _config.Url, messages.Count);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(_config.TimeoutSegundos));
@@ -85,7 +108,14 @@ public class OllamaService : IOllamaService
             if ((int)ex.StatusCode == 404)
             {
                 throw new InvalidOperationException(
-                    $"El modelo '{_config.Modelo}' no está disponible. Ejecute: ollama pull {_config.Modelo}");
+                    $"El modelo '{model}' no está disponible. Ejecute: ollama pull {model}");
+            }
+
+            if ((int)ex.StatusCode == 400)
+            {
+                _logger.LogError(ex, "Ollama rechazó la solicitud (400). El contexto podría ser demasiado grande. Modelo: {Modelo}", model);
+                throw new InvalidOperationException(
+                    "El contexto de la conversación es demasiado grande para el modelo. Intente con una conversación más corta.");
             }
 
             throw new InvalidOperationException($"Error en la comunicación con Ollama: {ex.Message}");
@@ -94,6 +124,23 @@ public class OllamaService : IOllamaService
         {
             _logger.LogError(ex, "Error al deserializar la respuesta de Ollama.");
             throw new InvalidOperationException("Error al procesar la respuesta del modelo de IA.");
+        }
+    }
+
+    public async Task<bool> IsDisponibleAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(3));
+            // Ping liviano al endpoint de Ollama; si no responde en 3s, se considera caído.
+            var response = await _httpClient.GetAsync(_config.Url.TrimEnd('/') + "/api/tags", cts.Token);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Pre-flight Ollama no disponible en {Url}", _config.Url);
+            return false;
         }
     }
 }

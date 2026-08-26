@@ -1,0 +1,85 @@
+@model IEnumerable<Asistente.Shared.ConsultaEjecutadaDto>
+@{
+    ViewData["Title"] = "Historial de Consultas";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-clock-history me-2" style="color:#818cf8;"></i>Historial de Consultas Ejecutadas</h4>
+        <p class="text-secondary small mb-0">Auditoría de las consultas del motor empresarial</p>
+    </div>
+    <a asp-action="Index" class="btn btn-sm px-4 py-2 fw-semibold"
+       style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#cbd5e1;border-radius:10px;">
+        <i class="bi bi-arrow-left me-1"></i> Motor de Consultas
+    </a>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show border-0" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Fecha</th>
+                        <th class="text-secondary fw-normal py-3">Usuario</th>
+                        <th class="text-secondary fw-normal py-3">Conexión</th>
+                        <th class="text-secondary fw-normal py-3">Pregunta</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Registros</th>
+                        <th class="text-secondary fw-normal py-3 text-center">Tiempo (ms)</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3 text-secondary small">@c.FechaHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="text-secondary small">@c.NombreUsuario</td>
+                            <td class="text-secondary small">@c.NombreConexion</td>
+                            <td class="text-white small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">@c.PreguntaUsuario</td>
+                            <td class="text-center text-secondary">@c.CantidadRegistros</td>
+                            <td class="text-center text-secondary">@c.TiempoEjecucion</td>
+                            <td>
+                                @if (c.Estado == "Completada")
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-check-circle me-1"></i>@c.Estado
+                                    </span>
+                                }
+                                else if (c.Estado == "Bloqueada")
+                                {
+                                    <span class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;border:1px solid rgba(251,191,36,0.3);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-shield-exclamation me-1"></i>@c.Estado
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);border-radius:20px;padding:4px 10px;">
+                                        <i class="bi bi-x-circle me-1"></i>@c.Estado
+                                    </span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="7" class="text-center text-secondary py-5">
+                                <i class="bi bi-clock-history fs-1 d-block mb-2 opacity-25"></i>
+                                Aún no se han ejecutado consultas.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
