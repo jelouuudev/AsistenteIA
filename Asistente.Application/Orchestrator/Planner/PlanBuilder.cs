@@ -56,7 +56,7 @@ public class PlanBuilder
         bool quiereRag = Contiene(lowers, "manual", "procedimiento", "política", "normativa", "document", "vacacion", "compar");
         bool quiereReporte = Contiene(lowers, "resumen", "reporte", "informe", "ejecutivo", "pdf", "compar");
         bool quiereRiesgo = Contiene(lowers, "riesgo", "clasif", "moros");
-        bool requiereAprobacion = Contiene(lowers, "eliminar", "borrar", "enviar", "pagar", "desactivar", "elimina");
+        bool requiereAprobacion = Contiene(lowers, "eliminar", "borrar", "enviar", "pagar", "desactivar", "elimina", "publicar", "publica", "aprobar", "autorizar", "ejecutar accion", "desplegar");
 
         // Paso 1: Agente principal analiza/coordina.
         pasos.Add(Paso(ref orden, "Agent", $"Analizar la solicitud y coordinar respuesta", principal.IdAsistente,

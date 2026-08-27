@@ -166,6 +166,17 @@ public class AgentOrchestrator : IAgentOrchestrator
                 // Entre capas se mantiene el orden secuencial del grafo.
                 foreach (var nodo in capa)
                 {
+                    // ETAPA 19: los nodos de aprobación (Human-in-the-Loop) NO se ejecutan aquí;
+                    // los gestiona el ApprovalManager a nivel de Planner. Se marcan Omitido para
+                    // que el grafo conserve la trazabilidad sin invocar al agente.
+                    if (nodo.EsAprobacion)
+                    {
+                        nodo.Estado = "Omitido";
+                        await RegistrarTrazaAsync(execution.IdExecution, "AprobacionOmitida",
+                            $"Paso de aprobación '{nodo.Accion}' omitido en el grafo (gestionado por ApprovalManager).", cancellationToken);
+                        continue;
+                    }
+
                     await _sem.WaitAsync(cancellationToken);
                     try
                     {

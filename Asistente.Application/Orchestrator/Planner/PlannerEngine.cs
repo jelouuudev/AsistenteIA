@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator;
+using Asistente.Application.Aprobaciones;
 using Asistente.Domain.Entities;
+using Asistente.Domain.Entities.Aprobaciones;
 using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +35,7 @@ public class PlannerEngine : IPlannerEngine
     private readonly IAgentExecutionStepRepository _execStepRepo;
     private readonly ILogger<PlannerEngine> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ApprovalManager _approvalManager;
 
     public PlannerEngine(
         PlanBuilder builder,
@@ -48,7 +51,8 @@ public class PlannerEngine : IPlannerEngine
         IAgentExecutionRepository execRepo,
         IAgentExecutionStepRepository execStepRepo,
         ILogger<PlannerEngine> logger,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        ApprovalManager approvalManager)
     {
         _builder = builder;
         _validator = validator;
@@ -64,6 +68,7 @@ public class PlannerEngine : IPlannerEngine
         _execStepRepo = execStepRepo;
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _approvalManager = approvalManager;
     }
 
     public async Task<Plan> GenerarPlanAsync(string objetivo, int idUsuario, CancellationToken ct = default)
@@ -108,9 +113,54 @@ public class PlannerEngine : IPlannerEngine
         if (!validacion.Valido)
             throw new InvalidOperationException("El plan no pasó la validación: " + string.Join("; ", validacion.Errores));
 
-        // Aprobación opcional (Regla de negocio 12): si requiere aprobación y no está aprobado, no ejecuta.
-        if (plan.RequiereAprobacion && !plan.Aprobado)
+        // Aprobación Human-in-the-Loop (ETAPA 19): si el plan tiene pasos de tipo Approval,
+        // se CREA la solicitud, se PAUSA el plan y se ESPERA la decisión del aprobador.
+        // Solo si se aprueba se delega al Orchestrator. Si se rechaza, el ApprovalManager
+        // ya marcó el plan como Cancelado y no se ejecuta.
+        var pasosAprobacion = plan.Pasos.Where(p => p.Tipo == "Approval").ToList();
+        if (pasosAprobacion.Any())
+        {
+            plan.RequiereAprobacion = true;
+            foreach (var paso in pasosAprobacion)
+            {
+                // Aprobadores: el supervisor del agente principal o, por defecto, el usuario admin (1).
+                var aprobadores = new List<int> { 1 }; // admin como aprobador principal por defecto
+                var solicitud = await _approvalManager.CrearSolicitudAsync(
+                    plan.IdPlan,
+                    TipoAprobacion.Manual,
+                    plan.IdUsuario,
+                    $"Paso requerido: {paso.Nombre}",
+                    aprobadores,
+                    ct: ct);
+
+                // Pausar el plan mientras se resuelve la aprobación.
+                plan.Estado = "EnEsperaAprobacion";
+                await _planRepo.UpdateAsync(plan, ct);
+                await RegistrarLogAsync(plan.IdPlan, paso.Orden, "PlanPausadoAprobacion",
+                    $"Plan pausado. Esperando aprobación {solicitud.Codigo}.", ct);
+
+                // Esperar la resolución (timeout generoso: 1h por defecto).
+                var resuelta = await _approvalManager.EsperarResolucionAsync(
+                    solicitud.IdApproval, TimeSpan.FromHours(1), ct);
+
+                if (resuelta.Estado != EstadoAprobacion.Aprobado)
+                {
+                    // Rechazada / expirada / cancelada: el ApprovalManager ya gestionó el plan.
+                    await RegistrarLogAsync(plan.IdPlan, paso.Orden, "PlanNoAprobado",
+                        $"Solicitud {solicitud.Codigo} resolvió como {resuelta.Estado}. Plan no ejecutado.", ct);
+                    return new AgentExecutionResult
+                    {
+                        Estado = "Cancelado",
+                        Exitoso = false,
+                        Error = $"Plan no aprobado: {resuelta.Estado}"
+                    };
+                }
+            }
+        }
+        else if (plan.RequiereAprobacion && !plan.Aprobado)
+        {
             throw new InvalidOperationException("El plan requiere aprobación humana antes de ejecutarse.");
+        }
 
         // Regla 4: la ejecución pasa SIEMPRE por el Orchestrator.
         await _supervisor.IniciarAsync(plan, ct);

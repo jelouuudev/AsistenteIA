@@ -1,5 +1,6 @@
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator;
+using Asistente.Application.Aprobaciones;
 using Asistente.Application.Orchestrator.Planner;
 using Asistente.Application.Services;
 using Asistente.Application.Services.Herramientas;
@@ -67,6 +68,9 @@ public static class DependencyInjection
         services.AddScoped<ExecutionGraphBuilder>();
         services.AddScoped<ExecutionSupervisor>();
         services.AddScoped<IPlannerEngine, PlannerEngine>();
+
+        // Centro de Aprobaciones / Human-in-the-Loop (ETAPA 19)
+        services.AddScoped<ApprovalManager>();
 
         // Motor de Workflows (Workflow Engine) - ETAPA 12
         services.AddScoped<IWorkflowEngine, WorkflowEngine>();

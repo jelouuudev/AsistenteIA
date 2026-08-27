@@ -118,6 +118,12 @@ public static class DependencyInjection
         services.AddScoped<IPlanDependencyRepository, PlanDependencyRepository>();
         services.AddScoped<IPlanExecutionLogRepository, PlanExecutionLogRepository>();
 
+        // Centro de Aprobaciones / Human-in-the-Loop (ETAPA 19)
+        services.AddScoped<IApprovalRequestRepository, ApprovalRequestRepository>();
+        services.AddScoped<IApprovalDecisionRepository, ApprovalDecisionRepository>();
+        services.AddScoped<IApprovalAssigneeRepository, ApprovalAssigneeRepository>();
+        services.AddScoped<IApprovalPolicyRepository, ApprovalPolicyRepository>();
+
         // Workflow Engine (ETAPA 12)
         services.AddScoped<IWorkflowRepository, WorkflowRepository>();
         services.AddScoped<IWorkflowPasoRepository, WorkflowPasoRepository>();

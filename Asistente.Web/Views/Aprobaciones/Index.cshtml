@@ -1,0 +1,80 @@
+@{
+    ViewData["Title"] = "Centro de Aprobaciones";
+}
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-shield-check me-2" style="color:#818cf8;"></i>Centro de Aprobaciones</h4>
+    <p class="text-secondary small mb-0">Human-in-the-Loop (ETAPA 19): las acciones críticas quedan pausadas hasta ser aprobadas por un usuario autorizado.</p>
+</div>
+
+@if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+@if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+@if (ViewBag.Error != null) { <div class="alert alert-warning">@ViewBag.Error</div> }
+
+@{
+    var dash = ViewBag.Dashboard;
+}
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-semibold mb-3">Dashboard de aprobaciones</h6>
+                <div class="row text-center g-2">
+                    <div class="col"><div class="p-3 rounded" style="background:rgba(99,102,241,0.12);"><div class="fs-4 fw-bold text-white">@(dash?.GetProperty("total").GetInt32() ?? 0)</div><div class="small text-secondary">Total</div></div></div>
+                    <div class="col"><div class="p-3 rounded" style="background:rgba(250,204,21,0.12);"><div class="fs-4 fw-bold text-white">@(dash?.GetProperty("pendientes").GetInt32() ?? 0)</div><div class="small text-secondary">Pendientes</div></div></div>
+                    <div class="col"><div class="p-3 rounded" style="background:rgba(34,197,94,0.12);"><div class="fs-4 fw-bold text-white">@(dash?.GetProperty("aprobadas").GetInt32() ?? 0)</div><div class="small text-secondary">Aprobadas</div></div></div>
+                    <div class="col"><div class="p-3 rounded" style="background:rgba(239,68,68,0.12);"><div class="fs-4 fw-bold text-white">@(dash?.GetProperty("rechazadas").GetInt32() ?? 0)</div><div class="small text-secondary">Rechazadas</div></div></div>
+                    <div class="col"><div class="p-3 rounded" style="background:rgba(148,163,184,0.12);"><div class="fs-4 fw-bold text-white">@(dash?.GetProperty("expiradas").GetInt32() ?? 0)</div><div class="small text-secondary">Expiradas</div></div></div>
+                    <div class="col"><div class="p-3 rounded" style="background:rgba(168,85,247,0.12);"><div class="fs-4 fw-bold text-white">@(dash?.GetProperty("delegadas").GetInt32() ?? 0)</div><div class="small text-secondary">Delegadas</div></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card border-0" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+            <div class="card-body p-4">
+                <h6 class="text-white fw-semibold mb-3">Solicitudes recientes</h6>
+                @if (dash != null)
+                {
+                    System.Text.Json.JsonElement solicitudes = default;
+                    bool hay = dash.TryGetProperty("solicitudes", out solicitudes) && solicitudes.ValueKind == System.Text.Json.JsonValueKind.Array && solicitudes.GetArrayLength() > 0;
+                    if (hay)
+                    {
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Código</th><th>Plan</th><th>Tipo</th><th>Estado</th><th>Vence</th><th>Fecha</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in solicitudes.EnumerateArray())
+                                {
+                                    <tr>
+                                        <td class="text-white">@s.GetProperty("codigo").GetString()</td>
+                                        <td>#@s.GetProperty("idPlan").GetInt32()</td>
+                                        <td>@s.GetProperty("tipo").GetString()</td>
+                                        <td><span class="badge" style="background:rgba(99,102,241,0.2);color:#c7d2fe;">@s.GetProperty("estado").GetString()</span></td>
+                                        <td>@(s.GetProperty("fechaVencimiento").ValueKind == System.Text.Json.JsonValueKind.Null ? "—" : s.GetProperty("fechaVencimiento").GetDateTime().ToString("dd/MM HH:mm"))</td>
+                                        <td class="text-secondary">@s.GetProperty("fechaSolicitud").GetDateTime().ToString("dd/MM HH:mm")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    }
+                    else
+                    {
+                        <p class="text-secondary small mb-0">No hay solicitudes de aprobación registradas.</p>
+                    }
+                }
+                <a asp-action="Bandeja" class="btn btn-sm mt-3 px-4 py-2 fw-semibold" style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
+                    <i class="bi bi-inbox me-1"></i> Ir a mi bandeja
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

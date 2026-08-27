@@ -19,6 +19,11 @@ public class ExecutionNode
     public List<int> DependeDe { get; set; } = new(); // ids de nodos previos requeridos
     public int Profundidad { get; set; } = 0;
 
+    /// <summary>True si el nodo representa un paso de aprobación humana (ETAPA 19).
+    /// Estos nodos NO los ejecuta el Orchestrator: los gestiona el ApprovalManager a nivel
+    /// de Planner (Human-in-the-Loop). El Orchestrator los marca Omitido.</summary>
+    public bool EsAprobacion { get; set; }
+
     public string? Resultado { get; set; }
     public string Estado { get; set; } = "Pendiente"; // Pendiente|EnEjecucion|Completado|Error|Omitido
     public string? Error { get; set; }

@@ -61,6 +61,12 @@ public class AsistenteDbContext : DbContext, IUnitOfWork
     public DbSet<PlanDependency> PlanDependencies => Set<PlanDependency>();
     public DbSet<PlanExecutionLog> PlanExecutionLogs => Set<PlanExecutionLog>();
 
+    // Centro de Aprobaciones / Human-in-the-Loop (ETAPA 19)
+    public DbSet<Domain.Entities.Aprobaciones.ApprovalRequest> ApprovalRequests => Set<Domain.Entities.Aprobaciones.ApprovalRequest>();
+    public DbSet<Domain.Entities.Aprobaciones.ApprovalDecision> ApprovalDecisions => Set<Domain.Entities.Aprobaciones.ApprovalDecision>();
+    public DbSet<Domain.Entities.Aprobaciones.ApprovalAssignee> ApprovalAssignees => Set<Domain.Entities.Aprobaciones.ApprovalAssignee>();
+    public DbSet<Domain.Entities.Aprobaciones.ApprovalPolicy> ApprovalPolicies => Set<Domain.Entities.Aprobaciones.ApprovalPolicy>();
+
     // Motor de Workflows (Workflow Engine) - ETAPA 12
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowPaso> WorkflowPasos => Set<WorkflowPaso>();

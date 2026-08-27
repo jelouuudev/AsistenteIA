@@ -1447,4 +1447,19 @@ public class ApiService : IApiService
 
     public async Task<PlanDto> GetPlanAsync(int id, int currentUserId, string ip)
         => await EnviarYLeerAsync<PlanDto>(CrearRequest(HttpMethod.Get, $"/api/planner/{id}", null, currentUserId, ip));
+
+    // Centro de Aprobaciones / Human-in-the-Loop (ETAPA 19)
+    public async Task<JsonElement> GetAprobacionesDashboardAsync(int currentUserId, string ip)
+        => await EnviarYLeerAsync<JsonElement>(CrearRequest(HttpMethod.Get, "/api/aprobaciones/dashboard", null, currentUserId, ip));
+
+    public async Task<JsonElement> GetBandejaAprobacionesAsync(int currentUserId, string ip)
+        => await EnviarYLeerAsync<JsonElement>(CrearRequest(HttpMethod.Get, "/api/aprobaciones/bandeja", null, currentUserId, ip));
+
+    public async Task<JsonElement> DecidirAprobacionAsync(int id, string decision, string? comentario, int currentUserId, string ip)
+        => await EnviarYLeerAsync<JsonElement>(CrearRequest(HttpMethod.Post, $"/api/aprobaciones/{id}/decidir",
+            new { decision, comentario }, currentUserId, ip));
+
+    public async Task<JsonElement> DelegarAprobacionAsync(int id, int idUsuarioDestino, string? comentario, int currentUserId, string ip)
+        => await EnviarYLeerAsync<JsonElement>(CrearRequest(HttpMethod.Post, $"/api/aprobaciones/{id}/delegar",
+            new { idUsuarioDestino, comentario }, currentUserId, ip));
 }

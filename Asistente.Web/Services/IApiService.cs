@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Asistente.Shared;
 
@@ -265,4 +266,10 @@ public interface IApiService
     Task CancelarPlanAsync(int id, int currentUserId, string ip);
     Task<PlannerDashboardDto> GetPlannerDashboardAsync(int currentUserId, string ip);
     Task<PlanDto> GetPlanAsync(int id, int currentUserId, string ip);
+
+    // Centro de Aprobaciones / Human-in-the-Loop (ETAPA 19)
+    Task<JsonElement> GetAprobacionesDashboardAsync(int currentUserId, string ip);
+    Task<JsonElement> GetBandejaAprobacionesAsync(int currentUserId, string ip);
+    Task<JsonElement> DecidirAprobacionAsync(int id, string decision, string? comentario, int currentUserId, string ip);
+    Task<JsonElement> DelegarAprobacionAsync(int id, int idUsuarioDestino, string? comentario, int currentUserId, string ip);
 }

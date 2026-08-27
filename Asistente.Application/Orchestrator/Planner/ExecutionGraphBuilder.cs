@@ -34,7 +34,8 @@ public class ExecutionGraphBuilder
                 Accion = $"{paso.Tipo}: {paso.Nombre}",
                 PreguntaAsignada = paso.Descripcion ?? paso.Nombre,
                 DependeDe = dependeDe,
-                Estado = "Pendiente"
+                Estado = "Pendiente",
+                EsAprobacion = paso.Tipo == "Approval"
             });
         }
 
