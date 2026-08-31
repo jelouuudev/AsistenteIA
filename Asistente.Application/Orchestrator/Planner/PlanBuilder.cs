@@ -52,15 +52,15 @@ public class PlanBuilder
         var orden = 0;
 
         // Detecta intenciones y genera pasos con tipo/agente/herramienta apropiados.
-        bool quiereSql = Contiene(lowers, "venta", "dato", "cliente", "sql", "consulta", "kpi", "indicador", "moros", "riesgo");
+        bool quiereSql = Contiene(lowers, "venta", "dato", "cliente", "sql", "consulta", "kpi", "indicador", "moros", "riesgo", "activo", "activos", "activofijo", "fijo");
         bool quiereRag = Contiene(lowers, "manual", "procedimiento", "política", "normativa", "document", "vacacion", "compar");
         bool quiereReporte = Contiene(lowers, "resumen", "reporte", "informe", "ejecutivo", "pdf", "compar");
         bool quiereRiesgo = Contiene(lowers, "riesgo", "clasif", "moros");
         bool requiereAprobacion = Contiene(lowers, "eliminar", "borrar", "enviar", "pagar", "desactivar", "elimina", "publicar", "publica", "aprobar", "autorizar", "ejecutar accion", "desplegar");
 
-        // Paso 1: Agente principal analiza/coordina.
-        pasos.Add(Paso(ref orden, "Agent", $"Analizar la solicitud y coordinar respuesta", principal.IdAsistente,
-            principal.Nombre, "El agente principal comprende el objetivo y orquesta los colaboradores."));
+        // Paso 1: Coordinación (el Planner genera el plan de acción, sin LLM).
+        pasos.Add(Paso(ref orden, "Coordination", $"Analizar la solicitud y coordinar respuesta", principal.IdAsistente,
+            principal.Nombre, "El coordinador analiza el objetivo y diseña el plan de trabajo."));
 
         // Paso 2: Consulta SQL (datos del negocio).
         if (quiereSql)
@@ -78,10 +78,12 @@ public class PlanBuilder
         }
 
         // Paso 4: Análisis / cálculo de indicadores.
+        // ETAPA 19.1: es un paso Tool (SqlQueryTool) que genera consultas con GROUP BY
+        // (COUNT, SUM) para calcular métricas automáticamente, en vez de un Agent que solo repite datos.
         if (quiereSql || quiereRiesgo)
         {
-            pasos.Add(Paso(ref orden, "Agent", "Analizar resultados y calcular indicadores", principal.IdAsistente,
-                principal.Nombre, "Procesa los datos obtenidos para derivar métricas y conclusiones."));
+            pasos.Add(Paso(ref orden, "Tool", "Analizar resultados y calcular indicadores", principal.IdAsistente,
+                principal.Nombre, "Calcula métricas automáticamente (conteos, totales) con GROUP BY.", codigoHerramienta: "SqlQueryTool"));
         }
 
         // Paso 5: Reporte / resumen ejecutivo.

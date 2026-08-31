@@ -73,7 +73,7 @@ public class PlannerTests
         Assert.Contains(plan.Pasos, p => p.Tipo == "Tool" && p.CodigoHerramienta == "SqlQueryTool");
         Assert.Contains(plan.Pasos, p => p.Tipo == "RAG");
         Assert.Contains(plan.Pasos, p => p.Tipo == "Tool" && p.CodigoHerramienta == "ReportTool");
-        Assert.True(plan.Pasos.Any(p => p.Orden == 0 && p.Tipo == "Agent"));
+        Assert.True(plan.Pasos.Any(p => p.Orden == 0 && p.Tipo == "Coordination"));
     }
 
     [Fact]

@@ -66,6 +66,10 @@ public class PlanStepRepository : IPlanStepRepository
             .Where(s => s.IdPlan == idPlan)
             .OrderBy(s => s.Orden)
             .ToListAsync(ct);
+
+    public async Task<PlanStep?> GetByIdAsync(int idStep, CancellationToken ct = default)
+        => await _context.PlanSteps
+            .FirstOrDefaultAsync(s => s.IdStep == idStep, ct);
 }
 
 public class PlanDependencyRepository : IPlanDependencyRepository

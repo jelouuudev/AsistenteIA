@@ -18,6 +18,7 @@ public interface IPlanStepRepository
     Task<PlanStep> AddAsync(PlanStep step, CancellationToken cancellationToken = default);
     Task UpdateAsync(PlanStep step, CancellationToken cancellationToken = default);
     Task<List<PlanStep>> GetByPlanAsync(int idPlan, CancellationToken cancellationToken = default);
+    Task<PlanStep?> GetByIdAsync(int idStep, CancellationToken cancellationToken = default);
 }
 
 public interface IPlanDependencyRepository

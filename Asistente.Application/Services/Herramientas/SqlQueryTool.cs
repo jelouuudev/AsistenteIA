@@ -51,19 +51,32 @@ public class SqlQueryTool : ITool
     {
         var pregunta = ObtenerString(request.Parametros, "pregunta", request.PreguntaOriginal ?? string.Empty);
         var sqlSugerido = ObtenerString(request.Parametros, "consulta", string.Empty);
+        // ETAPA 19.2: el Planner puede forzar la agregación (GROUP BY) o el modo raw (SELECT *)
+        // según el nombre del paso.
+        var forzarAgregacion = request.Parametros.TryGetValue("forzarAgregacion", out var fa) && fa is true;
+        var forzarRaw = request.Parametros.TryGetValue("forzarRaw", out var fr) && fr is true;
 
         if (string.IsNullOrWhiteSpace(pregunta) && string.IsNullOrWhiteSpace(sqlSugerido))
             return new ToolExecutionResult { Exitoso = false, Error = "No se proporcionó una pregunta ni una consulta SQL." };
 
-        // Selección de conexión: predeterminada activa (la primera activa)
+        // Selección de conexión: se elige la conexión activa CUYA lista de tablas autorizadas
+        // contenga la tabla que mapea la pregunta (ej. "activos" -> [Activos] en ControlActivos).
         var conexionesActivas = (await _conexionRepository.GetActivasAsync()).ToList();
         if (conexionesActivas.Count == 0)
             return new ToolExecutionResult { Exitoso = false, Error = "No hay conexiones a bases de datos configuradas." };
 
-        var conexion = conexionesActivas.First();
+        ConexionBaseDatos? conexion = null;
+        if (!string.IsNullOrWhiteSpace(pregunta))
+        {
+            foreach (var c in conexionesActivas)
+            {
+                if (GenerarSqlDesdePregunta(pregunta, c, false, false) != null) { conexion = c; break; }
+            }
+        }
+        conexion ??= conexionesActivas.First();
 
         var sql = string.IsNullOrWhiteSpace(sqlSugerido)
-            ? GenerarSqlDesdePregunta(pregunta, conexion)
+            ? GenerarSqlDesdePregunta(pregunta, conexion, forzarAgregacion, forzarRaw)
             : sqlSugerido;
 
         if (string.IsNullOrWhiteSpace(sql))
@@ -183,10 +196,14 @@ public class SqlQueryTool : ITool
     private static bool Contiene(string texto, params string[] terminos)
         => terminos.Any(t => texto.Contains(t, StringComparison.OrdinalIgnoreCase));
 
-    private static string GenerarSqlDesdePregunta(string pregunta, ConexionBaseDatos conexion)
+    private static string GenerarSqlDesdePregunta(string pregunta, ConexionBaseDatos conexion, bool forzarAgregacion = false, bool forzarRaw = false)
     {
         var normalizada = pregunta.ToLowerInvariant();
         var esConteo = Contiene(normalizada, "cuantos", "cuántos", "cuantas", "cuántas", "contar", "total de", "cantidad de");
+        // ETAPA 19.2: detección de intención de agregación. Se busca en la pregunta (palabras clave)
+        // y también puede forzarse desde el parámetro "forzarAgregacion" del Planner.
+        // forzarRaw = true → SELECT * sin GROUP BY (paso 1: consultar datos).
+        var quiereAgregacion = !forzarRaw && (forzarAgregacion || Contiene(normalizada, "indicador", "indicadores", "calcular", "métrica", "métricas", "metrica", "metricas", "conteos", "totales", "agrupado", "agrupar", "resumen"));
         var tablas = conexion.TablasAutorizadas.ToList();
         var vistas = conexion.VistasAutorizadas.ToList();
 
@@ -203,10 +220,6 @@ public class SqlQueryTool : ITool
         if (candidata == null) return null;
 
         // Detectar filtro de estado en la pregunta.
-        // - 'inactivo(s)' siempre es estado (nunca la entidad), asi que filtra INACTIVO.
-        // - 'activo(s)' es ambiguo: suele nombrar la entidad (ej. 'reporte de activos',
-        //   'cuantos activos') y NO debe filtrar. Solo filtra ACTIVO cuando es explicito
-        //   de estado: 'en estado activo(s)', 'estado activo', 'activos operativos', etc.
         string? filtroEstado = null;
         if (Contiene(normalizada, "inactivo", "inactivos", "dado de baja", "de baja", "fuera de servicio", "desactivado", "desactivados"))
             filtroEstado = "INACTIVO";
@@ -215,9 +228,18 @@ public class SqlQueryTool : ITool
 
         var whereEstado = filtroEstado != null ? $" WHERE Estado = '{filtroEstado}'" : string.Empty;
 
+        // Si pide agregación (indicadores, métricas, totales), generar GROUP BY automático.
+        if (quiereAgregacion)
+        {
+            // Detectar si hay campo numérico para sumar (Precio/Valor/Monto/Costo).
+            var pideSuma = Contiene(normalizada, "valor", "precio", "suma", "monto", "total", "valuado", "costo");
+            if (pideSuma)
+                return $"SELECT Estado, COUNT(*) AS Cantidad, SUM(Precio) AS ValorTotal FROM [{candidata.Nombre}]{whereEstado} GROUP BY Estado ORDER BY Estado;";
+            return $"SELECT Estado, COUNT(*) AS Cantidad FROM [{candidata.Nombre}]{whereEstado} GROUP BY Estado ORDER BY Estado;";
+        }
+
         if (esConteo)
         {
-            // Si además pide valor/precio/suma/monto, incluir el total valuado.
             var pideValor = Contiene(normalizada, "valor", "precio", "suma", "monto", "total", "valuado", "costo");
             if (pideValor)
                 return $"SELECT COUNT(*) AS Cantidad, SUM(Precio) AS ValorTotal FROM [{candidata.Nombre}]{whereEstado};";

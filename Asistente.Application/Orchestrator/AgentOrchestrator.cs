@@ -299,7 +299,10 @@ public class AgentOrchestrator : IAgentOrchestrator
             {
                 IdAsistente = nodo.IdAgente,
                 Mensaje = nodo.PreguntaAsignada,
-                UsuarioPropietario = execution.IdUsuario
+                UsuarioPropietario = execution.IdUsuario,
+                // ETAPA 19.1: los pasos Agent del Planner deben mostrar análisis en lenguaje natural,
+                // no datos crudos de SQL. Con true se desactiva el short-circuit anti-alucinación.
+                EsEjecucionPlan = true
             }, cancellationToken);
 
             var completed = await Task.WhenAny(respTask, Task.Delay(timeoutMs, cancellationToken));

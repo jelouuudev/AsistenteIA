@@ -342,61 +342,67 @@ public class ChatService : IChatService
             systemPrompt = "Eres un asistente virtual empresarial. Responde ÚNICAMENTE en español. Está prohibido usar cualquier otro idioma. No incluyas pensamiento interno ni etiquetas. Responde de forma clara, concisa y profesional.";
         }
 
-        // ETAPA 16 (Opción B): el RAG solo se recupera si el agente tiene la herramienta
-        // 'DocumentSearchTool' asignada. Si el usuario la desactivó en la UI, el agente no
-        // tiene acceso a la base de conocimiento (coherente con el modelo de permisos).
+        // ETAPA 19.1: en ejecución de plan se omiten RAG y contexto empresarial para reducir
+        // latencia (las herramientas ya las invoca el Planner directamente). Se usa un prompt
+        // mínimo para que el LLM genere análisis/coordinación en lenguaje natural rápido.
         string? contextoDocumental = null;
         List<ReferenciaDocumentalDto>? referenciasDocumentales = null;
-        if (tieneBusquedaDocumental)
+        if (!request.EsEjecucionPlan)
         {
-            (contextoDocumental, referenciasDocumentales) = await _recuperacionService.RecuperarContextoConFuentesAsync(
-                request.Mensaje, idAsistenteEfectivo, cancellationToken);
-
-            // Protección contra Prompt Injection: el contenido RAG se trata SOLO como información
-            // documental y no puede otorgar permisos ni modificar políticas (Actividad 11 / Reglas 3 y 5).
-            if (!string.IsNullOrWhiteSpace(contextoDocumental))
-                contextoDocumental = _promptInjection.SanitizarContenidoRecuperado(contextoDocumental);
-        }
-
-        if (!usoOrquestador)
-        {
-            var contextoEmpresarial = await _queryEmpresarialService.ProcesarPreguntaAsync(
-                request.Mensaje, request.UsuarioPropietario, cancellationToken);
-
-            if (contextoEmpresarial != null && contextoEmpresarial.Tipo == "bloqueada")
+            // ETAPA 16 (Opción B): el RAG solo se recupera si el agente tiene la herramienta
+            // 'DocumentSearchTool' asignada. Si el usuario la desactivó en la UI, el agente no
+            // tiene acceso a la base de conocimiento (coherente con el modelo de permisos).
+            if (tieneBusquedaDocumental)
             {
-                response.Exitoso = true;
-                response.Respuesta = contextoEmpresarial.Error
-                    ?? "La consulta fue bloqueada por las políticas de seguridad.";
-                response.IdConversacion = conversacion.IdConversacion;
-                return response;
+                (contextoDocumental, referenciasDocumentales) = await _recuperacionService.RecuperarContextoConFuentesAsync(
+                    request.Mensaje, idAsistenteEfectivo, cancellationToken);
+
+                // Protección contra Prompt Injection: el contenido RAG se trata SOLO como información
+                // documental y no puede otorgar permisos ni modificar políticas (Actividad 11 / Reglas 3 y 5).
+                if (!string.IsNullOrWhiteSpace(contextoDocumental))
+                    contextoDocumental = _promptInjection.SanitizarContenidoRecuperado(contextoDocumental);
             }
 
-            if (contextoEmpresarial != null
-                && contextoEmpresarial.Exitoso
-                && !string.IsNullOrEmpty(contextoEmpresarial.ConsultaSql))
+            if (!usoOrquestador)
             {
-                var datosEmpresarial = contextoEmpresarial.Datos != null && contextoEmpresarial.Datos.Count > 0
-                    ? string.Join("\n", contextoEmpresarial.Datos.Take(20)
-                        .Select(fila => string.Join(" | ", fila.Select(c => $"{c.Key}: {c.Value ?? "NULL"}")))
-                        .Select(s => $"- {s}"))
-                    : "La consulta no devolvió registros.";
+                var contextoEmpresarial = await _queryEmpresarialService.ProcesarPreguntaAsync(
+                    request.Mensaje, request.UsuarioPropietario, cancellationToken);
 
-                _logger.LogInformation("Contexto empresarial recuperado: {Registros} registros. Consulta: {Sql}",
-                    contextoEmpresarial.CantidadRegistros, contextoEmpresarial.ConsultaSql);
+                if (contextoEmpresarial != null && contextoEmpresarial.Tipo == "bloqueada")
+                {
+                    response.Exitoso = true;
+                    response.Respuesta = contextoEmpresarial.Error
+                        ?? "La consulta fue bloqueada por las políticas de seguridad.";
+                    response.IdConversacion = conversacion.IdConversacion;
+                    return response;
+                }
 
-                systemPrompt = systemPrompt.TrimEnd() + "\n\n" +
-                    "## DATOS EMPRESARIALES (resultado de consulta a base de datos):\n" +
-                    $"Consulta SQL ejecutada: {contextoEmpresarial.ConsultaSql}\n" +
-                    "Resultado:\n" +
-                    datosEmpresarial + "\n\n" +
-                    "Instrucciones:\n" +
-                    "- Responde al usuario basándote en estos datos empresariales.\n" +
-                    "- Si el resultado es un total o conteo, indícalo claramente.\n" +
-                    "- Si el resultado tiene varias filas, resume la información en una tabla o lista clara.\n" +
-                    "- Sé preciso y no inventes datos que no estén en el resultado.";
+                if (contextoEmpresarial != null
+                    && contextoEmpresarial.Exitoso
+                    && !string.IsNullOrEmpty(contextoEmpresarial.ConsultaSql))
+                {
+                    var datosEmpresarial = contextoEmpresarial.Datos != null && contextoEmpresarial.Datos.Count > 0
+                        ? string.Join("\n", contextoEmpresarial.Datos.Take(20)
+                            .Select(fila => string.Join(" | ", fila.Select(c => $"{c.Key}: {c.Value ?? "NULL"}")))
+                            .Select(s => $"- {s}"))
+                        : "La consulta no devolvió registros.";
 
-                temperature = 0.3;
+                    _logger.LogInformation("Contexto empresarial recuperado: {Registros} registros. Consulta: {Sql}",
+                        contextoEmpresarial.CantidadRegistros, contextoEmpresarial.ConsultaSql);
+
+                    systemPrompt = systemPrompt.TrimEnd() + "\n\n" +
+                        "## DATOS EMPRESARIALES (resultado de consulta a base de datos):\n" +
+                        $"Consulta SQL ejecutada: {contextoEmpresarial.ConsultaSql}\n" +
+                        "Resultado:\n" +
+                        datosEmpresarial + "\n\n" +
+                        "Instrucciones:\n" +
+                        "- Responde al usuario basándote en estos datos empresariales.\n" +
+                        "- Si el resultado es un total o conteo, indícalo claramente.\n" +
+                        "- Si el resultado tiene varias filas, resume la información en una tabla o lista clara.\n" +
+                        "- Sé preciso y no inventes datos que no estén en el resultado.";
+
+                    temperature = 0.3;
+                }
             }
         }
 
@@ -453,7 +459,9 @@ public class ChatService : IChatService
             // pendiente de confirmación, presentamos el dato REAL directamente desde el código.
             // DeepSeek en CPU ignora prompts largos y "inventa" filas; al no pasarle el dato al LLM
             // para que lo redacte, garantizamos que el usuario ve exactamente lo que devolvió la BD.
-            if (!response.RequiereConfirmacionWorkflow && string.IsNullOrEmpty(response.MensajeConfirmacionWorkflow))
+            // NOTA: si es ejecución de plan (EsEjecucionPlan), NO aplicamos el short-circuit para
+            // que el LLM genere una respuesta en lenguaje natural (análisis/coordinación).
+            if (!request.EsEjecucionPlan && !response.RequiereConfirmacionWorkflow && string.IsNullOrEmpty(response.MensajeConfirmacionWorkflow))
             {
                 var textoHerramienta = contextoHerramientas.Trim();
                 var respuestaDirecta = string.IsNullOrWhiteSpace(textoHerramienta)
@@ -590,7 +598,7 @@ public class ChatService : IChatService
                     HerramientasUtilizadas = System.Text.Json.JsonSerializer.Serialize(
                         herramientasUsadas.Select(h => h.Codigo)),
                     FuentesConsultadas = System.Text.Json.JsonSerializer.Serialize(
-                        referenciasDocumentales.Select(r => r.NombreFuente).Distinct()),
+                        (referenciasDocumentales ?? Enumerable.Empty<ReferenciaDocumentalDto>()).Select(r => r.NombreFuente).Distinct()),
                     TiempoRespuestaMs = tiempoMs,
                     Resultado = "Exitoso",
                     FechaHora = DateTime.UtcNow

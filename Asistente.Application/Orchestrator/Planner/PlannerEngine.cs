@@ -36,6 +36,7 @@ public class PlannerEngine : IPlannerEngine
     private readonly ILogger<PlannerEngine> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ApprovalManager _approvalManager;
+    private readonly IToolOrchestrator _toolOrchestrator;
 
     public PlannerEngine(
         PlanBuilder builder,
@@ -52,7 +53,8 @@ public class PlannerEngine : IPlannerEngine
         IAgentExecutionStepRepository execStepRepo,
         ILogger<PlannerEngine> logger,
         IServiceScopeFactory scopeFactory,
-        ApprovalManager approvalManager)
+        ApprovalManager approvalManager,
+        IToolOrchestrator toolOrchestrator)
     {
         _builder = builder;
         _validator = validator;
@@ -69,6 +71,7 @@ public class PlannerEngine : IPlannerEngine
         _logger = logger;
         _scopeFactory = scopeFactory;
         _approvalManager = approvalManager;
+        _toolOrchestrator = toolOrchestrator;
     }
 
     public async Task<Plan> GenerarPlanAsync(string objetivo, int idUsuario, CancellationToken ct = default)
@@ -160,6 +163,101 @@ public class PlannerEngine : IPlannerEngine
         else if (plan.RequiereAprobacion && !plan.Aprobado)
         {
             throw new InvalidOperationException("El plan requiere aprobación humana antes de ejecutarse.");
+        }
+
+        // ETAPA 19.1: ejecución REAL de pasos Tool (SqlQueryTool) antes de delegar al Orchestrator.
+        // El Orchestrator solo pasa el texto al LLM y nunca invoca SqlQueryTool, por lo que los
+        // pasos de datos quedaban como "no tengo acceso". Aquí resolvemos los pasos tipo "Tool"
+        // ejecutando la herramienta de verdad y guardamos el resultado en PlanStep.Resultado.
+        // Nota: plan.Pasos puede no venir cargado desde GetByIdAsync, así que recargamos explícitos.
+        var pasosTool = (await _stepRepo.GetByPlanAsync(plan.IdPlan, ct))
+            .Where(p => p.Tipo == "Tool" || p.Tipo == "Coordination").ToList();
+        // ETAPA 19.3: el paso 0 (Coordination) lo resuelve el Planner directamente (sin LLM),
+        // generando un texto de coordinación que describe el plan y los delegados.
+        // Se guarda en un SCOPE PROPIO para que sea visible inmediatamente al background task
+        // (evita race condition donde SincronizarPlanStepsAsync lo sobrescribe).
+        var pasoCoordinacion = pasosTool.FirstOrDefault(p => p.Tipo == "Coordination");
+        if (pasoCoordinacion != null)
+        {
+            var textoCoordinacion = GenerarTextoCoordinacion(plan);
+            await using var scopeCoord = _scopeFactory.CreateAsyncScope();
+            var stepRepoCoord = scopeCoord.ServiceProvider.GetRequiredService<IPlanStepRepository>();
+            var pasoCoordDb = await stepRepoCoord.GetByIdAsync(pasoCoordinacion.IdStep, ct);
+            if (pasoCoordDb != null)
+            {
+                pasoCoordDb.Resultado = textoCoordinacion;
+                pasoCoordDb.Estado = "Completado";
+                await stepRepoCoord.UpdateAsync(pasoCoordDb, ct);
+            }
+            await RegistrarLogAsync(plan.IdPlan, pasoCoordinacion.Orden, "PasoCoordinacion",
+                "Plan de acción generado por el coordinador.", ct);
+        }
+
+        // ETAPA 19.2: guardamos el resultado del paso anterior para pasarlo al ReportTool como 'datos'.
+        string? resultadoAnterior = null;
+        foreach (var paso in pasosTool)
+        {
+            try
+            {
+                var herramienta = paso.CodigoHerramienta ?? "SqlQueryTool";
+                var parametros = new Dictionary<string, object?>();
+                if (herramienta == "ReportTool")
+                {
+                    parametros["titulo"] = paso.Nombre;
+                    parametros["datos"] = resultadoAnterior ?? plan.Objetivo;
+                }
+                else
+                {
+                    // ETAPA 19.2: usar el NOMBRE del paso como pregunta para detectar la intención
+                    // (SELECT * vs GROUP BY), y el objetivo para detectar la tabla.
+                    // "Consultar datos" → SELECT * | "Analizar indicadores" → GROUP BY
+                    parametros["pregunta"] = plan.Objetivo;
+                    var nombreLower = paso.Nombre.ToLowerInvariant();
+                    var quiereAgregacion = nombreLower.Contains("indicador") || nombreLower.Contains("calcular") ||
+                        nombreLower.Contains("métrica") || nombreLower.Contains("metrica") ||
+                        nombreLower.Contains("agrupar") || nombreLower.Contains("agrupado") ||
+                        nombreLower.Contains("conteos") || nombreLower.Contains("totales");
+                    parametros["forzarAgregacion"] = quiereAgregacion;
+                    // forzarRaw: el paso "Consultar datos" debe mostrar filas raw (no GROUP BY),
+                    // aunque el objetivo contenga palabras de agregación (ej. "resumen").
+                    var forzarRaw = nombreLower.Contains("consultar") || nombreLower.Contains("obtener") ||
+                        nombreLower.Contains("listar") || nombreLower.Contains("mostrar") ||
+                        nombreLower.Contains("detalle") || nombreLower.Contains("datos");
+                    parametros["forzarRaw"] = forzarRaw;
+                }
+
+                var resTool = await _toolOrchestrator.EjecutarAsync(new ToolExecutionRequest
+                {
+                    HerramientaCodigo = herramienta,
+                    Parametros = parametros,
+                    IdUsuario = plan.IdUsuario,
+                    IdAsistente = paso.IdAsistente,
+                    PreguntaOriginal = paso.Nombre + " " + plan.Objetivo
+                }, ct);
+
+                if (resTool.Exitoso)
+                {
+                    paso.Resultado = resTool.Contenido;
+                    paso.Estado = "Completado";
+                    await _stepRepo.UpdateAsync(paso, ct);
+                    resultadoAnterior = resTool.Contenido;
+                    await RegistrarLogAsync(plan.IdPlan, paso.Orden, "PasoToolEjecutado",
+                        $"'{herramienta}' ejecutó '{paso.Nombre}' con éxito.", ct);
+                }
+                else
+                {
+                    paso.Resultado = $"{herramienta}: " + resTool.Error;
+                    await _stepRepo.UpdateAsync(paso, ct);
+                    await RegistrarLogAsync(plan.IdPlan, paso.Orden, "PasoToolSinDatos",
+                        $"{herramienta}: {resTool.Error}", ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Planner: fallo al ejecutar '{Herramienta}' para el paso {Paso}", paso.CodigoHerramienta, paso.Nombre);
+                paso.Resultado = $"Error al ejecutar {paso.CodigoHerramienta}: " + ex.Message;
+                await _stepRepo.UpdateAsync(paso, ct);
+            }
         }
 
         // Regla 4: la ejecución pasa SIEMPRE por el Orchestrator.
@@ -299,7 +397,9 @@ public class PlannerEngine : IPlannerEngine
         var exec = await _execRepo.GetByIdAsync(idExec, ct);
 
         // Mapeo fino por Orden (progreso en vivo de los nodos que el Orchestrator ejecuta).
-        foreach (var ps in planSteps)
+        // NOTA: los pasos "Coordination" (paso 0) los maneja el Planner directamente, no el Orchestrator.
+        // Se excluyen completamente para que SincronizarPlanStepsAsync NO sobreescriba su resultado.
+        foreach (var ps in planSteps.Where(p => p.Tipo != "Coordination"))
         {
             var es = execSteps.FirstOrDefault(e => e.Orden == ps.Orden);
             if (es == null) continue;
@@ -319,12 +419,30 @@ public class PlannerEngine : IPlannerEngine
         }
 
         // Propagación terminal: si el Orchestrator terminó, el plan completo refleja ese resultado.
+        // NOTA: los pasos "Coordination" (paso 0) los maneja el Planner directamente y tienen resultado
+        // generado por GenerarTextoCoordinacion. Se excluyen para NO sobreescribir con la respuesta del Orchestrator.
         if (exec?.Estado == "Completado")
         {
-            foreach (var ps in planSteps.Where(p => p.Estado != "Completado"))
+            foreach (var ps in planSteps.Where(p => p.Estado != "Completado" && p.Tipo != "Coordination"))
             {
+                var es = execSteps.FirstOrDefault(e => e.Orden == ps.Orden);
                 ps.Estado = "Completado";
+                if (es != null && !string.IsNullOrWhiteSpace(es.Resultado))
+                    ps.Resultado = es.Resultado;
+                else if (!string.IsNullOrWhiteSpace(exec.RespuestaFinal))
+                    ps.Resultado = exec.RespuestaFinal;
                 await _stepRepo.UpdateAsync(ps, ct);
+            }
+
+            // ETAPA 19.3: re-aplicar el texto de coordinación al final para garantizar que nunca se pierda
+            // (el Orchestrator o la sincronización pueden haberlo sobreescrito).
+            var coordStep = planSteps.FirstOrDefault(p => p.Tipo == "Coordination");
+            if (coordStep != null)
+            {
+                var plan = await _planRepo.GetByIdAsync(idPlan, ct);
+                coordStep.Resultado = GenerarTextoCoordinacion(plan!);
+                coordStep.Estado = "Completado";
+                await _stepRepo.UpdateAsync(coordStep, ct);
             }
         }
         else if (exec?.Estado == "Error")
@@ -373,6 +491,41 @@ public class PlannerEngine : IPlannerEngine
             Herramientas = herramientas,
             TiempoEstimadoSegundos = tiempoEstimado
         };
+    }
+
+    /// <summary>
+    /// ETAPA 19.3: genera un texto de coordinación que describe el plan de acción y los delegados.
+    /// Se usa para el paso 0 (Coordination) en vez de invocar al LLM.
+    /// </summary>
+    private string GenerarTextoCoordinacion(Plan plan)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("**Plan de acción coordinado:**");
+        sb.AppendLine();
+        sb.AppendLine($"He analizado tu solicitud: \"{plan.Objetivo}\".");
+        sb.AppendLine("He diseñado un plan de trabajo con los siguientes pasos:");
+        sb.AppendLine();
+
+        foreach (var paso in plan.Pasos.OrderBy(p => p.Orden))
+        {
+            var tipoLabel = paso.Tipo switch
+            {
+                "Tool" => "🛠️",
+                "Agent" => "🤖",
+                "RAG" => "📚",
+                "Approval" => "✅",
+                _ => "📋"
+            };
+            sb.AppendLine($"- {tipoLabel} **Paso {paso.Orden}:** {paso.Nombre}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Cada paso será ejecutado en orden, y los resultados se consolidarán para entregarte la respuesta final.");
+        sb.AppendLine();
+        sb.AppendLine($"⏱️ Tiempo estimado: ~{Math.Max(1, plan.Pasos.Count / 2)} minutos en CPU local.");
+        sb.AppendLine("🔒 Tus datos permanecen en tu infraestructura (IA local, sin nube).");
+
+        return sb.ToString();
     }
 
     public async Task RegistrarLogAsync(int idPlan, int? idStep, string evento, string? detalle, CancellationToken ct = default)
