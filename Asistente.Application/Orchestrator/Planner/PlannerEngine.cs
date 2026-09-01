@@ -171,12 +171,13 @@ public class PlannerEngine : IPlannerEngine
         // ejecutando la herramienta de verdad y guardamos el resultado en PlanStep.Resultado.
         // Nota: plan.Pasos puede no venir cargado desde GetByIdAsync, así que recargamos explícitos.
         var pasosTool = (await _stepRepo.GetByPlanAsync(plan.IdPlan, ct))
-            .Where(p => p.Tipo == "Tool" || p.Tipo == "Coordination").ToList();
+            .Where(p => p.Tipo == "Tool").ToList();
         // ETAPA 19.3: el paso 0 (Coordination) lo resuelve el Planner directamente (sin LLM),
         // generando un texto de coordinación que describe el plan y los delegados.
         // Se guarda en un SCOPE PROPIO para que sea visible inmediatamente al background task
         // (evita race condition donde SincronizarPlanStepsAsync lo sobrescribe).
-        var pasoCoordinacion = pasosTool.FirstOrDefault(p => p.Tipo == "Coordination");
+        var todosLosPasos = await _stepRepo.GetByPlanAsync(plan.IdPlan, ct);
+        var pasoCoordinacion = todosLosPasos.FirstOrDefault(p => p.Tipo == "Coordination");
         if (pasoCoordinacion != null)
         {
             var textoCoordinacion = GenerarTextoCoordinacion(plan);
@@ -402,9 +403,11 @@ public class PlannerEngine : IPlannerEngine
         var exec = await _execRepo.GetByIdAsync(idExec, ct);
 
         // Mapeo fino por Orden (progreso en vivo de los nodos que el Orchestrator ejecuta).
-        // NOTA: los pasos "Coordination" (paso 0) los maneja el Planner directamente, no el Orchestrator.
-        // Se excluyen completamente para que SincronizarPlanStepsAsync NO sobreescriba su resultado.
-        foreach (var ps in planSteps.Where(p => p.Tipo != "Coordination"))
+        // NOTA: solo se mapean pasos Agent. Los pasos Tool los ejecuta el PlannerEngine
+        // directamente y ya tienen resultado; los pasos Coordination los maneja el Planner.
+        // Si se mapearan todos, los resultados del Orchestrator (paso Agent) sobreescribirían
+        // los resultados de los pasos Tool (que ya son correctos).
+        foreach (var ps in planSteps.Where(p => p.Tipo == "Agent"))
         {
             var es = execSteps.FirstOrDefault(e => e.Orden == ps.Orden);
             if (es == null) continue;
@@ -423,12 +426,12 @@ public class PlannerEngine : IPlannerEngine
             }
         }
 
-        // Propagación terminal: si el Orchestrator terminó, el plan completo refleja ese resultado.
-        // NOTA: los pasos "Coordination" (paso 0) los maneja el Planner directamente y tienen resultado
-        // generado por GenerarTextoCoordinacion. Se excluyen para NO sobreescribir con la respuesta del Orchestrator.
+        // Propagación terminal: si el Orchestrator terminó, los pasos Agent reflejan ese resultado.
+        // NOTA: solo se propagan pasos Agent. Los pasos Tool y Coordination ya tienen resultado
+        // del PlannerEngine y no deben sobreescribirse con la respuesta del Orchestrator.
         if (exec?.Estado == "Completado")
         {
-            foreach (var ps in planSteps.Where(p => p.Estado != "Completado" && p.Tipo != "Coordination"))
+            foreach (var ps in planSteps.Where(p => p.Estado != "Completado" && p.Tipo == "Agent"))
             {
                 var es = execSteps.FirstOrDefault(e => e.Orden == ps.Orden);
                 ps.Estado = "Completado";
