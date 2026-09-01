@@ -7,6 +7,7 @@ using Asistente.Domain.Interfaces;
 using Asistente.Shared;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.RegularExpressions;
 
 namespace Asistente.Application.Services;
 
@@ -654,6 +655,16 @@ public class ChatService : IChatService
             _logger.LogError(ex, "Error inesperado al procesar mensaje.");
             response.Exitoso = false;
             response.Error = "Ocurrió un error inesperado. Intente nuevamente.";
+        }
+
+        // ETAPA 19.3: eliminar caracteres CJK (chino/japonés/coreano) que el LLM a veces
+        // genera como alucinación (ej. "可用ud" en vez de "disponibilidad").
+        // Se eliminan también caracteres sueltos que queden alrededor (evita "laidad").
+        if (response.Exitoso && !string.IsNullOrEmpty(response.Respuesta))
+        {
+            response.Respuesta = Regex.Replace(response.Respuesta, @"[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]+\s*", " ", RegexOptions.Compiled);
+            // Limpiar espacios dobles que pudieran quedar
+            response.Respuesta = Regex.Replace(response.Respuesta, @"\s{2,}", " ", RegexOptions.Compiled).Trim();
         }
 
         return response;
