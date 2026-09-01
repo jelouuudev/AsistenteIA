@@ -269,7 +269,12 @@ public class PlannerEngine : IPlannerEngine
             IdUsuario = plan.IdUsuario,
             IdAgentePrincipal = principal.IdAsistente ?? 1008,
             Pregunta = plan.Objetivo,
-            PermitirColaboracion = true
+            PermitirColaboracion = true,
+            // ETAPA 19.3: pasar resultados de los pasos Tool como contexto para que
+            // los pasos Agent tengan datos reales y no inventen valores.
+            ContextoPrevio = string.Join("\n", pasosTool
+                .Where(p => p.Tipo == "Tool" && !string.IsNullOrWhiteSpace(p.Resultado))
+                .Select(p => $"[Paso {p.Orden}: {p.Nombre}]\n{p.Resultado}"))
         };
 
         // Crear la ejecución YA para obtener el IdExecution de inmediato (no esperar el grafo,

@@ -155,6 +155,18 @@ public class AgentOrchestrator : IAgentOrchestrator
                 PreguntaOriginal = request.Pregunta
             };
 
+            // ETAPA 19.3: inyectar resultados de pasos Tool anteriores como contexto
+            // para que los agentes tengan datos reales y no inventen valores.
+            if (!string.IsNullOrWhiteSpace(request.ContextoPrevio))
+            {
+                contextoGlobal.ResultadosPrevios.Add(new ContextoParcial
+                {
+                    IdAgente = 0,
+                    NombreAgente = "Planner Engine",
+                    Contenido = request.ContextoPrevio
+                });
+            }
+
             // 4) Ejecución por capas: paralelo dentro de capa, secuencial entre capas (Actividades 5 y 6)
             var resultadosParciales = new List<ContextoParcial>();
             var ordenWrap = new int[1]; // contador thread-safe para orden de pasos
@@ -182,6 +194,9 @@ public class AgentOrchestrator : IAgentOrchestrator
                     {
                         var ctxAgente = await _contextManager.BuildContextForAgentAsync(
                             nodo.IdAgente, contextoGlobal, cancellationToken);
+                        // ETAPA 19.3: inyectar contexto completo de pasos anteriores para que
+                        // el LLM del agente tenga datos reales y no invente valores.
+                        ctxAgente.ContextoPrevio = request.ContextoPrevio;
                         await EjecutarNodoAsync(execution, nodo, ctxAgente, ordenWrap, config, cancellationToken);
                     }
                     finally
@@ -300,9 +315,8 @@ public class AgentOrchestrator : IAgentOrchestrator
                 IdAsistente = nodo.IdAgente,
                 Mensaje = nodo.PreguntaAsignada,
                 UsuarioPropietario = execution.IdUsuario,
-                // ETAPA 19.1: los pasos Agent del Planner deben mostrar análisis en lenguaje natural,
-                // no datos crudos de SQL. Con true se desactiva el short-circuit anti-alucinación.
-                EsEjecucionPlan = true
+                EsEjecucionPlan = true,
+                ContextoAgente = ctxAgente.ContextoPrevio
             }, cancellationToken);
 
             var completed = await Task.WhenAny(respTask, Task.Delay(timeoutMs, cancellationToken));

@@ -19,4 +19,9 @@ public class MensajeRequest
     /// los pasos Agent del Planner muestren análisis/coordinación, no datos crudos de SQL.
     /// </summary>
     public bool EsEjecucionPlan { get; set; }
+    /// <summary>
+    /// ETAPA 19.3: contexto autorizado del agente (resultados de pasos anteriores).
+    /// Se incluye en el system prompt para que el LLM tenga datos reales y no invente valores.
+    /// </summary>
+    public string? ContextoAgente { get; set; }
 }

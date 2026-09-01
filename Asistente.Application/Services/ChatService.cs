@@ -500,6 +500,21 @@ public class ChatService : IChatService
             }
         }
 
+        // ETAPA 19.3: inyectar contexto del agente (resultados de pasos Tool anteriores)
+        // para que el LLM tenga datos reales y no invente valores (ej. "61.500" en vez de "16.500").
+        if (request.EsEjecucionPlan && !string.IsNullOrWhiteSpace(request.ContextoAgente))
+        {
+            systemPrompt = systemPrompt.TrimEnd() + "\n\n" +
+                "## CONTEXT DE DATOS REALES (proporcionado por pasos anteriores):\n" +
+                request.ContextoAgente + "\n\n" +
+                "INSTRUCCIONES OBLIGATORIAS:\n" +
+                "- Usa SOLO los datos del CONTEXTO anterior. NO inventes números ni valores.\n" +
+                "- Si te piden un valor total, busca 'ValorTotal' o suma los valores del contexto.\n" +
+                "- Copia los valores EXACTAMENTE como aparecen (ej. si dice '15000.00', escribe '15000.00', no '61500.00').\n" +
+                "- Prohibido inventar. Si un dato no está en el contexto, indícalo.";
+            temperature = 0.1;
+        }
+
         var historialOllama = PrepararHistorialOllama(contexto);
 
             _logger.LogInformation("System prompt enviado al LLM ({Len} caracteres): {Prompt}",

@@ -15,6 +15,11 @@ public class AgentRequest
     /// <summary>True cuando se activa el checkbox "Permitir colaboración multi-agente".</summary>
     public bool PermitirColaboracion { get; set; } = true;
     public string? IdConversacion { get; set; }
+    /// <summary>
+    /// ETAPA 19.3: contexto de resultados de pasos anteriores (Tool) para que los
+    /// pasos Agent tengan acceso a los datos reales y no inventen valores.
+    /// </summary>
+    public string? ContextoPrevio { get; set; }
 }
 
 /// <summary>

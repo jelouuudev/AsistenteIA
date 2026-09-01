@@ -58,4 +58,8 @@ public class AgentContext
     public string PreguntaAsignada { get; set; } = string.Empty;
     public List<ContextoParcial> ContextoAutorizado { get; set; } = new();
     public List<string> HerramientasDisponibles { get; set; } = new();
+    /// <summary>
+    /// ETAPA 19.3: contexto completo de pasos anteriores (Planner Engine) para inyectar al LLM.
+    /// </summary>
+    public string? ContextoPrevio { get; set; }
 }
