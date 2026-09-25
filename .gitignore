@@ -133,3 +133,6 @@ logs/
 *.db
 *.sqlite
 *.sqlite-journal
+
+# Paquete de entrega (se genera con git archive, no se versiona)
+entrega-etapa18.zip
