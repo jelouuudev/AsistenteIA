@@ -8,8 +8,8 @@ namespace Asistente.Application.Interfaces;
 /// <summary>
 /// Planner Engine (ETAPA 18). Punto de entrada del componente: comprende objetivos,
 /// identifica tareas, crea el plan, determina riesgos, solicita aprobaciones y entrega
-/// un plan ejecutable. Ejecuta directamente el Execution Graph (fuente de verdad).
-/// NUNCA delega al Agent Orchestrator — el grafo que se visualiza es el que se ejecuta.
+/// un plan ejecutable. Gobierna el Execution Graph validado; cada paso lo ejecuta el
+/// Agent Orchestrator sin re-seleccionar (fuente única de verdad, B-01).
 /// </summary>
 public interface IPlannerEngine
 {
@@ -19,8 +19,11 @@ public interface IPlannerEngine
     /// <summary>Valida permisos, herramientas, agentes, restricciones y riesgos (Regla 1).</summary>
     Task<ResultadoValidacionPlan> ValidarPlanAsync(Plan plan, CancellationToken cancellationToken = default);
 
-    /// <summary>Ejecuta el plan directamente desde su Execution Graph (fuente de verdad).</summary>
+    /// <summary>Ejecuta el plan desde su Execution Graph validado (cada paso vía Orchestrator).</summary>
     Task<AgentExecutionResult> EjecutarPlanAsync(int idPlan, CancellationToken cancellationToken = default);
+
+    /// <summary>Continúa un plan pausado cuya aprobación ya fue resuelta (reanudación por evento).</summary>
+    Task ContinuarPlanAprobadoAsync(int idPlan, CancellationToken cancellationToken = default);
 
     /// <summary>Construye el grafo de ejecución (DAG) a partir de un plan ya validado.</summary>
     ExecutionGraph ConstruirGrafo(Plan plan);

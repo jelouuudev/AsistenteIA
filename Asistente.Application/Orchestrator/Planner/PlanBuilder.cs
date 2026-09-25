@@ -22,19 +22,28 @@ public class PlanBuilder
     private readonly ILogger<PlanBuilder> _logger;
     private readonly IConexionBaseDatosRepository _conexionRepo;
     private readonly IWorkflowRepository _workflowRepo;
+    private readonly IEmbeddingProvider? _embeddingProvider;
+    private readonly IConexionCifrador? _cifrador;
+    private readonly ISqlQueryExecutor? _executor;
 
     public PlanBuilder(
         IAsistenteRepository asistenteRepo,
         IOllamaService ollama,
         ILogger<PlanBuilder> logger,
         IConexionBaseDatosRepository conexionRepo,
-        IWorkflowRepository workflowRepo)
+        IWorkflowRepository workflowRepo,
+        IEmbeddingProvider? embeddingProvider = null,
+        IConexionCifrador? cifrador = null,
+        ISqlQueryExecutor? executor = null)
     {
         _asistenteRepo = asistenteRepo;
         _ollama = ollama;
         _logger = logger;
         _conexionRepo = conexionRepo;
         _workflowRepo = workflowRepo;
+        _embeddingProvider = embeddingProvider;
+        _cifrador = cifrador;
+        _executor = executor;
     }
 
     public async Task<Plan> ConstruirAsync(string objetivo, int idUsuario, CancellationToken ct)
@@ -52,45 +61,68 @@ public class PlanBuilder
         var principal = agentes.FirstOrDefault()
                         ?? throw new InvalidOperationException("No hay agentes disponibles para planificar.");
 
-        var lowers = objetivo.ToLowerInvariant();
         var pasos = new List<PlanStep>();
         var orden = 0;
 
-        // Detección dinámica de tablas
+        // Catálogo de tablas autorizadas con columnas (para selección semántica:
+        // el LLM mapea por significado, ej. "personal" → Empleados por sus columnas).
         var conexiones = await _conexionRepo.GetActivasAsync();
-        var tablasMencionadas = conexiones
+        var tablasAutorizadas = conexiones
             .SelectMany(c => c.TablasAutorizadas)
-            .Where(t => ContainsWord(lowers, t.NombreTabla))
             .Select(t => t.NombreTabla)
-            .Distinct()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var catalogoTablas = await DescribirTablasAsync(conexiones, tablasAutorizadas, ct);
 
-        // Intenciones por palabras clave (vía rápida determinista)
-        bool quiereRag = Contiene(lowers, "manual", "procedimiento", "política", "normativa", "document", "vacacion", "compar");
-        bool quiereReporte = Contiene(lowers, "resumen", "reporte", "informe", "ejecutivo", "pdf", "compar");
-        bool quiereRiesgo = Contiene(lowers, "riesgo", "clasif", "moros");
-        bool quiereWorkflow = Contiene(lowers, "flujo", "workflow", "proceso", "automatizar");
-        bool quiereAgregacion = Contiene(lowers, "indicador", "indicadores", "calcular", "métrica", "métricas", "metrica", "metricas", "conteos", "totales", "agrupado", "agrupar", "cuantos", "cuántos", "cantidad");
-        bool requiereAprobacion = Contiene(lowers, "eliminar", "borrar", "enviar", "pagar", "desactivar", "elimina", "publicar", "publica", "aprobar", "autorizar", "ejecutar accion", "desplegar");
+        // Clasificación SEMÁNTICA primaria vía LLM (una sola llamada): intenciones +
+        // tablas relevantes. Sin keywords: el modelo decide por significado.
+        List<string> tablasMencionadas = new();
+        bool quiereRag = false, quiereReporte = false, quiereRiesgo = false;
+        bool quiereWorkflow = false, quiereAgregacion = false, requiereAprobacion = false;
 
-        // Refinamiento LLM: si NINGUNA keyword matcheó (objetivo parafraseado),
-        // se pide al modelo clasificar intenciones. Con timeout corto y fallback
-        // silencioso a lo determinista (sin LLM no hay timeouts ni bloqueos).
-        if (!tablasMencionadas.Any() && !quiereRag && !quiereReporte && !quiereRiesgo
-            && !quiereWorkflow && !quiereAgregacion && !requiereAprobacion)
+        var semantica = await ClasificarIntencionesConLLMAsync(objetivo, catalogoTablas, tablasAutorizadas, ct);
+        // Híbrido: keywords como PISO determinista (el modelo 7b varía entre runs)
+        // + semántico encima. Las tablas siguen siendo solo coincidencia exacta.
         {
-            var refinadas = await RefinarIntencionesConLLMAsync(objetivo, ct);
-            if (refinadas != null)
-            {
-                quiereRag |= refinadas.Rag;
-                quiereReporte |= refinadas.Reporte;
-                quiereRiesgo |= refinadas.Riesgo;
-                quiereWorkflow |= refinadas.Workflow;
-                quiereAgregacion |= refinadas.Agregacion;
-                requiereAprobacion |= refinadas.Aprobacion;
-                _logger.LogInformation("Planner: intenciones refinadas por LLM para '{Objetivo}'.", objetivo);
-            }
+            var lowersKw = objetivo.ToLowerInvariant();
+            tablasMencionadas = conexiones
+                .SelectMany(c => c.TablasAutorizadas)
+                .Where(t => ContainsWord(lowersKw, t.NombreTabla))
+                .Select(t => t.NombreTabla)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            quiereRag = Contiene(lowersKw, "manual", "procedimiento", "política", "normativa", "document", "vacacion", "compar", "regla", "reglas", "permiso", "permisos");
+            quiereReporte = Contiene(lowersKw, "resumen", "reporte", "informe", "ejecutivo", "pdf", "compar");
+            quiereRiesgo = Contiene(lowersKw, "riesgo", "clasif", "moros");
+            quiereWorkflow = Contiene(lowersKw, "flujo", "workflow", "proceso", "automatizar");
+            quiereAgregacion = Contiene(lowersKw, "indicador", "indicadores", "calcular", "métrica", "métricas", "metrica", "metricas", "conteos", "totales", "agrupado", "agrupar", "cuantos", "cuántos", "cantidad", "cifra", "cifras");
+            requiereAprobacion = Contiene(lowersKw, "eliminar", "elimina", "elimine", "borrar", "borra", "borre",
+                "enviar", "envia", "envía", "envialo", "envíalo", "enviado", "envie", "envíe",
+                "pagar", "paga", "pago", "pague", "desactivar", "desactiva",
+                "publicar", "publica", "publicado", "publique",
+                "aprobar", "aprueba", "apruebe", "aprobado", "autorizar", "autoriza",
+                "ejecutar accion", "desplegar", "despliegue");
         }
+        if (semantica != null)
+        {
+            // Semántico ENCIMA del piso determinista (unión: el LLM suma, nunca resta).
+            quiereRag |= semantica.Rag;
+            quiereReporte |= semantica.Reporte;
+            quiereRiesgo |= semantica.Riesgo;
+            quiereWorkflow |= semantica.Workflow;
+            quiereAgregacion |= semantica.Agregacion;
+            requiereAprobacion |= semantica.Aprobacion;
+            _logger.LogInformation("Planner: intenciones semánticas (LLM) para '{Objetivo}': tablas=[{Tablas}] rag={Rag} reporte={Reporte} riesgo={Riesgo} wf={Wf} agr={Agr} apr={Apr}.",
+                objetivo, string.Join(",", tablasMencionadas),
+                quiereRag, quiereReporte, quiereRiesgo, quiereWorkflow, quiereAgregacion, requiereAprobacion);
+        }
+        else
+        {
+            // Sin LLM: queda solo el piso determinista ya calculado arriba.
+            _logger.LogWarning("Planner: clasificación semántica no disponible; solo piso determinista.");
+        }
+
+        // (Unión exacta de tablas ya aplicada en el piso determinista de arriba.)
 
         // Paso 0: Coordinación
         pasos.Add(Paso(ref orden, "Coordination", "Analizar la solicitud y coordinar respuesta", principal.IdAsistente,
@@ -271,6 +303,47 @@ public class PlanBuilder
         return palabras.All(p => texto.Contains(p.ToLowerInvariant()));
     }
 
+    /// <summary>
+    /// Describe tablas autorizadas con sus columnas ("Empleados(IdEmpleado,Nombre,...)")
+    /// consultando INFORMATION_SCHEMA. Si falla, devuelve solo nombres.
+    /// </summary>
+    private async Task<string> DescribirTablasAsync(
+        IEnumerable<ConexionBaseDatos> conexiones, List<string> tablasAutorizadas, CancellationToken ct)
+    {
+        if (_cifrador == null || _executor == null || tablasAutorizadas.Count == 0)
+            return string.Join(", ", tablasAutorizadas);
+
+        var partes = new List<string>();
+        try
+        {
+            foreach (var c in conexiones)
+            {
+                string cadena;
+                try { cadena = _cifrador.Descifrar(c.CadenaConexionCifrada); }
+                catch { continue; }
+                foreach (var t in c.TablasAutorizadas.Select(x => x.NombreTabla).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var filas = (await _executor.ExecuteReadOnlyAsync(
+                            cadena,
+                            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @t ORDER BY ORDINAL_POSITION",
+                            new Dictionary<string, object?> { ["t"] = t }, 50, ct)).ToList();
+                        var cols = filas.Select(f => f.Values.FirstOrDefault()?.ToString() ?? "").Where(s => s.Length > 0);
+                        partes.Add($"{t}({string.Join(",", cols)})");
+                    }
+                    catch { partes.Add(t); }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Planner: no se pudo describir tablas; usando solo nombres.");
+            return string.Join(", ", tablasAutorizadas);
+        }
+        return string.Join("; ", partes.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
     private static bool Contiene(string texto, params string[] palabras)
         => palabras.Any(p => texto.Contains(p));
 
@@ -282,45 +355,65 @@ public class PlanBuilder
         public bool Workflow { get; set; }
         public bool Agregacion { get; set; }
         public bool Aprobacion { get; set; }
+        public List<string> Tablas { get; set; } = new();
     }
 
     /// <summary>
-    /// Clasifica intenciones con el LLM cuando las keywords no matchearon.
-    /// Devuelve null ante cualquier fallo (se conserva lo determinista).
+    /// Clasificación SEMÁNTICA primaria vía LLM (una sola llamada): intenciones + tablas
+    /// relevantes por significado, sin listas de keywords. Timeout amplio (CPU) y null
+    /// ante cualquier fallo para usar el fallback determinista.
     /// </summary>
-    private async Task<IntencionesRefinadas?> RefinarIntencionesConLLMAsync(string objetivo, CancellationToken ct)
+    private async Task<IntencionesRefinadas?> ClasificarIntencionesConLLMAsync(
+        string objetivo, string catalogoTablas, List<string> tablasAutorizadas, CancellationToken ct)
     {
         try
         {
+            var catalogo = string.IsNullOrWhiteSpace(catalogoTablas) ? "(sin tablas)" : catalogoTablas;
             var historial = new List<Mensaje>
             {
                 new Mensaje
                 {
                     Rol = RolMensaje.User,
-                    Contenido = "Clasifica el siguiente objetivo en intenciones. Responde SOLO este JSON, sin explicaciones: " +
-                        "{\"rag\":bool,\"reporte\":bool,\"riesgo\":bool,\"workflow\":bool,\"agregacion\":bool,\"aprobacion\":bool}. " +
-                        "rag=documentación/políticas/manuales. reporte=resumen/informe/pdf. riesgo=riesgos/morosidad. " +
-                        "workflow=flujo/proceso automatizado. agregacion=conteos/totales/métricas. aprobacion=acción sensible " +
-                        "(eliminar/enviar/pagar). Objetivo: " + objetivo
+                    Contenido = "Clasifica la siguiente solicitud por su SIGNIFICADO (no por palabras exactas). " +
+                        "Responde SOLO este JSON, sin explicaciones: " +
+                        "{\"tablas\":[\"...\"],\"rag\":bool,\"reporte\":bool,\"riesgo\":bool,\"workflow\":bool,\"agregacion\":bool,\"aprobacion\":bool}. " +
+                        "Tablas disponibles en BD: [" + catalogo + "]. " +
+                        "En 'tablas' lista solo las de la solicitud (nombres exactos del catálogo, [] si ninguna). " +
+                        "rag=necesita documentos/políticas/manuales/reglas (ej: 'reglas de asueto' → true). " +
+                        "reporte=quiere resumen/informe/pdf. " +
+                        "riesgo=quiere análisis de riesgos. workflow=menciona un flujo o proceso automatizado. " +
+                        "agregacion=pide cifra/cantidad/número/totales/métricas (ej: 'cifra de personal' → true). " +
+                        "aprobacion=acción sensible o destructiva " +
+                        "(eliminar, enviar, pagar, publicar, desactivar, aprobar algo). " +
+                        "Ante la duda en rag/agregacion/reporte, prefiere true. " +
+                        "Solicitud: " + objetivo
                 }
             };
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(20));
-            var respuesta = await _ollama.SendMessageAsync(historial, cts.Token);
+            cts.CancelAfter(TimeSpan.FromSeconds(150));
+            // maxTokens amplio: los modelos reasoning (R1) consumen tokens pensando;
+            // con poco tope se cortan antes del JSON.
+            var respuesta = await _ollama.SendMessageAsync(historial, null, null, 0.0, 2000, cts.Token);
+            _logger.LogInformation("Planner: cruda clasificación semántica: {Cruda}",
+                string.IsNullOrWhiteSpace(respuesta) ? "(vacía)"
+                : respuesta.Length > 500 ? respuesta[..500] + "..." : respuesta);
             if (string.IsNullOrWhiteSpace(respuesta)) return null;
 
-            var inicio = respuesta.IndexOf('{');
-            var fin = respuesta.LastIndexOf('}');
+            // Si hay bloque <think>, el JSON viene después.
+            var finThink = respuesta.LastIndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+            var util = finThink >= 0 ? respuesta[(finThink + 8)..] : respuesta;
+            var inicio = util.IndexOf('{');
+            var fin = util.LastIndexOf('}');
             if (inicio < 0 || fin <= inicio) return null;
 
-            var json = respuesta[inicio..(fin + 1)];
+            var json = util[inicio..(fin + 1)];
             var r = System.Text.Json.JsonSerializer.Deserialize<IntencionesRefinadas>(json,
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return r;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Planner: refinamiento LLM de intenciones falló; se conserva lo determinista.");
+            _logger.LogWarning(ex, "Planner: clasificación semántica LLM falló; se usa fallback determinista.");
             return null;
         }
     }

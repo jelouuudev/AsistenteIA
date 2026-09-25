@@ -186,7 +186,9 @@ public class ChromaVectorStore : IVectorStore
 
             for (int i = 0; i < ids.Count; i++)
             {
-                var score = distances.Count > i ? Convert.ToSingle(1.0 / (1.0 + distances[i])) : 0f;
+                // Similitud coseno desde L2 (vectores unitarios): cos = 1 - d²/2.
+                var dist = distances.Count > i ? distances[i] : float.MaxValue;
+                var score = dist == float.MaxValue ? 0f : Math.Clamp(1f - (dist * dist) / 2f, 0f, 1f);
                 var metadata = metadatas.Count > i ? metadatas[i] : new Dictionary<string, object>();
 
                 resultados.Add(new VectorSearchResult

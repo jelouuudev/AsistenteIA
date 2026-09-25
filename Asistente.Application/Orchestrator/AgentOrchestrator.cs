@@ -361,12 +361,14 @@ public class AgentOrchestrator : IAgentOrchestrator
             }
 
             // Agent (y otros): vía Agent Runtime con contexto previo de pasos anteriores.
+            // El mensaje es el OBJETIVO original (con intención real); la descripción del
+            // paso ("Consolida...") es vaga y hace que el modelo rehúse.
             var config = await configRepo.GetAsync();
             var timeoutMs = config?.MaxTiempoTotalMs ?? 900000;
             var respTask = chatService.ProcesarMensajeAsync(new MensajeRequest
             {
                 IdAsistente = paso.IdAsistente,
-                Mensaje = paso.Descripcion ?? paso.Nombre,
+                Mensaje = plan.Objetivo,
                 UsuarioPropietario = idUsuario,
                 EsEjecucionPlan = true,
                 ContextoAgente = contextoPrevio

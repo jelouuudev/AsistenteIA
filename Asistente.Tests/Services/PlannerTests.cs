@@ -231,8 +231,8 @@ public class PlannerTests
     {
         var agentes = new[] { Agente("SOPORTE-01", 2005, "DocumentSearchTool") };
         var ollama = new Mock<IOllamaService>();
-        ollama.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync("{\"rag\":true,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":false,\"aprobacion\":false}");
+        ollama.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"tablas\":[],\"rag\":true,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":false,\"aprobacion\":false}");
         var builder = new PlanBuilder(
             RepoAsistentes(agentes).Object,
             ollama.Object,
@@ -486,5 +486,34 @@ public class PlannerTests
         Assert.NotNull(guardado);
         Assert.True(guardado.Length > 1000);
         Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(guardado, 0, 4));
+    }
+
+    [Fact]
+    public async Task PlanBuilder_ClasificacionSemantica_SinKeywords_CreaPasos()
+    {
+        // Objetivo parafraseado SIN ninguna keyword de fallback: solo la vía semántica
+        // puede generar intención RAG. Las tablas van por coincidencia exacta.
+        var agentes = new[] { Agente("AG-01", 1008, "SqlQueryTool", "DocumentSearchTool") };
+        var conRepo = RepoConexion();
+        conRepo.Setup(r => r.GetActivasAsync()).ReturnsAsync(new List<ConexionBaseDatos>
+        {
+            new() { IdConexion = 1, Nombre = "Test", Activa = true,
+                TablasAutorizadas = new List<TablaAutorizada> { new() { NombreTabla = "Empleados" } } }
+        });
+        var ollama = new Mock<IOllamaService>();
+        ollama.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"tablas\":[\"Empleados\"],\"rag\":true,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":true,\"aprobacion\":false}");
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            ollama.Object,
+            Logger<PlanBuilder>().Object,
+            conRepo.Object,
+            RepoWorkflow().Object);
+
+        var plan = await builder.ConstruirAsync("cifra de personal y reglas de asueto", 1, CancellationToken.None);
+
+        // Intención RAG semántica (sin keywords); la tabla la pone el match exacto
+        // solo si se nombra, así que aquí se valida la intención.
+        Assert.Contains(plan.Pasos, p => p.CodigoHerramienta == "DocumentSearchTool");
     }
 }

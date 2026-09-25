@@ -114,7 +114,16 @@ public class PlannerEngine : IPlannerEngine
     public async Task<ResultadoValidacionPlan> ValidarPlanAsync(Plan plan, CancellationToken ct = default)
     {
         var resultado = await _validator.ValidarAsync(plan, ct);
-        plan.Estado = resultado.Valido ? "Validado" : "Borrador";
+        // No degradar estados activos: una re-validación en caliente no debe reabrir
+        // la ventana anti-doble-ejecución (era la causa de lanzamientos duplicados).
+        if (!resultado.Valido)
+        {
+            plan.Estado = "Borrador";
+        }
+        else if (plan.Estado is "Borrador" or "Validado" or "Fallido" or "Completado" or "Cancelado")
+        {
+            plan.Estado = "Validado";
+        }
         await _planRepo.UpdateAsync(plan, ct);
         await RegistrarLogAsync(plan.IdPlan, null, "PlanValidado",
             resultado.Valido ? "Plan válido." : $"Plan inválido: {string.Join("; ", resultado.Errores)}", ct);
@@ -164,20 +173,16 @@ public class PlannerEngine : IPlannerEngine
                     $"Plan pausado. Solicitud {solicitudPlan.Codigo}.", ct);
             }
 
-            var resuelta = await _approvalManager.EsperarResolucionAsync(
-                solicitudPlan.IdApproval, TimeSpan.FromHours(1), ct);
-
-            if (resuelta.Estado != EstadoAprobacion.Aprobado)
+            // Pausa hasta decisión humana. La reanudación es POR EVENTO (Decidir →
+            // relanza la ejecución): no se espera en memoria porque un reinicio
+            // huérfana el plan. El background termina aquí.
+            await RegistrarLogAsync(plan.IdPlan, 0, "PlanEnEsperaAprobacion",
+                $"Solicitud {solicitudPlan.Codigo} pendiente de decisión humana.", ct);
+            return new AgentExecutionResult
             {
-                await RegistrarLogAsync(plan.IdPlan, 0, "PlanNoAprobado",
-                    $"Solicitud {solicitudPlan.Codigo} resolvió como {resuelta.Estado}. Plan no ejecutado.", ct);
-                return new AgentExecutionResult
-                {
-                    Estado = "Cancelado",
-                    Exitoso = false,
-                    Error = $"Plan no aprobado: {resuelta.Estado}"
-                };
-            }
+                Estado = "EnEsperaAprobacion",
+                Exitoso = true
+            };
         }
         else if (plan.RequiereAprobacion && !plan.Aprobado)
         {
@@ -188,7 +193,48 @@ public class PlannerEngine : IPlannerEngine
         // El grafo validado se ejecuta NODO POR NODO a través del Agent Orchestrator
         // (EjecutarPasoValidadoAsync): el Orchestrator ejecuta exactamente los pasos
         // del plan, sin re-seleccionar agentes ni reconstruir el grafo.
+        await LanzarEjecucionGrafo(plan, ct);
 
+        return new AgentExecutionResult
+        {
+            IdExecution = 0, // No se usa AgentExecution
+            Estado = "EnEjecucion",
+            Exitoso = false
+        };
+    }
+
+    /// <summary>
+    /// Continúa un plan pausado por aprobación ya resuelta (relanzado por evento desde
+    /// ApprovalManager). Valida estado y evita doble ejecución.
+    /// </summary>
+    public async Task ContinuarPlanAprobadoAsync(int idPlan, CancellationToken ct = default)
+    {
+        var plan = await _planRepo.GetByIdAsync(idPlan, ct)
+                   ?? throw new InvalidOperationException($"Plan {idPlan} no encontrado.");
+
+        if (plan.Estado != "EnEsperaAprobacion" || !plan.Aprobado)
+        {
+            _logger.LogInformation("ContinuarPlanAprobadoAsync: plan {Id} en estado {Estado} (Aprobado={Aprobado}); no se relanza.",
+                idPlan, plan.Estado, plan.Aprobado);
+            return;
+        }
+
+        if (_activeExecutions.ContainsKey(idPlan))
+        {
+            _logger.LogInformation("ContinuarPlanAprobadoAsync: plan {Id} ya tiene ejecución activa; no se duplica.", idPlan);
+            return;
+        }
+
+        await LanzarEjecucionGrafo(plan, ct);
+    }
+
+    /// <summary>
+    /// Ejecuta las fases inline (Coordinación + Tool/RAG vía Orchestrator) y luego
+    /// lanza el grafo validado en background. Fuente única de lanzamiento
+    /// (vía normal y vía reanudación por evento).
+    /// </summary>
+    private async Task LanzarEjecucionGrafo(Plan plan, CancellationToken ct)
+    {
         // 1. Ejecutar paso Coordination vía Orchestrator (texto fijo, sin LLM)
         var todosLosPasos = await _stepRepo.GetByPlanAsync(plan.IdPlan, ct);
         var pasoCoordinacion = todosLosPasos.FirstOrDefault(p => p.Tipo == "Coordination");
@@ -344,13 +390,6 @@ public class PlannerEngine : IPlannerEngine
                 if (_activeExecutions.TryRemove(idPlanLocal, out var reg)) reg.Dispose();
             }
         });
-
-        return new AgentExecutionResult
-        {
-            IdExecution = 0, // No se usa AgentExecution
-            Estado = "EnEjecucion",
-            Exitoso = false
-        };
     }
 
     /// <summary>

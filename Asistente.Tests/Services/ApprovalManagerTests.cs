@@ -7,6 +7,7 @@ using Asistente.Application.Aprobaciones;
 using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Entities.Aprobaciones;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -27,7 +28,7 @@ public class ApprovalManagerTests
     private readonly Mock<IPlanExecutionLogRepository> _log = new();
     private readonly Mock<ILogger<ApprovalManager>> _logger = new();
 
-    private ApprovalManager Manager() => new(_req.Object, _dec.Object, _asg.Object, _pol.Object, _plan.Object, _log.Object, _logger.Object);
+    private ApprovalManager Manager() => new(_req.Object, _dec.Object, _asg.Object, _pol.Object, _plan.Object, _log.Object, _logger.Object, Mock.Of<IServiceScopeFactory>());
 
     [Fact]
     public async Task CrearSolicitud_Asigna_Aprobadores_Y_PasaAPendiente()
@@ -70,7 +71,49 @@ public class ApprovalManagerTests
 
         Assert.Equal(EstadoAprobacion.Aprobado, res.Estado);
         Assert.True(plan.Aprobado);
-        Assert.Equal("EnEjecucion", plan.Estado);
+        // La reanudación es por evento (no cambia a EnEjecucion aquí; lo hace el relanzamiento).
+        Assert.Equal("EnEsperaAprobacion", plan.Estado);
+    }
+
+    [Fact]
+    public async Task Decidir_Aprobar_RelanzaEjecucionPorEvento()
+    {
+        var sol = new ApprovalRequest { IdApproval = 12, IdPlan = 102, Solicitante = 5, Estado = EstadoAprobacion.Pendiente };
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 12, IdUsuario = 1, Estado = "Pendiente", EsPrincipal = true });
+        _req.Setup(x => x.GetByIdAsync(12, It.IsAny<CancellationToken>())).ReturnsAsync(sol);
+        _asg.Setup(x => x.UpdateAsync(It.IsAny<ApprovalAssignee>(), It.IsAny<CancellationToken>()))
+            .Returns((ApprovalAssignee a, CancellationToken _) => Task.FromResult(a));
+        _req.Setup(x => x.UpdateAsync(It.IsAny<ApprovalRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ApprovalRequest r, CancellationToken _) => Task.FromResult(r));
+        var plan = new Plan { IdPlan = 102, Estado = "EnEsperaAprobacion" };
+        _plan.Setup(x => x.GetByIdAsync(102, It.IsAny<CancellationToken>())).ReturnsAsync(plan);
+        _plan.Setup(x => x.UpdateAsync(It.IsAny<Plan>(), It.IsAny<CancellationToken>()))
+            .Returns((Plan p, CancellationToken _) => Task.FromResult(p));
+
+        var planner = new Mock<IPlannerEngine>();
+        var provider = new Mock<IServiceProvider>();
+        provider.Setup(p => p.GetService(typeof(IPlannerEngine))).Returns(planner.Object);
+        var scope = new Mock<IServiceScope>();
+        scope.Setup(s => s.ServiceProvider).Returns(provider.Object);
+        var factory = new Mock<IServiceScopeFactory>();
+        factory.Setup(f => f.CreateScope()).Returns(scope.Object);
+        var mgr = new ApprovalManager(_req.Object, _dec.Object, _asg.Object, _pol.Object, _plan.Object, _log.Object,
+            new Mock<ILogger<ApprovalManager>>().Object, factory.Object);
+
+        await mgr.DecidirAsync(12, 1, "Aprobar", "OK", CancellationToken.None);
+
+        // El relanzamiento es fire-and-forget: esperar a que ocurra.
+        var limite = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < limite)
+        {
+            try
+            {
+                planner.Verify(p => p.ContinuarPlanAprobadoAsync(102, It.IsAny<CancellationToken>()), Times.Once());
+                return;
+            }
+            catch (MockException) { await Task.Delay(100); }
+        }
+        planner.Verify(p => p.ContinuarPlanAprobadoAsync(102, It.IsAny<CancellationToken>()), Times.Once());
     }
 
     [Fact]

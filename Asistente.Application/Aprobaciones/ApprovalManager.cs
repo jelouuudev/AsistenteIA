@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Entities.Aprobaciones;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Asistente.Application.Aprobaciones;
@@ -27,6 +28,7 @@ public class ApprovalManager
     private readonly IPlanRepository _planRepo;
     private readonly IPlanExecutionLogRepository _logRepo;
     private readonly ILogger<ApprovalManager> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public ApprovalManager(
         IApprovalRequestRepository reqRepo,
@@ -35,7 +37,8 @@ public class ApprovalManager
         IApprovalPolicyRepository polRepo,
         IPlanRepository planRepo,
         IPlanExecutionLogRepository logRepo,
-        ILogger<ApprovalManager> logger)
+        ILogger<ApprovalManager> logger,
+        IServiceScopeFactory scopeFactory)
     {
         _reqRepo = reqRepo;
         _decRepo = decRepo;
@@ -44,6 +47,7 @@ public class ApprovalManager
         _planRepo = planRepo;
         _logRepo = logRepo;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>
@@ -299,10 +303,26 @@ public class ApprovalManager
         var plan = await _planRepo.GetByIdAsync(req.IdPlan, ct);
         if (plan == null) return;
         plan.Aprobado = true;
-        plan.Estado = "EnEjecucion"; // vuelve a ejecución desde donde quedó pausado
         await _planRepo.UpdateAsync(plan, ct);
         await RegistrarAuditoriaAsync(req.IdPlan, req.IdApproval, "PlanReanudado",
             "Aprobación aceptada. Reanudando ejecución del plan.", ct);
+
+        // Reanudación POR EVENTO con scope propio: relanza el grafo validado.
+        // No se espera en memoria (un reinicio huérfana la espera).
+        var idPlan = req.IdPlan;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var planner = scope.ServiceProvider.GetRequiredService<IPlannerEngine>();
+                await planner.ContinuarPlanAprobadoAsync(idPlan, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al reanudar plan {IdPlan} tras aprobación.", idPlan);
+            }
+        });
     }
 
     private async Task ReanudarTrasRechazoAsync(ApprovalRequest req, CancellationToken ct)

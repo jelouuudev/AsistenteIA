@@ -519,12 +519,7 @@ public class RecuperacionService : IRecuperacionService
             if (resultadosSemanticos != null && resultadosSemanticos.Any())
             {
                 var listaResultados = resultadosSemanticos
-                    .Where(r =>
-                    {
-                        var scoreNormalizado = (r.Score + 1f) / 2f;
-                        scoreNormalizado = Math.Clamp(scoreNormalizado, 0f, 1f);
-                        return scoreNormalizado >= minScore;
-                    })
+                    .Where(r => Math.Clamp(r.Score, 0f, 1f) >= minScore)
                     .ToList();
 
                 if (prioridadesFuentes != null && prioridadesFuentes.Count > 0)
@@ -561,10 +556,10 @@ public class RecuperacionService : IRecuperacionService
                             if (filtrados.Count >= maxChunks * 2)
                                 break;
 
-                            // FIX MinScore: el relleno lexico tambien debe respetar el umbral.
-                            // Escala comparable a la semantica: almacenado 0-1, mostrado (x+1)/2.
+                            // FIX MinScore: el relleno lexico tambien debe respetar el umbral
+                            // (misma escala 0-1 que el coseno semantico).
                             var scoreAlmacenado = (float)Math.Min(1.0, score / 20.0);
-                            var scoreNormalizadoLex = Math.Clamp((scoreAlmacenado + 1f) / 2f, 0f, 1f);
+                            var scoreNormalizadoLex = Math.Clamp(scoreAlmacenado, 0f, 1f);
                             if (scoreNormalizadoLex < minScore)
                                 continue;
 
@@ -648,7 +643,7 @@ public class RecuperacionService : IRecuperacionService
                     // puede quedar por debajo del MinScore configurado.
                     // Tope de fragmentos al modelo (MaxChunksAlModelo).
                     filtrados = filtrados
-                        .Where(r => Math.Clamp((r.Score + 1f) / 2f, 0f, 1f) >= minScore)
+                        .Where(r => Math.Clamp(r.Score, 0f, 1f) >= minScore)
                         .OrderByDescending(r => r.Score)
                         .Take(maxChunksAlModelo)
                         .ToList();
@@ -680,8 +675,7 @@ public class RecuperacionService : IRecuperacionService
                         if (nombresFuentes != null && resultado.IdFuente.HasValue && nombresFuentes.TryGetValue(resultado.IdFuente.Value, out var nf))
                             nombreFuente = nf;
 
-                        var scoreNormalizado = (resultado.Score + 1f) / 2f;
-                        scoreNormalizado = Math.Clamp(scoreNormalizado, 0f, 1f);
+                        var scoreNormalizado = Math.Clamp(resultado.Score, 0f, 1f);
 
                         referencias.Add(new ReferenciaDocumentalDto
                         {

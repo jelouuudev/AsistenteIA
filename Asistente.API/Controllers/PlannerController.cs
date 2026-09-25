@@ -21,6 +21,8 @@ public class PlannerController : ControllerBase
     private readonly IPlannerEngine _planner;
     private readonly IPlanRepository _planRepo;
     private readonly IServiceScopeFactory _scopeFactory;
+    // Candado anti-doble-lanzamiento (estático: compartido entre requests).
+    private static readonly SemaphoreSlim _candadoLanzamiento = new(1, 1);
 
     public PlannerController(
         IPlannerEngine planner,
@@ -98,16 +100,27 @@ public class PlannerController : ControllerBase
         if (plan == null) return NotFound();
         if (!PuedeAcceder(plan)) return Forbid();
 
-        // Guarda anti-doble-ejecución: verificar estado antes de lanzar background.
-        if (plan.Estado == "EnEjecucion" || plan.Estado == "IniciandoEjecucion")
-            return BadRequest(new { exitoso = false, error = $"El plan {id} ya está en ejecución." });
-        if (plan.Estado == "EnEsperaAprobacion")
-            return BadRequest(new { exitoso = false, error = $"El plan {id} ya tiene una solicitud de aprobación pendiente. Decida primero en el Centro de Aprobaciones." });
+        // Guarda anti-doble-ejecución ATÓMICA: el chequeo y el marcado van bajo
+        // candado porque dos clics paralelos leían el mismo estado antes de marcar.
+        await _candadoLanzamiento.WaitAsync(ct);
+        try
+        {
+            plan = await _planRepo.GetByIdAsync(id, ct);
+            if (plan == null) return NotFound();
+            if (plan.Estado == "EnEjecucion" || plan.Estado == "IniciandoEjecucion")
+                return BadRequest(new { exitoso = false, error = $"El plan {id} ya está en ejecución." });
+            if (plan.Estado == "EnEsperaAprobacion")
+                return BadRequest(new { exitoso = false, error = $"El plan {id} ya tiene una solicitud de aprobación pendiente. Decida primero en el Centro de Aprobaciones." });
 
-        // Lanzar ejecución en segundo plano.
-        // Marcar inmediatamente para evitar doble ejecución.
-        plan.Estado = "IniciandoEjecucion";
-        await _planRepo.UpdateAsync(plan, ct);
+            // Lanzar ejecución en segundo plano.
+            // Marcar inmediatamente para evitar doble ejecución.
+            plan.Estado = "IniciandoEjecucion";
+            await _planRepo.UpdateAsync(plan, ct);
+        }
+        finally
+        {
+            _candadoLanzamiento.Release();
+        }
 
         _ = Task.Run(async () =>
         {

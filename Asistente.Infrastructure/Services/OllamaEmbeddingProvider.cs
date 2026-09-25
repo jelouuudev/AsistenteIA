@@ -62,7 +62,7 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
             }
 
             _logger.LogDebug("Embed generado exitosamente. Dimensiones: {Dimensiones}", ollamaResponse.Embedding.Length);
-            return ollamaResponse.Embedding;
+            return Normalizar(ollamaResponse.Embedding);
         }
         catch (HttpRequestException ex)
         {
@@ -82,6 +82,22 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
 
             throw new InvalidOperationException($"Error en la comunicación con Ollama: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Normaliza a norma unitaria: con vectores unitarios, la distancia L2 de Chroma
+    /// equivale a similitud coseno (score = 1 - d²/2). Sin esto, L2 da cientos
+    /// y ningún MinScore razonable filtra bien.
+    /// </summary>
+    private static float[] Normalizar(float[] v)
+    {
+        double norma = 0;
+        foreach (var x in v) norma += (double)x * x;
+        norma = Math.Sqrt(norma);
+        if (norma < 1e-9) return v;
+        var r = new float[v.Length];
+        for (int i = 0; i < v.Length; i++) r[i] = (float)(v[i] / norma);
+        return r;
     }
 }
 

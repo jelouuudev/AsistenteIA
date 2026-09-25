@@ -72,12 +72,23 @@ public class SqlQueryTool : ITool
             {
                 if (GenerarSqlDesdePregunta(pregunta, c, false, false) != null) { conexion = c; break; }
             }
+            // Respaldo: la pregunta original suele nombrar la tabla
+            // (el Planner la incluye: "Consultar datos de Empleados...").
+            if (conexion == null && !string.IsNullOrWhiteSpace(request.PreguntaOriginal) && request.PreguntaOriginal != pregunta)
+            {
+                foreach (var c in conexionesActivas)
+                {
+                    if (GenerarSqlDesdePregunta(request.PreguntaOriginal, c, false, false) != null) { conexion = c; break; }
+                }
+            }
         }
         conexion ??= conexionesActivas.First();
 
         var sql = string.IsNullOrWhiteSpace(sqlSugerido)
             ? GenerarSqlDesdePregunta(pregunta, conexion, forzarAgregacion, forzarRaw)
             : sqlSugerido;
+        if (string.IsNullOrWhiteSpace(sql) && !string.IsNullOrWhiteSpace(request.PreguntaOriginal) && request.PreguntaOriginal != pregunta)
+            sql = GenerarSqlDesdePregunta(request.PreguntaOriginal, conexion, forzarAgregacion, forzarRaw);
 
         if (string.IsNullOrWhiteSpace(sql))
             return new ToolExecutionResult { Exitoso = false, Error = "No se pudo determinar una consulta válida para la pregunta." };
