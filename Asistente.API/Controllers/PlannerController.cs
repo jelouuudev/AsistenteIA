@@ -35,6 +35,10 @@ public class PlannerController : ControllerBase
     private int UsuarioId()
         => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
 
+    // Ownership: solo el dueño del plan o un Administrador pueden verlo/operarlo.
+    private bool PuedeAcceder(Plan plan)
+        => plan.IdUsuario == UsuarioId() || User.IsInRole("Administrador");
+
     /// <summary>Genera un plan a partir de una solicitud en lenguaje natural (Actividad 1, 2).</summary>
     [HttpPost("generar")]
     public async Task<ActionResult<PlanDto>> Generar([FromBody] GenerarPlanRequest request, CancellationToken ct)
@@ -53,6 +57,7 @@ public class PlannerController : ControllerBase
         var plan = await _planRepo.GetByIdAsync(id, ct)
                    ?? (Plan?)null;
         if (plan == null) return NotFound();
+        if (!PuedeAcceder(plan)) return Forbid();
         var resultado = await _planner.ValidarPlanAsync(plan, ct);
         return Ok(resultado);
     }
@@ -63,6 +68,7 @@ public class PlannerController : ControllerBase
     {
         var plan = await _planRepo.GetByIdAsync(id, ct);
         if (plan == null) return NotFound();
+        if (!PuedeAcceder(plan)) return Forbid();
 
         // Simulación en seco: valida SIN ejecutar (Regla 3) y predice participantes/herramientas.
         var simulacion = await _planner.SimularAsync(id, ct);
@@ -83,13 +89,25 @@ public class PlannerController : ControllerBase
         return Ok(dto);
     }
 
-    /// <summary>Ejecuta el plan delegándolo al Agent Orchestrator (Regla 4). Fire-and-forget:
+    /// <summary>Ejecuta el plan. Fire-and-forget:
     /// devuelve el IdPlan de inmediato; la ejecución (lenta en CPU) corre en segundo plano.</summary>
     [HttpPost("ejecutar/{id:int}")]
     public async Task<ActionResult<PlanDto>> Ejecutar(int id, CancellationToken ct)
     {
         var plan = await _planRepo.GetByIdAsync(id, ct);
         if (plan == null) return NotFound();
+        if (!PuedeAcceder(plan)) return Forbid();
+
+        // Guarda anti-doble-ejecución: verificar estado antes de lanzar background.
+        if (plan.Estado == "EnEjecucion" || plan.Estado == "IniciandoEjecucion")
+            return BadRequest(new { exitoso = false, error = $"El plan {id} ya está en ejecución." });
+        if (plan.Estado == "EnEsperaAprobacion")
+            return BadRequest(new { exitoso = false, error = $"El plan {id} ya tiene una solicitud de aprobación pendiente. Decida primero en el Centro de Aprobaciones." });
+
+        // Lanzar ejecución en segundo plano.
+        // Marcar inmediatamente para evitar doble ejecución.
+        plan.Estado = "IniciandoEjecucion";
+        await _planRepo.UpdateAsync(plan, ct);
 
         _ = Task.Run(async () =>
         {
@@ -105,7 +123,18 @@ public class PlannerController : ControllerBase
             }
         });
 
-        return Ok(ToDto(plan));
+        // Esperar hasta que el estado cambie (evita doble ejecución: la 2da llamada ve el estado actualizado).
+        var timeout = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < timeout)
+        {
+            var actualizado = await _planRepo.GetByIdAsync(id, CancellationToken.None);
+            if (actualizado != null && actualizado.Estado != "Pendiente")
+                break;
+            await Task.Delay(100);
+        }
+
+        var final = await _planRepo.GetByIdAsync(id, ct);
+        return Ok(ToDto(final));
     }
 
     /// <summary>Aprueba un plan que requiere aprobación humana (Regla de negocio 12).</summary>
@@ -114,29 +143,32 @@ public class PlannerController : ControllerBase
     {
         var plan = await _planRepo.GetByIdAsync(id, ct);
         if (plan == null) return NotFound();
+        if (!PuedeAcceder(plan)) return Forbid();
         plan.Aprobado = true;
         await _planRepo.UpdateAsync(plan, ct);
         return Ok(new { aprobado = true });
     }
 
-    /// <summary>Cancela un plan en ejecución (Actividad 8, Regla 6).</summary>
+    /// <summary>Cancela un plan en ejecución (Actividad 8, Regla 6 + B-03).</summary>
     [HttpPost("cancelar/{id:int}")]
     public async Task<ActionResult> Cancelar(int id, CancellationToken ct)
     {
         var plan = await _planRepo.GetByIdAsync(id, ct);
         if (plan == null) return NotFound();
-        plan.Estado = "Cancelado";
-        plan.FechaFin = DateTime.UtcNow;
-        await _planRepo.UpdateAsync(plan, ct);
-        await _planner.RegistrarLogAsync(id, null, "PlanCancelado", "Cancelado por el usuario.", ct);
+        if (!PuedeAcceder(plan)) return Forbid();
+        // B-03: cancelación real — detiene el trabajo activo vía CTS, no solo el estado.
+        await _planner.CancelarEjecucionAsync(id, ct);
         return Ok(new { cancelado = true });
     }
 
-    /// <summary>Dashboard de planes (Actividad 10): activos, finalizados, fallidos, tiempo promedio.</summary>
+    /// <summary>Dashboard de planes (Actividad 10): activos, finalizados, fallidos, tiempo promedio.
+    /// Alcance por usuario: cada usuario ve sus planes; Administrador ve todos.</summary>
     [HttpGet("dashboard")]
     public async Task<ActionResult<PlannerDashboardDto>> Dashboard(CancellationToken ct)
     {
-        var todos = await _planRepo.GetRecentAsync(200, ct);
+        var todos = (await _planRepo.GetRecentAsync(200, ct)).ToList();
+        if (!User.IsInRole("Administrador"))
+            todos = todos.Where(p => p.IdUsuario == UsuarioId()).ToList();
         var activos = todos.Count(p => p.Estado == "EnEjecucion");
         var finalizados = todos.Count(p => p.Estado == "Completado");
         var fallidos = todos.Count(p => p.Estado == "Fallido" || p.Estado == "Cancelado");
@@ -160,16 +192,7 @@ public class PlannerController : ControllerBase
     {
         var plan = await _planRepo.GetByIdAsync(id, ct);
         if (plan == null) return NotFound();
-
-        // Sincroniza el progreso fino del Orchestrator en los PlanStep (para que el DAG
-        // refleje los estados reales al recargar un plan ya ejecutado/cancelado).
-        if (!string.IsNullOrWhiteSpace(plan.IdExecution)
-            && (plan.Estado == "Completado" || plan.Estado == "Fallido" || plan.Estado == "Cancelado"))
-        {
-            try { await _planner.SincronizarPlanStepsAsync(id, plan.IdExecution, ct); }
-            catch { /* no bloquea la lectura si la sincronización falla */ }
-            plan = await _planRepo.GetByIdAsync(id, ct) ?? plan;
-        }
+        if (!PuedeAcceder(plan)) return Forbid();
 
         return Ok(ToDto(plan));
     }

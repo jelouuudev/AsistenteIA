@@ -23,7 +23,7 @@ public class AgenteVersion
     /// </summary>
     public string? Configuracion { get; set; }
 
-    public EstadoAgente Estado { get; set; } = EstadoAgente.Borrador;
+    public EstadoAgente Estado { get; set; } = EstadoAgente.Activo;
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
     public string? UsuarioCreacion { get; set; }
 

@@ -24,6 +24,12 @@ public interface IWorkflowPasoRepository
     Task AddAsync(WorkflowPaso paso, CancellationToken cancellationToken = default);
     Task UpdateAsync(WorkflowPaso paso, CancellationToken cancellationToken = default);
     Task DeleteByWorkflowAsync(int idWorkflow, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Pasos con seguimiento de cambios (para reemplazo atómico dentro de un SaveChanges).
+    /// </summary>
+    Task<List<WorkflowPaso>> GetTrackedByWorkflowAsync(int idWorkflow, CancellationToken cancellationToken = default);
+    /// <summary>Marca pasos para borrado (se confirma con SaveChanges, atómico).</summary>
+    void RemoveRange(IEnumerable<WorkflowPaso> pasos);
 }
 
 public interface IWorkflowEjecucionRepository
@@ -32,6 +38,7 @@ public interface IWorkflowEjecucionRepository
     Task<IEnumerable<WorkflowEjecucion>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<IEnumerable<WorkflowEjecucion>> GetByWorkflowAsync(int idWorkflow, CancellationToken cancellationToken = default);
     Task<WorkflowEjecucion?> GetPendienteConfirmacionAsync(int idUsuario, CancellationToken cancellationToken = default);
+    Task<WorkflowEjecucion?> GetByIdForUpdateAsync(int id, CancellationToken cancellationToken = default);
     Task AddAsync(WorkflowEjecucion ejecucion, CancellationToken cancellationToken = default);
     Task UpdateAsync(WorkflowEjecucion ejecucion, CancellationToken cancellationToken = default);
 }

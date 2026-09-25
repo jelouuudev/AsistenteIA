@@ -14,6 +14,15 @@
     </div>
 </div>
 
+@if (Model.EventosConError > 0)
+{
+    <div class="alert border-0 mb-4" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);border-radius:12px;">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>@Model.EventosConError incidente(s):</strong>
+        hay eventos automáticos con error. Revise <a asp-action="EventosProcesados" class="alert-link" style="color:#fca5a5;">Eventos Procesados</a>
+        (quedan registrados en auditoría como <em>ErrorAutomatico</em>).
+    </div>
+}
+
 <div class="row g-3 mb-4">
     <div class="col-6 col-lg-3">
         <div class="card border-0 h-100" style="background:rgba(30,41,59,0.6);border-radius:14px;border:1px solid rgba(255,255,255,0.07);">

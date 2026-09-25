@@ -5,8 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Services;
+using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
+using Asistente.Shared;
 using Moq;
 using Xunit;
 
@@ -17,10 +19,16 @@ public class WorkflowServiceVersionadoTests
     private readonly Mock<IWorkflowRepository> _workflowRepo = new();
     private readonly Mock<IWorkflowPasoRepository> _pasoRepo = new();
     private readonly Mock<IWorkflowEjecucionRepository> _ejecRepo = new();
+    private readonly Mock<IConfiguracionWorkflowRepository> _configRepo = new();
     private readonly Mock<IUnitOfWork> _uow = new();
+    private readonly Mock<IWorkflowEngine> _engine = new();
 
-    private WorkflowService CrearService() =>
-        new(_workflowRepo.Object, _pasoRepo.Object, _ejecRepo.Object, _uow.Object);
+    private WorkflowService CrearService(int limitePasos = 10)
+    {
+        _configRepo.Setup(r => r.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConfiguracionWorkflow { LimitePasosPorWorkflow = limitePasos });
+        return new(_workflowRepo.Object, _pasoRepo.Object, _ejecRepo.Object, _configRepo.Object, _uow.Object, _engine.Object);
+    }
 
     private static Workflow WorkflowBase(int id, int version, string codigo)
     {
@@ -46,6 +54,32 @@ public class WorkflowServiceVersionadoTests
             }
         };
         return w;
+    }
+
+    [Fact]
+    public async Task CrearAsync_Debe_Rechazar_Cuando_Supera_Limite_Pasos()
+    {
+        var pasos = Enumerable.Range(1, 11).Select(i => new WorkflowPasoRequest
+        {
+            Orden = i, Nombre = $"Paso {i}", Herramienta = "SqlQueryTool", Parametros = "{}",
+            RequiereConfirmacion = false, ReintentosMaximos = 1, TiempoMaximoMs = 60000, EstrategiaError = "Cancelar"
+        }).ToList();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => CrearService(limitePasos: 10).CrearAsync(
+            new CrearWorkflowRequest { Nombre = "Grande", Codigo = "BIG", Pasos = pasos }, CancellationToken.None));
+        Assert.Contains("límite de 10 pasos", ex.Message);
+    }
+
+    [Fact]
+    public async Task EliminarAsync_Debe_Bloquear_Cuando_Hay_Ejecuciones()
+    {
+        var w = WorkflowBase(9, 1, "REP-TEST");
+        _workflowRepo.Setup(r => r.GetByIdAsync(9, It.IsAny<CancellationToken>())).ReturnsAsync(w);
+        _ejecRepo.Setup(r => r.GetByWorkflowAsync(9, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<WorkflowEjecucion> { new() { IdEjecucion = 1, IdWorkflow = 9 } });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => CrearService().EliminarAsync(9));
+        Assert.Contains("auditor", ex.Message);
     }
 
     [Fact]

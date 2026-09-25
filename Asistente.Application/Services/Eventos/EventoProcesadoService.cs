@@ -29,6 +29,7 @@ public class EventoProcesadoService : IEventoProcesadoService
         FechaHora = e.FechaHora,
         Estado = e.Estado,
         Resultado = e.Resultado,
+        ContextoDisparo = e.ContextoDisparo,
         TiempoProcesamiento = e.TiempoProcesamiento,
         IdRegla = e.IdRegla,
         IdWorkflow = e.IdWorkflow,

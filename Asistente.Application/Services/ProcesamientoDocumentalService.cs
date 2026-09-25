@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
@@ -24,6 +25,8 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ProcesamientoDocumentalService> _logger;
     private readonly ProcesamientoConfig _config;
+    private readonly IEventoMotorService _eventoMotorService;
+    private readonly IDisparadorEventoService _disparadoresService;
 
     public ProcesamientoDocumentalService(
         IProcesamientoDocumentalRepository procesamientoRepository,
@@ -34,7 +37,9 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
         IChunkingService chunkingService,
         IUnitOfWork unitOfWork,
         ILogger<ProcesamientoDocumentalService> logger,
-        IOptions<ProcesamientoConfig> config)
+        IOptions<ProcesamientoConfig> config,
+        IEventoMotorService eventoMotorService,
+        IDisparadorEventoService disparadoresService)
     {
         _procesamientoRepository = procesamientoRepository;
         _versionRepository = versionRepository;
@@ -45,6 +50,54 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
         _unitOfWork = unitOfWork;
         _logger = logger;
         _config = config.Value;
+        _eventoMotorService = eventoMotorService;
+        _disparadoresService = disparadoresService;
+    }
+
+    /// <summary>
+    /// Detector automático (ETAPA 13): al completar el procesamiento dispara DOC_PROCESADO
+    /// para automatizaciones. Nunca rompe el procesamiento (si el evento no existe, solo avisa).
+    /// Además evalúa disparadores tipo Documento configurados desde UI (por categoría/código).
+    /// </summary>
+    private async Task DispararDocumentoProcesadoAsync(int idDocumento, string? codigo, string? nombre, int versionId, int totalChunks, int? idCategoria = null)
+    {
+        string? contexto = null;
+        try
+        {
+            contexto = JsonSerializer.Serialize(new
+            {
+                IdDocumento = idDocumento,
+                Codigo = codigo,
+                Nombre = nombre,
+                IdVersion = versionId,
+                TotalChunks = totalChunks
+            });
+            await _eventoMotorService.DispararEventoAsync("DOC_PROCESADO", contexto);
+            _logger.LogInformation("Evento DOC_PROCESADO disparado para documento {Id}.", idDocumento);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo disparar DOC_PROCESADO para documento {Id}.", idDocumento);
+        }
+
+        // Disparadores tipo Documento configurados desde UI (filtros por categoría/código).
+        try
+        {
+            var triggers = await _disparadoresService.ObtenerDisparadoresDocumentoAsync(idCategoria, codigo);
+            foreach (var t in triggers)
+            {
+                if (string.IsNullOrWhiteSpace(t.CodigoEvento)) continue;
+                // Reutiliza el mismo contexto del documento procesado.
+                var evento = await _eventoMotorService.DispararEventoAsync(t.CodigoEvento, contexto);
+                _logger.LogInformation("Disparador {Id} encendió evento {Evento} para documento {Doc}.",
+                    t.IdDisparador, t.CodigoEvento, idDocumento);
+                await _disparadoresService.MarcarEjecucionAsync(t.IdDisparador, null);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error al evaluar disparadores de documento para {Id}.", idDocumento);
+        }
     }
 
     public async Task<DocumentoProcesadoDto?> ObtenerPorIdAsync(int id)
@@ -214,8 +267,11 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
 
             await _unitOfWork.SaveChangesAsync();
 
-            // Actualizar pendienteProcesamiento del documento
-            var documento = version.Documento;
+            // Actualizar pendienteProcesamiento del documento. Se carga explicito por
+            // IdDocumento porque la navegacion version.Documento suele venir null
+            // (sin Include ni lazy loading) y la bandera quedaba en Pendiente aunque
+            // el contenido ya estuviera procesado y legible.
+            var documento = await _documentoRepository.GetByIdAsync(version.IdDocumento);
             if (documento != null)
             {
                 documento.PendienteProcesamiento = false;
@@ -225,6 +281,9 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
 
             _logger.LogInformation("Procesamiento completado para versión {VersionId}: {Chunks} chunks, {Caracteres} caracteres",
                 versionId, chunks.Count, textoNormalizado.Length);
+
+            if (chunks.Any() && documento != null)
+                await DispararDocumentoProcesadoAsync(documento.IdDocumento, documento.Codigo, documento.Nombre, versionId, chunks.Count, documento.IdCategoria);
         }
         catch (Exception ex)
         {
@@ -355,7 +414,8 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
 
             await _unitOfWork.SaveChangesAsync();
 
-            var documento = version.Documento;
+            // Carga explicita (ver comentario arriba): version.Documento suele ser null.
+            var documento = await _documentoRepository.GetByIdAsync(version.IdDocumento);
             if (documento != null)
             {
                 documento.PendienteProcesamiento = false;
@@ -365,6 +425,9 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
 
             _logger.LogInformation("Re-procesamiento completado para versión {VersionId}: {Chunks} chunks, {Caracteres} caracteres",
                 versionId, chunks.Count, textoNormalizado.Length);
+
+            if (chunks.Any() && documento != null)
+                await DispararDocumentoProcesadoAsync(documento.IdDocumento, documento.Codigo, documento.Nombre, versionId, chunks.Count, documento.IdCategoria);
         }
         catch (Exception ex)
         {

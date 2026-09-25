@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace Asistente.Web.Controllers;
 
-[Authorize(Roles = "Administrador,Operador")]
+[Authorize(Roles = "Administrador,Operador,Supervisor")]
 public class DocumentosController : Controller
 {
     private readonly IApiService _apiService;
@@ -341,7 +341,7 @@ public class DocumentosController : Controller
         }
         catch (Exception ex)
         {
-            TempData["ErrorMessage"] = $"Error al cargar auditorías: {ex.Message}";
+            TempData["ErrorMessage"] = $"Error al eliminar documento: {ex.Message}";
             return RedirectToAction(nameof(Index));
         }
     }

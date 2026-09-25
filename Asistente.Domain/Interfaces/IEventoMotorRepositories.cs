@@ -16,6 +16,16 @@ public interface IEventoEmpresarialRepository
     Task DeleteAsync(EventoEmpresarial evento, CancellationToken ct = default);
 }
 
+public interface IDisparadorEventoRepository
+{
+    Task<DisparadorEvento?> GetByIdAsync(int id, CancellationToken ct = default);
+    Task<IEnumerable<DisparadorEvento>> GetAllAsync(CancellationToken ct = default);
+    Task<IEnumerable<DisparadorEvento>> GetActivosAsync(CancellationToken ct = default);
+    Task AddAsync(DisparadorEvento disparador, CancellationToken ct = default);
+    Task UpdateAsync(DisparadorEvento disparador, CancellationToken ct = default);
+    Task DeleteAsync(DisparadorEvento disparador, CancellationToken ct = default);
+}
+
 public interface IReglaEventoRepository
 {
     Task<ReglaEvento?> GetByIdAsync(int id, CancellationToken ct = default);

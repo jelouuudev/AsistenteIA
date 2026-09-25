@@ -77,7 +77,7 @@ permitiendo encadenar salidas (ej. Paso 1 consulta clientes → Paso 2 genera re
 
 `reintentos = max(paso.ReintentosMaximos, config.ReintentosMaximos)`. El bucle intenta
 `reintentos + 1` veces con backoff. Al agotarlos, aplica `EstrategiaError`:
-- `Omitir` / `RegistrarIncidencia`: continúa con el siguiente paso.
+- `Omitir`: continúa con el siguiente paso. (`RegistrarIncidencia` se eliminó: era idéntica sin registrar nada.)
 - `Cancelar` (default): marca la ejecución como **Error** y detiene.
 
 ## 6. Confirmación del usuario (Actividad 6)

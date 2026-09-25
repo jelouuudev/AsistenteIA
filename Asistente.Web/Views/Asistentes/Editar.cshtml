@@ -51,13 +51,6 @@
                         <textarea asp-for="PromptSistema" class="form-control" rows="5" style="background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:10px;font-family:monospace;"></textarea>
                         <small class="text-secondary">Define el comportamiento propio del agente. Tiene prioridad sobre el prompt genérico de la plataforma.</small>
                     </div>
-                    <div class="col-12">
-                        <div class="form-check form-switch p-0 d-flex align-items-center gap-3"
-                             style="background:rgba(15,23,42,0.4);border-radius:10px;border:1px solid rgba(255,255,255,0.07);padding:12px 16px !important;">
-                            <input asp-for="Activo" class="form-check-input m-0" type="checkbox" id="activoSwitch" style="width:2.5rem;height:1.3rem;" />
-                            <label class="form-check-label" for="activoSwitch" style="color:#94a3b8;">Asistente activo</label>
-                        </div>
-                    </div>
                 </div>
 
                 <h6 class="text-white fw-semibold mb-3"><i class="bi bi-sliders me-2" style="color:#818cf8;"></i>Configuración de comportamiento</h6>
@@ -127,7 +120,7 @@
                             @foreach (var f in (ViewBag.Fuentes as IEnumerable<Asistente.Shared.FuenteConocimientoDto>) ?? Enumerable.Empty<Asistente.Shared.FuenteConocimientoDto>())
                             {
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="Fuentes" id="fuente-@f.IdFuente" value="@f.IdFuente" checked="@(Model.Fuentes != null && Model.Fuentes.Contains(f.IdFuente))" />
+                                    <input class="form-check-input" type="checkbox" name="Fuentes" id="fuente-@f.IdFuente" value="@f.IdFuente" @(Model.Fuentes != null && Model.Fuentes.Contains(f.IdFuente) ? "checked" : null) />
                                     <label class="form-check-label text-light small" for="fuente-@f.IdFuente">@f.Nombre</label>
                                 </div>
                             }
@@ -140,7 +133,7 @@
                             @foreach (var h in (ViewBag.Herramientas as IEnumerable<Asistente.Shared.HerramientaDto>) ?? Enumerable.Empty<Asistente.Shared.HerramientaDto>())
                             {
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="Herramientas" id="herr-@h.IdHerramienta" value="@h.IdHerramienta" checked="@(Model.Herramientas != null && Model.Herramientas.Contains(h.IdHerramienta))" />
+                                    <input class="form-check-input" type="checkbox" name="Herramientas" id="herr-@h.IdHerramienta" value="@h.IdHerramienta" @(Model.Herramientas != null && Model.Herramientas.Contains(h.IdHerramienta) ? "checked" : null) />
                                     <label class="form-check-label text-light small" for="herr-@h.IdHerramienta">@h.Nombre</label>
                                 </div>
                             }
@@ -152,7 +145,7 @@
                             @foreach (var w in (ViewBag.Workflows as IEnumerable<Asistente.Shared.WorkflowDto>) ?? Enumerable.Empty<Asistente.Shared.WorkflowDto>())
                             {
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="Workflows" id="wf-@w.IdWorkflow" value="@w.IdWorkflow" checked="@(Model.Workflows != null && Model.Workflows.Contains(w.IdWorkflow))" />
+                                    <input class="form-check-input" type="checkbox" name="Workflows" id="wf-@w.IdWorkflow" value="@w.IdWorkflow" @(Model.Workflows != null && Model.Workflows.Contains(w.IdWorkflow) ? "checked" : null) />
                                     <label class="form-check-label text-light small" for="wf-@w.IdWorkflow">@w.Nombre</label>
                                 </div>
                             }
@@ -164,7 +157,7 @@
                             @foreach (var r in (ViewBag.Roles as IEnumerable<Asistente.Shared.RolDto>) ?? Enumerable.Empty<Asistente.Shared.RolDto>())
                             {
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="Roles" id="rol-@r.IdRol" value="@r.IdRol" checked="@(Model.Roles != null && Model.Roles.Contains(r.IdRol))" />
+                                    <input class="form-check-input" type="checkbox" name="Roles" id="rol-@r.IdRol" value="@r.IdRol" @(Model.Roles != null && Model.Roles.Contains(r.IdRol) ? "checked" : null) />
                                     <label class="form-check-label text-light small" for="rol-@r.IdRol">@r.Nombre</label>
                                 </div>
                             }
@@ -177,7 +170,7 @@
                             @foreach (var u in (ViewBag.Usuarios as IEnumerable<Asistente.Shared.UsuarioDto>) ?? Enumerable.Empty<Asistente.Shared.UsuarioDto>())
                             {
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="Usuarios" id="usu-@u.IdUsuario" value="@u.IdUsuario" checked="@(Model.Usuarios != null && Model.Usuarios.Contains(u.IdUsuario))" />
+                                    <input class="form-check-input" type="checkbox" name="Usuarios" id="usu-@u.IdUsuario" value="@u.IdUsuario" @(Model.Usuarios != null && Model.Usuarios.Contains(u.IdUsuario) ? "checked" : null) />
                                     <label class="form-check-label text-light small" for="usu-@u.IdUsuario">@u.Nombres @u.Apellidos</label>
                                 </div>
                             }

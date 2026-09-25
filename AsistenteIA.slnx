@@ -5,4 +5,5 @@
   <Project Path="Asistente.Infrastructure/Asistente.Infrastructure.csproj" />
   <Project Path="Asistente.Shared/Asistente.Shared.csproj" />
   <Project Path="Asistente.Web/Asistente.Web.csproj" />
+  <Project Path="Asistente.Tests/Asistente.Tests.csproj" />
 </Solution>

@@ -47,6 +47,9 @@ public class ConsultaPlantillaService : IConsultaPlantillaService
 
     public async Task<ConsultaPlantillaDto> CrearAsync(CrearConsultaPlantillaRequest request, CancellationToken cancellationToken = default)
     {
+        if (!request.IdConexion.HasValue || request.IdConexion.Value <= 0)
+            throw new InvalidOperationException("Debe seleccionar una conexión. Las plantillas siempre pertenecen a una conexión específica.");
+
         var plantilla = new ConsultaPlantilla
         {
             Nombre = request.Nombre,
@@ -69,6 +72,9 @@ public class ConsultaPlantillaService : IConsultaPlantillaService
     {
         var plantilla = await _plantillaRepository.GetByIdAsync(id)
             ?? throw new KeyNotFoundException($"Plantilla con ID {id} no encontrada.");
+
+        if (!request.IdConexion.HasValue || request.IdConexion.Value <= 0)
+            throw new InvalidOperationException("Debe seleccionar una conexión. Las plantillas siempre pertenecen a una conexión específica.");
 
         plantilla.Nombre = request.Nombre;
         plantilla.Descripcion = request.Descripcion;

@@ -231,11 +231,23 @@ public class SqlQueryTool : ITool
         // Si pide agregación (indicadores, métricas, totales), generar GROUP BY automático.
         if (quiereAgregacion)
         {
+            // Verificar si la tabla tiene columna Estado (solo agrupar por Estado si existe)
+            var tieneEstado = TieneColumnaEstado(candidata.Nombre);
+            
             // Detectar si hay campo numérico para sumar (Precio/Valor/Monto/Costo).
             var pideSuma = Contiene(normalizada, "valor", "precio", "suma", "monto", "total", "valuado", "costo");
+            
+            if (tieneEstado)
+            {
+                if (pideSuma)
+                    return $"SELECT Estado, COUNT(*) AS Cantidad, SUM(Precio) AS ValorTotal FROM [{candidata.Nombre}]{whereEstado} GROUP BY Estado ORDER BY Estado;";
+                return $"SELECT Estado, COUNT(*) AS Cantidad FROM [{candidata.Nombre}]{whereEstado} GROUP BY Estado ORDER BY Estado;";
+            }
+            
+            // Sin columna Estado: solo conteo simple
             if (pideSuma)
-                return $"SELECT Estado, COUNT(*) AS Cantidad, SUM(Precio) AS ValorTotal FROM [{candidata.Nombre}]{whereEstado} GROUP BY Estado ORDER BY Estado;";
-            return $"SELECT Estado, COUNT(*) AS Cantidad FROM [{candidata.Nombre}]{whereEstado} GROUP BY Estado ORDER BY Estado;";
+                return $"SELECT COUNT(*) AS Cantidad, SUM(Precio) AS ValorTotal FROM [{candidata.Nombre}]{whereEstado};";
+            return $"SELECT COUNT(*) AS Cantidad FROM [{candidata.Nombre}]{whereEstado};";
         }
 
         if (esConteo)
@@ -254,14 +266,48 @@ public class SqlQueryTool : ITool
         var p = QuitarAcentos(pregunta);
         var n = QuitarAcentos(nombre.ToLowerInvariant());
         if (p.Contains(n)) return 3;
-        var palabras = n.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        // Partir camelCase/PascalCase/snake en palabras: "OrdenesCompra" -> ordenes + compra.
+        // Sin esto, "lista las órdenes de compra" nunca matcheaba (buscaba "ordenescompra" pegado).
+        var palabras = PartirEnPalabras(nombre);
         return palabras.Count(pal => p.Contains(pal));
+    }
+
+    private static List<string> PartirEnPalabras(string nombre)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in nombre)
+        {
+            if (c == '_' || c == ' ' || c == '-')
+            {
+                sb.Append(' ');
+                continue;
+            }
+            if (char.IsUpper(c) && sb.Length > 0 && sb[sb.Length - 1] != ' ')
+                sb.Append(' ');
+            sb.Append(c);
+        }
+        return QuitarAcentos(sb.ToString().ToLowerInvariant())
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 2)
+            .ToList();
     }
 
     private static string QuitarAcentos(string texto)
         => new string(texto.Normalize(System.Text.NormalizationForm.FormD)
             .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
             .ToArray());
+
+    /// <summary>Verifica si una tabla tiene columna Estado (para GROUP BY).</summary>
+    private static bool TieneColumnaEstado(string nombreTabla)
+    {
+        // Solo tablas confirmadas con columna Estado
+        var tablasConEstado = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Activos", "Usuarios", "MovimientosActivos", "HistorialActivos", 
+            "Documento", "Asistente"
+        };
+        return tablasConEstado.Contains(nombreTabla);
+    }
 
     private static string GenerarResumen(List<Dictionary<string, object?>> datos, List<string> columnas)
     {

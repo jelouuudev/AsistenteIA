@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -57,15 +58,40 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         "productos", "producto", "stock", "inventario", "proveedores", "proveedor", "empleados",
         "empleado", "usuarios", "usuario activo", "categorías", "categoría", "contar", "cuántos",
         "cuantos", "cuántas", "cuantas", "total", "promedio", "media", "suma", "sumar", "máximo",
-        "mínimo", "minimo", "registros", "tickets", "órdenes", "ordenes", "orden", "cantidad"
+        "mínimo", "minimo", "registros", "tickets", "órdenes", "ordenes", "orden", "cantidad",
+        "activos", "activo", "monedas", "moneda", "ubicaciones", "ubicación", "movimientos",
+        "historial", "roles", "rol"
     ];
 
     private static readonly string[] PalabrasClaveDatos =
     [
         "cliente", "pedido", "factura", "venta", "producto", "stock", "proveedor", "empleado",
         "usuario", "categoria", "ticket", "orden", "inventario", "cantidad", "precio", "total",
-        "cuenta", "registro", "membresia", "suscripcion", "asignacion"
+        "cuenta", "registro", "membresia", "suscripcion", "asignacion", "activos", "activo",
+        "moneda", "ubicacion", "movimiento", "historial", "rol"
     ];
+
+    // Control de concurrencia (MaxConsultasSimultaneas; antes no se leia: parametro muerto).
+    private static int _consultasEnCurso;
+    private static readonly object _candadoConcurrencia = new();
+
+    private static bool IntentarEntrar(int maximo)
+    {
+        lock (_candadoConcurrencia)
+        {
+            if (_consultasEnCurso >= Math.Max(1, maximo)) return false;
+            _consultasEnCurso++;
+            return true;
+        }
+    }
+
+    private static void Salir()
+    {
+        lock (_candadoConcurrencia)
+        {
+            if (_consultasEnCurso > 0) _consultasEnCurso--;
+        }
+    }
 
     public async Task<ResultadoProcesarPreguntaDto> ProcesarPreguntaAsync(
         string pregunta,
@@ -108,10 +134,17 @@ public class QueryEmpresarialService : IQueryEmpresarialService
             }
 
             var conexion = SeleccionarConexion(conexionesActivas, config, pregunta);
-            var (sql, plantilla) = await ConstruirConsultaAsync(pregunta, conexion, cancellationToken);
+            var (sql, plantilla, parametrosFaltantes) = await ConstruirConsultaAsync(pregunta, conexion, cancellationToken);
 
             if (string.IsNullOrWhiteSpace(sql))
             {
+                if (plantilla != null && parametrosFaltantes.Count > 0)
+                {
+                    respuesta.Tipo = "falta-parametro";
+                    respuesta.Error = $"La plantilla '{plantilla.Nombre}' necesita el valor de {string.Join(", ", parametrosFaltantes.Select(f => "@" + f))}. " +
+                        $"Indíquelo en la pregunta (ej: {parametrosFaltantes[0]}: Finanzas) o ejecútela desde Consultas Empresariales.";
+                    return respuesta;
+                }
                 respuesta.Tipo = "sin-plantilla";
                 respuesta.Error = "No se pudo interpretar la consulta. Intente reformularla o use una plantilla existente.";
                 return respuesta;
@@ -130,8 +163,22 @@ public class QueryEmpresarialService : IQueryEmpresarialService
 
             var cadena = _cifrador.Descifrar(conexion.CadenaConexionCifrada);
             var inicio = DateTime.UtcNow;
-            var datos = await _executor.ExecuteReadOnlyAsync(
-                cadena, sql, null, config.MaximoRegistros, cancellationToken);
+            if (!IntentarEntrar(config.MaxConsultasSimultaneas))
+            {
+                respuesta.Tipo = "ocupado";
+                respuesta.Error = "El motor de consultas está ocupado (máximo de consultas simultáneas alcanzado). Intente de nuevo en unos segundos.";
+                return respuesta;
+            }
+            IEnumerable<Dictionary<string, object?>> datos;
+            try
+            {
+                datos = await _executor.ExecuteReadOnlyAsync(
+                    cadena, sql, null, config.MaximoRegistros, cancellationToken, config.TiempoMaximoEjecucionSegundos);
+            }
+            finally
+            {
+                Salir();
+            }
             var tiempoMs = (long)(DateTime.UtcNow - inicio).TotalMilliseconds;
 
             var registros = datos.ToList();
@@ -210,11 +257,27 @@ public class QueryEmpresarialService : IQueryEmpresarialService
 
             var config = await _configRepository.GetActivaAsync();
             var maxRows = config?.MaximoRegistros ?? 100;
+            var timeoutSegundos = config?.TiempoMaximoEjecucionSegundos ?? 15;
 
             var cadena = _cifrador.Descifrar(conexion.CadenaConexionCifrada);
             var inicio = DateTime.UtcNow;
-            var datos = await _executor.ExecuteReadOnlyAsync(
-                cadena, sql, request.Parametros, maxRows, cancellationToken);
+            if (!IntentarEntrar(config?.MaxConsultasSimultaneas ?? 5))
+            {
+                response.Error = "El motor de consultas está ocupado (máximo de consultas simultáneas alcanzado). Intente de nuevo en unos segundos.";
+                response.Estado = nameof(EstadoConsulta.Bloqueada);
+                return response;
+            }
+            IEnumerable<Dictionary<string, object?>> datosRaw;
+            try
+            {
+                datosRaw = await _executor.ExecuteReadOnlyAsync(
+                    cadena, sql, request.Parametros, maxRows, cancellationToken, timeoutSegundos);
+            }
+            finally
+            {
+                Salir();
+            }
+            var datos = datosRaw;
             var tiempoMs = (long)(DateTime.UtcNow - inicio).TotalMilliseconds;
 
             var registros = datos.ToList();
@@ -282,28 +345,51 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         return conexiones.First();
     }
 
-    private async Task<(string Sql, ConsultaPlantilla? Plantilla)> ConstruirConsultaAsync(
+    private async Task<(string Sql, ConsultaPlantilla? Plantilla, List<string> ParametrosFaltantes)> ConstruirConsultaAsync(
         string pregunta,
         ConexionBaseDatos conexion,
         CancellationToken cancellationToken = default)
     {
         var plantillas = (await _plantillaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
 
-        var plantillaCandidata = plantillas
-            .OrderByDescending(p => CalcularCoincidencia(pregunta, $"{p.Nombre} {p.Descripcion}"))
-            .FirstOrDefault(p => CalcularCoincidencia(pregunta, $"{p.Nombre} {p.Descripcion}") > 0);
+        var candidatas = plantillas
+            .Select(p => new { Plantilla = p, Score = CalcularCoincidencia(pregunta, $"{p.Nombre} {p.Descripcion}") })
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ToList();
 
-        if (plantillaCandidata != null)
+        // Prefiere la mejor plantilla cuyos parametros se puedan resolver con la pregunta.
+        // Si ninguna se resuelve, se informa la de mayor puntaje con sus parametros faltantes.
+        ConsultaPlantilla? mejorSinResolver = null;
+        List<string> faltantesMejor = new();
+        foreach (var c in candidatas)
         {
-            var sqlParametrizada = ResolverParametros(plantillaCandidata.ConsultaSql, pregunta);
-            return (sqlParametrizada, plantillaCandidata);
+            var (sqlCandidata, faltantesCandidata) = ResolverParametrosPlantilla(
+                c.Plantilla.ConsultaSql, pregunta, c.Plantilla.Parametros);
+            if (faltantesCandidata.Count == 0)
+                return (sqlCandidata, c.Plantilla, new List<string>());
+            mejorSinResolver ??= c.Plantilla;
+            if (faltantesMejor.Count == 0)
+                faltantesMejor = faltantesCandidata;
+        }
+
+        if (mejorSinResolver != null)
+        {
+            // La plantilla no se pudo resolver: intentar consulta ad-hoc antes de
+            // exigir parametros. El lenguaje natural debe funcionar sin plantillas.
+            var tablasFallback = (await _tablaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
+            var vistasFallback = (await _vistaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
+            var sqlAdHoc = GenerarConsultaAdHoc(pregunta, tablasFallback, vistasFallback);
+            if (!string.IsNullOrWhiteSpace(sqlAdHoc))
+                return (sqlAdHoc, null, new List<string>());
+            return (string.Empty, mejorSinResolver, faltantesMejor);
         }
 
         var tablas = (await _tablaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
         var vistas = (await _vistaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
 
         var sqlGenerada = GenerarConsultaAdHoc(pregunta, tablas, vistas);
-        return (sqlGenerada, null);
+        return (sqlGenerada, null, new List<string>());
     }
 
     private string GenerarConsultaAdHoc(string pregunta, List<TablaAutorizada> tablas, List<VistaAutorizada> vistas)
@@ -386,6 +472,85 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         if (Contiene(pregunta, "estado")) columnas.Add("Estado");
         if (Contiene(pregunta, "fecha")) columnas.Add("Fecha");
         return columnas.Distinct().ToList();
+    }
+
+    // Resuelve los parametros de una plantilla con valores extraidos de la pregunta.
+    // Devuelve el SQL y la lista de parametros que no se pudieron resolver.
+    private static (string Sql, List<string> Faltantes) ResolverParametrosPlantilla(
+        string sql, string pregunta, string? definicionesJson)
+    {
+        sql = ResolverParametros(sql, pregunta);
+
+        var faltantes = new List<string>();
+        var definiciones = new List<DefinicionParametroPlantilla>();
+        if (!string.IsNullOrWhiteSpace(definicionesJson))
+        {
+            try
+            {
+                definiciones = JsonSerializer.Deserialize<List<DefinicionParametroPlantilla>>(
+                    definicionesJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+            }
+            catch { /* definicion invalida: se ignora */ }
+        }
+
+        // Parametros presentes en el SQL pero no definidos: tambien deben resolverse o fallar.
+        var enSql = Regex.Matches(sql, @"@([A-Za-z_][A-Za-z0-9_]*)")
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var nombre in enSql)
+        {
+            var def = definiciones.FirstOrDefault(d =>
+                string.Equals(d.Nombre, nombre, StringComparison.OrdinalIgnoreCase));
+            var valor = ExtraerValorParametro(pregunta, nombre);
+            if (valor == null)
+            {
+                faltantes.Add(nombre);
+                continue;
+            }
+            sql = Regex.Replace(sql, "@" + Regex.Escape(nombre) + @"\b",
+                FormatearValorParametro(valor, def?.Tipo), RegexOptions.IgnoreCase);
+        }
+
+        return (sql, faltantes);
+    }
+
+    // Busca "Nombre: valor", "Nombre = valor" o "Nombre 'valor'" en la pregunta.
+    private static string? ExtraerValorParametro(string pregunta, string nombre)
+    {
+        var patron = Regex.Escape(nombre) + @"\s*[:=]\s*(?:""([^""]+)""|'([^']+)'|(\S+))";
+        var m = Regex.Match(pregunta, patron, RegexOptions.IgnoreCase);
+        if (m.Success)
+            return (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value).Trim().TrimEnd('.', ',', ';');
+
+        // Fallback: unico valor entre comillas en la pregunta.
+        var comillas = Regex.Matches(pregunta, @"""([^""]+)""|'([^']+)'");
+        if (comillas.Count == 1)
+        {
+            var g = comillas[0];
+            return (g.Groups[1].Success ? g.Groups[1].Value : g.Groups[2].Value).Trim();
+        }
+
+        return null;
+    }
+
+    private static string FormatearValorParametro(string valor, string? tipo)
+    {
+        var t = (tipo ?? "string").Trim().ToLowerInvariant();
+        if (t.Contains("int") && long.TryParse(valor, out _)) return valor;
+        if ((t.Contains("decimal") || t.Contains("numeric") || t.Contains("double") || t.Contains("float") || t.Contains("number")) && double.TryParse(valor, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
+            return valor.Replace(',', '.');
+        if (t.Contains("bool") && bool.TryParse(valor, out var b)) return b ? "1" : "0";
+        if (t.Contains("date") && DateTime.TryParse(valor, out var f)) return $"'{f:yyyy-MM-dd}'";
+        return "'" + valor.Replace("'", "''") + "'";
+    }
+
+    private sealed class DefinicionParametroPlantilla
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string? Tipo { get; set; }
     }
 
     private static string ResolverParametros(string sql, string pregunta)

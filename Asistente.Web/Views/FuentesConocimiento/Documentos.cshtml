@@ -28,9 +28,18 @@
             @Html.AntiForgeryToken()
             <input type="hidden" name="idFuente" value="@ViewBag.FuenteId" />
             <div class="flex-grow-1">
-                <label class="form-label text-secondary small">ID del Documento</label>
-                <input type="number" name="idDocumento" class="form-control" min="1" required
-                       style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;" />
+                <label class="form-label text-secondary small">Documento</label>
+                <select name="idDocumento" class="form-select" required
+                        style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:white;border-radius:10px;">
+                    <option value="">Selecciona un documento...</option>
+                    @if (ViewBag.DocumentosDisponibles != null)
+                    {
+                        foreach (var doc in (IEnumerable<Asistente.Shared.DocumentoDto>)ViewBag.DocumentosDisponibles)
+                        {
+                            <option value="@doc.IdDocumento">@doc.Nombre</option>
+                        }
+                    }
+                </select>
             </div>
             <button type="submit" class="btn px-4 py-2 fw-semibold"
                     style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">

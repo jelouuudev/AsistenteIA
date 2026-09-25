@@ -27,11 +27,24 @@ public class WorkflowsController : Controller
         try
         {
             var workflows = await _apiService.GetWorkflowsAsync(GetCurrentUserId(), GetIpAddress());
+            // Reglas agrupadas por flujo para mostrar qué evento invoca cada workflow.
+            // Si falla la carga de reglas, la tabla igual se muestra (columna con "—").
+            Dictionary<int, List<ReglaEventoDto>> porWorkflow = new();
+            try
+            {
+                var reglas = await _apiService.GetReglasEventoAsync(GetCurrentUserId(), GetIpAddress());
+                porWorkflow = reglas
+                    .GroupBy(r => r.IdWorkflow)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+            }
+            catch { /* la columna mostrará "—" */ }
+            ViewBag.ReglasPorWorkflow = porWorkflow;
             return View(workflows);
         }
         catch (Exception ex)
         {
             TempData["ErrorMessage"] = $"Error al cargar flujos de trabajo: {ex.Message}";
+            ViewBag.ReglasPorWorkflow = new Dictionary<int, List<ReglaEventoDto>>();
             return View(new List<WorkflowDto>());
         }
     }

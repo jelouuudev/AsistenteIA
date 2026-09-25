@@ -55,7 +55,7 @@ public class AsistenteConfiguration : IEntityTypeConfiguration<Domain.Entities.A
 
         builder.Property(a => a.Estado)
             .IsRequired()
-            .HasDefaultValue(EstadoAgente.Borrador);
+            .HasDefaultValue(EstadoAgente.Activo);
 
         builder.Property(a => a.Version)
             .IsRequired()

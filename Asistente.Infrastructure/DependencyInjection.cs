@@ -136,6 +136,7 @@ public static class DependencyInjection
         services.AddScoped<IEventoProcesadoRepository, EventoProcesadoRepository>();
         services.AddScoped<ITareaProgramadaRepository, TareaProgramadaRepository>();
         services.AddScoped<IConfiguracionEventoMotorRepository, ConfiguracionEventoMotorRepository>();
+        services.AddScoped<IDisparadorEventoRepository, DisparadorEventoRepository>();
 
         // Seguridad, Gobierno, Auditoría y Observabilidad (ETAPA 14)
         services.AddScoped<IPermisoRepository, PermisoRepository>();
@@ -177,6 +178,7 @@ public static class DependencyInjection
         services.AddHostedService<ProcesamientoDocumentalBackgroundService>();
         services.AddHostedService<ProcesadorEventosBackgroundService>();
         services.AddHostedService<ProgramadorTareasBackgroundService>();
+        services.AddHostedService<EvaluadorDisparadoresBackgroundService>();
 
         return services;
     }

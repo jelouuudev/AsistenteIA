@@ -2,6 +2,9 @@
 @{
     ViewData["Title"] = "Nuevo Flujo de Trabajo";
 }
+<style>
+    select.form-control option { background-color: #0f172a; color: #f1f5f9; }
+</style>
 
 <div class="mb-4">
     <h4 class="text-white fw-bold mb-0"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Nuevo Flujo de Trabajo</h4>
@@ -10,6 +13,7 @@
 
 <form asp-action="Crear" method="post" id="formWorkflow">
     @Html.AntiForgeryToken()
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger border-0 mb-3" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:12px;"></div>
     <div class="row g-3">
         <div class="col-lg-5">
             <div class="card border-0 mb-3" style="background:rgba(30,41,59,0.6);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
@@ -59,12 +63,12 @@
                                         <label class="form-label text-secondary small">Nombre</label>
                                         <input name="Pasos[@i].Nombre" value="@Model.Pasos[i].Nombre" class="form-control bg-transparent text-white border-secondary form-control-sm" />
                                     </div>
-                                    <div class="col-6">
+                                    <div class="col-12">
                                         <label class="form-label text-secondary small">Herramienta</label>
                                         <select name="Pasos[@i].Herramienta" class="form-control bg-transparent text-white border-secondary form-control-sm">
-                                            @foreach (var h in new[] { "SqlQueryTool", "DocumentSearchTool", "ReportTool", "CalculatorTool", "DateTimeTool" })
+                                            @foreach (var (codigo, desc) in new[] { ("SqlQueryTool", "Consulta SQL"), ("DocumentSearchTool", "Búsqueda documental RAG"), ("ReportTool", "Reporte PDF"), ("CalculatorTool", "Cálculos"), ("DateTimeTool", "Fecha y hora") })
                                             {
-                                                <option value="@h" selected="@(Model.Pasos[i].Herramienta == h)">@h</option>
+                                                <option value="@codigo" title="@desc" selected="@(Model.Pasos[i].Herramienta == codigo)">@codigo — @desc</option>
                                             }
                                         </select>
                                     </div>
@@ -81,12 +85,12 @@
                                     </div>
                                     <div class="col-4">
                                         <label class="form-label text-secondary small">T. máx. (ms)</label>
-                                        <input name="Pasos[@i].TiempoMaximoMs" value="@Model.Pasos[i].TiempoMaximoMs" type="number" min="1000" step="1000" class="form-control bg-transparent text-white border-secondary form-control-sm" />
+                                        <input name="Pasos[@i].TiempoMaximoMs" value="@Model.Pasos[i].TiempoMaximoMs" type="number" min="1" step="1" class="form-control bg-transparent text-white border-secondary form-control-sm" />
                                     </div>
                                     <div class="col-4">
                                         <label class="form-label text-secondary small">Estrategia error</label>
                                         <select name="Pasos[@i].EstrategiaError" class="form-control bg-transparent text-white border-secondary form-control-sm">
-                                            @foreach (var e in new[] { "Cancelar", "Omitir", "RegistrarIncidencia" })
+                                            @foreach (var e in new[] { "Cancelar", "Omitir" })
                                             {
                                                 <option value="@e" selected="@(Model.Pasos[i].EstrategiaError == e)">@e</option>
                                             }
@@ -134,9 +138,9 @@
             <input type="hidden" data-campo="Orden" value="${idx + 1}" />
             <div class="row g-2">
                 <div class="col-6"><label class="form-label text-secondary small">Nombre</label><input data-campo="Nombre" class="form-control bg-transparent text-white border-secondary form-control-sm" /></div>
-                <div class="col-6"><label class="form-label text-secondary small">Herramienta</label>
+                <div class="col-12"><label class="form-label text-secondary small">Herramienta</label>
                     <select data-campo="Herramienta" class="form-control bg-transparent text-white border-secondary form-control-sm">
-                        <option>SqlQueryTool</option><option>DocumentSearchTool</option><option>ReportTool</option><option>CalculatorTool</option><option>DateTimeTool</option>
+                        <option value="SqlQueryTool" title="Consulta SQL">SqlQueryTool — Consulta SQL</option><option value="DocumentSearchTool" title="Búsqueda documental RAG">DocumentSearchTool — Búsqueda documental RAG</option><option value="ReportTool" title="Reporte PDF">ReportTool — Reporte PDF</option><option value="CalculatorTool" title="Cálculos">CalculatorTool — Cálculos</option><option value="DateTimeTool" title="Fecha y hora">DateTimeTool — Fecha y hora</option>
                     </select></div>
             </div>
             <div class="mt-2"><label class="form-label text-secondary small">Parámetros (JSON)</label>
@@ -144,10 +148,10 @@
                 <div class="form-text text-secondary">Use {{resultado}} para el resultado del paso anterior.</div></div>
             <div class="row g-2 mt-1">
                 <div class="col-4"><label class="form-label text-secondary small">Reintentos</label><input data-campo="ReintentosMaximos" value="1" type="number" min="0" max="10" class="form-control bg-transparent text-white border-secondary form-control-sm" /></div>
-                <div class="col-4"><label class="form-label text-secondary small">T. máx. (ms)</label><input data-campo="TiempoMaximoMs" value="60000" type="number" min="1000" step="1000" class="form-control bg-transparent text-white border-secondary form-control-sm" /></div>
+                <div class="col-4"><label class="form-label text-secondary small">T. máx. (ms)</label><input data-campo="TiempoMaximoMs" value="60000" type="number" min="1" step="1" class="form-control bg-transparent text-white border-secondary form-control-sm" /></div>
                 <div class="col-4"><label class="form-label text-secondary small">Estrategia error</label>
                     <select data-campo="EstrategiaError" class="form-control bg-transparent text-white border-secondary form-control-sm">
-                        <option>Cancelar</option><option>Omitir</option><option>RegistrarIncidencia</option></select></div>
+                        <option>Cancelar</option><option>Omitir</option></select></div>
             </div>
             <div class="form-check mt-2">
                 <input class="form-check-input" type="checkbox" data-campo="RequiereConfirmacion" value="true" id="conf${idx}" />

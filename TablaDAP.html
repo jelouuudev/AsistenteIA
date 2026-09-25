@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tabla 2 - DAP</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { 
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+    background: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 30px;
+    min-height: 100vh;
+  }
+  .container { 
+    background: white; 
+    padding: 40px 50px; 
+    border-radius: 8px; 
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    max-width: 900px;
+    width: 100%;
+  }
+  
+  /* APA Table - NO vertical lines */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    border-top: 2px solid #333;
+    border-bottom: 2px solid #333;
+    margin: 15px 0;
+    font-size: 11px;
+  }
+  
+  thead {
+    border-bottom: 2px solid #333;
+  }
+  
+  th, td {
+    padding: 10px 8px;
+    text-align: center;
+  }
+  
+  th {
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  
+  td {
+    border: none; /* NO vertical lines */
+  }
+  
+  /* Alternating row background */
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+  
+  /* Highlight columns */
+  .col-op { background: #e8f5e9 !important; }
+  .col-tra { background: #fff3e0 !important; }
+  .col-ins { background: #e3f2fd !important; }
+  .col-dem { background: #fce4ec !important; }
+  .col-alm { background: #f3e5f5 !important; }
+  
+  .title {
+    text-align: center;
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 5px;
+  }
+  
+  .note {
+    font-size: 10px;
+    color: #888;
+    font-style: italic;
+    margin-top: 8px;
+  }
+  
+  /* Checkbox symbols */
+  .check {
+    color: #388e3c;
+    font-weight: bold;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="title">Tabla 2</div>
+  <div class="title" style="font-weight: 400; font-size: 13px;">Diagrama de Análisis del Proceso (DAP) – Consultas y Reportes Actual</div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%;">N°</th>
+        <th style="width: 35%;">Descripción de la Actividad</th>
+        <th style="width: 10%;">Tiempo (min)</th>
+        <th style="width: 10%;">⚪ (Op.)</th>
+        <th style="width: 10%;">➡ (Tra.)</th>
+        <th style="width: 10%;">⬜ (Ins.)</th>
+        <th style="width: 10%;">D (Dem.)</th>
+        <th style="width: 10%;">▽ (Alm.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td style="text-align: left;">Recibir requerimiento del área o compañero</td>
+        <td>5</td>
+        <td class="col-op"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td style="text-align: left;">Analizar y evaluar la solicitud</td>
+        <td>5</td>
+        <td class="col-op"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td style="text-align: left;">Buscar información en archivos locales</td>
+        <td>10</td>
+        <td></td>
+        <td class="col-tra"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td style="text-align: left;">Buscar información en correos electrónicos</td>
+        <td>8</td>
+        <td></td>
+        <td class="col-tra"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td style="text-align: left;">Consultar a compañeros sobre la información</td>
+        <td>7</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td class="col-dem"><span class="check">✓</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td style="text-align: left;">Redactar manualmente la consulta SQL</td>
+        <td>15</td>
+        <td class="col-op"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td style="text-align: left;">Ejecutar consulta en el gestor de base de datos</td>
+        <td>5</td>
+        <td class="col-op"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td style="text-align: left;">Verificar resultados obtenidos</td>
+        <td>5</td>
+        <td></td>
+        <td></td>
+        <td class="col-ins"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td style="text-align: left;">Buscar información complementaria</td>
+        <td>10</td>
+        <td></td>
+        <td class="col-tra"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td style="text-align: left;">Construir el reporte o preparar la respuesta</td>
+        <td>15</td>
+        <td class="col-op"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td style="text-align: left;">Validar el resultado internamente</td>
+        <td>5</td>
+        <td></td>
+        <td></td>
+        <td class="col-ins"><span class="check">✓</span></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td style="text-align: left;">Guardar archivos y reportes generados</td>
+        <td>5</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td class="col-alm"><span class="check">✓</span></td>
+      </tr>
+      <tr style="font-weight: 700; background: #f0f0f0;">
+        <td></td>
+        <td style="text-align: right;">Totales</td>
+        <td>95 min</td>
+        <td>5</td>
+        <td>3</td>
+        <td>2</td>
+        <td>1</td>
+        <td>1</td>
+      </tr>
+    </tbody>
+  </table>
+  
+  <div class="note">Nota. Elaboración propia.</div>
+</div>
+</body>
+</html>

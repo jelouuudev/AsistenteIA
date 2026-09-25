@@ -74,10 +74,41 @@ public class EventoProcesadoDto
     public System.DateTime FechaHora { get; set; }
     public string Estado { get; set; } = "Pendiente";
     public string? Resultado { get; set; }
+    /// <summary>Datos JSON con los que se disparó el evento (lo que el evento fue realmente).</summary>
+    public string? ContextoDisparo { get; set; }
     public long TiempoProcesamiento { get; set; }
     public int? IdRegla { get; set; }
     public int? IdWorkflow { get; set; }
     public string? NombreWorkflow { get; set; }
+}
+
+// ---- Disparador de Evento (origen configurable 100% desde UI) ----
+public class DisparadorEventoDto
+{
+    public int IdDisparador { get; set; }
+    public int IdEvento { get; set; }
+    public string NombreEvento { get; set; } = string.Empty;
+    public string CodigoEvento { get; set; } = string.Empty;
+    public string Tipo { get; set; } = string.Empty;
+    public bool Activo { get; set; }
+    public string ConfigJson { get; set; } = "{}";
+    public System.DateTime? UltimaEjecucion { get; set; }
+    public System.DateTime? ProximaEjecucion { get; set; }
+}
+
+public class CrearDisparadorEventoRequest
+{
+    public int IdEvento { get; set; }
+    public string Tipo { get; set; } = string.Empty;
+    public string ConfigJson { get; set; } = "{}";
+    public bool Activo { get; set; } = true;
+}
+
+public class ActualizarDisparadorEventoRequest
+{
+    public string Tipo { get; set; } = string.Empty;
+    public string ConfigJson { get; set; } = "{}";
+    public bool Activo { get; set; }
 }
 
 // ---- Tarea Programada ----

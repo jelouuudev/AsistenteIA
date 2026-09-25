@@ -16,17 +16,20 @@ public class ConversacionesController : Controller
         _apiService = apiService;
     }
 
-    public async Task<IActionResult> Index(string? q)
+    public async Task<IActionResult> Index(string? q, bool? mostrarArchivadas)
     {
         var (userId, ip) = GetUserInfo();
         IEnumerable<ConversacionListDto> conversaciones;
-
         try
         {
             if (!string.IsNullOrWhiteSpace(q))
                 conversaciones = await _apiService.BuscarConversacionesAsync(q, userId, ip);
             else
                 conversaciones = await _apiService.GetConversacionesAsync(userId, ip);
+
+            // Por defecto, ocultar conversaciones archivadas
+            if (mostrarArchivadas != true)
+                conversaciones = conversaciones.Where(c => c.Estado != "Archivada");
         }
         catch
         {
@@ -34,6 +37,7 @@ public class ConversacionesController : Controller
         }
 
         ViewBag.SearchQuery = q;
+        ViewBag.MostrarArchivadas = mostrarArchivadas == true;
         return View(conversaciones);
     }
 

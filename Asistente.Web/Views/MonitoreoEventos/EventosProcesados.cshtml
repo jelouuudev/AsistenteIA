@@ -18,6 +18,7 @@
                 <thead style="background:rgba(0,0,0,0.2);">
                     <tr class="border-bottom border-secondary">
                         <th class="text-secondary fw-normal py-3 px-4">Evento</th>
+                        <th class="text-secondary fw-normal py-3">Datos del evento</th>
                         <th class="text-secondary fw-normal py-3">Fecha/Hora</th>
                         <th class="text-secondary fw-normal py-3">Estado</th>
                         <th class="text-secondary fw-normal py-3">Flujo</th>
@@ -29,8 +30,21 @@
                     @foreach (var e in lista)
                     {
                         <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
-                            <td class="px-4 py-3 text-white fw-semibold">@e.NombreEvento</td>
-                            <td class="text-secondary small">@e.FechaHora.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td class="px-4 py-3 text-white fw-semibold">@e.NombreEvento</td>
+                        <td class="small" style="max-width:280px;">
+                            @if (!string.IsNullOrWhiteSpace(e.ContextoDisparo))
+                            {
+                                <details>
+                                    <summary class="font-monospace" style="cursor:pointer;color:#818cf8;">ver datos</summary>
+                                    <pre class="mt-1 mb-0 p-2 font-monospace" style="background:rgba(0,0,0,0.3);border-radius:8px;color:#a5b4fc;font-size:0.75rem;white-space:pre-wrap;word-break:break-word;">@e.ContextoDisparo</pre>
+                                </details>
+                            }
+                            else
+                            {
+                                <span class="text-secondary">—</span>
+                            }
+                        </td>
+                        <td class="text-secondary small">@e.FechaHora.ToString("yyyy-MM-dd HH:mm:ss")</td>
                             <td>
                                 @if (e.Estado == "Completado")
                                 { <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border-radius:20px;">Completado</span> }
@@ -48,7 +62,7 @@
                     }
                     @if (!lista.Any())
                     {
-                        <tr><td colspan="6" class="text-center text-secondary py-5">Aún no hay eventos procesados.</td></tr>
+                        <tr><td colspan="7" class="text-center text-secondary py-5">Aún no hay eventos procesados.</td></tr>
                     }
                 </tbody>
             </table>

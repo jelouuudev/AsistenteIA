@@ -55,11 +55,73 @@ public class ToolOrchestrator : IToolOrchestrator
     public async Task<IEnumerable<Herramienta>> ObtenerHerramientasParaAsistenteAsync(int idAsistente, CancellationToken cancellationToken = default)
         => await _asistenteHerramientaRepository.GetHerramientasPorAsistenteAsync(idAsistente);
 
+    public async Task<bool> MotorHabilitadoAsync(CancellationToken cancellationToken = default)
+    {
+        var config = await _configRepository.GetAsync();
+        return config?.Habilitado ?? true;
+    }
+
+    public async Task<bool> RequiereAutorizacionAsync(CancellationToken cancellationToken = default)
+    {
+        var config = await _configRepository.GetAsync();
+        return config?.RequiereAutorizacion ?? true;
+    }
+
     public async Task<ToolExecutionResult> EjecutarAsync(ToolExecutionRequest request, CancellationToken cancellationToken = default)
     {
         var inicio = DateTime.UtcNow;
 
-        // Resolver herramienta por código
+        // Motor deshabilitado: ninguna herramienta se ejecuta (antes no se leia: parametro muerto).
+        var cfgMotor = await _configRepository.GetAsync();
+        if (cfgMotor != null && !cfgMotor.Habilitado)
+        {
+            await RegistrarAuditoriaAsync(null, request, "Rechazada", "Motor de herramientas deshabilitado.", inicio);
+            return new ToolExecutionResult { Exitoso = false, Error = "Motor de herramientas deshabilitado." };
+        }
+
+        // Tope de ejecuciones simultaneas (antes no se leia: parametro muerto).
+        var maxSimultaneas = Math.Max(1, cfgMotor?.MaxEjecucionesSimultaneas ?? 4);
+        if (!IntentarEntrar(maxSimultaneas))
+        {
+            _logger.LogWarning("Herramienta '{Codigo}' rechazada: tope de ejecuciones simultaneas ({Tope}) alcanzado.",
+                request.HerramientaCodigo, maxSimultaneas);
+            await RegistrarAuditoriaAsync(null, request, "Rechazada", "Motor de herramientas ocupado. Intente de nuevo en unos segundos.", inicio);
+            return new ToolExecutionResult { Exitoso = false, Error = "Motor de herramientas ocupado. Intente de nuevo en unos segundos." };
+        }
+
+        try
+        {
+            return await EjecutarInternoAsync(request, inicio, cancellationToken);
+        }
+        finally
+        {
+            Salir();
+        }
+    }
+
+    private static int _ejecucionesEnCurso;
+    private static readonly object _candadoEjecuciones = new();
+
+    private static bool IntentarEntrar(int maximo)
+    {
+        lock (_candadoEjecuciones)
+        {
+            if (_ejecucionesEnCurso >= maximo) return false;
+            _ejecucionesEnCurso++;
+            return true;
+        }
+    }
+
+    private static void Salir()
+    {
+        lock (_candadoEjecuciones)
+        {
+            if (_ejecucionesEnCurso > 0) _ejecucionesEnCurso--;
+        }
+    }
+
+    private async Task<ToolExecutionResult> EjecutarInternoAsync(ToolExecutionRequest request, DateTime inicio, CancellationToken cancellationToken)
+    {
         var herramienta = await _herramientaRepository.GetByCodigoAsync(request.HerramientaCodigo);
         var codigo = request.HerramientaCodigo;
 

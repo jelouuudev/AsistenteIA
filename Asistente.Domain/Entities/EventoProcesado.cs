@@ -19,6 +19,12 @@ public class EventoProcesado
     /// <summary>Mensaje de resultado o descripción del error.</summary>
     public string? Resultado { get; set; }
 
+    /// <summary>
+    /// Datos JSON con los que se disparó el evento (lo que el evento "fue" realmente).
+    /// Se preserva intacto: Resultado se sobrescribe durante el procesamiento.
+    /// </summary>
+    public string? ContextoDisparo { get; set; }
+
     /// <summary>Tiempo total de procesamiento en milisegundos.</summary>
     public long TiempoProcesamiento { get; set; }
 

@@ -6,9 +6,14 @@
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h4 class="text-white fw-bold mb-0"><i class="bi bi-file-text me-2" style="color:#818cf8;"></i>Prompts del Sistema</h4>
-        <p class="text-secondary small mb-0">@(asistenteSel != null ? $"Prompts para: {asistenteSel.Nombre}" : "Gestión de prompts del sistema")</p>
+    <div class="d-flex align-items-center">
+        <a asp-controller="Asistentes" asp-action="Index" class="btn btn-sm me-3" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+            <i class="bi bi-arrow-left me-1"></i> Regresar
+        </a>
+        <div>
+            <h4 class="text-white fw-bold mb-0"><i class="bi bi-file-text me-2" style="color:#818cf8;"></i>Prompts del Sistema</h4>
+            <p class="text-secondary small mb-0">@(asistenteSel != null ? $"Prompts para: {asistenteSel.Nombre}" : "Gestión de prompts del sistema")</p>
+        </div>
     </div>
     <a asp-action="Crear" asp-route-asistenteId="@(asistenteSel?.IdAsistente)" class="btn btn-sm px-4 py-2 fw-semibold"
        style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
@@ -58,7 +63,7 @@
                         <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
                             <td class="px-4 py-3 fw-semibold text-white">@p.Nombre</td>
                             <td class="text-secondary small">@(p.AsistenteNombre ?? "—")</td>
-                            <td><span class="badge" style="background:rgba(99,102,241,0.2);color:#818cf8;border:1px solid rgba(99,102,241,0.3);border-radius:20px;font-size:0.72rem;">v@p.Version</span></td>
+                            <td><span class="badge" style="background:rgba(99,102,241,0.2);color:#818cf8;border:1px solid rgba(99,102,241,0.3);border-radius:20px;font-size:0.72rem;">@("v" + p.Version)</span></td>
                             <td>
                                 @if (p.Activo)
                                 {
@@ -92,7 +97,17 @@
                                             <i class="bi bi-copy"></i>
                                         </button>
                                     </form>
-                                    @if (!p.Activo)
+                                    @if (p.Activo)
+                                    {
+                                        <form asp-action="Desactivar" asp-route-id="@p.IdPrompt" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm"
+                                                    style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.2);border-radius:8px;" title="Desactivar">
+                                                <i class="bi bi-toggle-off"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                    else
                                     {
                                         <form asp-action="Activar" asp-route-id="@p.IdPrompt" method="post" class="d-inline">
                                             @Html.AntiForgeryToken()

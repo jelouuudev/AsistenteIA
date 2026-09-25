@@ -8,6 +8,7 @@ using Asistente.Application.Orchestrator;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -141,7 +142,7 @@ public class AgentSelectorOrchestratorIntegrationTests
             selector, aggregator, contextManager,
             execRepo.Object, stepRepo.Object, traceRepo.Object, reglas.Object,
             configRepo.Object, repo.Object, chat.Object,
-            OllamaDisponibleMock(), new Mock<ILogger<AgentOrchestrator>>().Object);
+            OllamaDisponibleMock(), Mock.Of<IServiceScopeFactory>(), new Mock<ILogger<AgentOrchestrator>>().Object);
 
         var result = await orchestrator.ExecuteAsync(new AgentRequest
         {

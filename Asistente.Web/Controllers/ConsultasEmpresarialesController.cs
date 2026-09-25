@@ -1,4 +1,6 @@
+using System.Linq;
 using System.Security.Claims;
+using System.Text.Json;
 using Asistente.Shared;
 using Asistente.Web.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -77,7 +79,7 @@ public class ConsultasEmpresarialesController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Ejecutar(int idConexion, int? idPlantilla, string consultaSql)
+    public async Task<IActionResult> Ejecutar(int idConexion, int? idPlantilla, string consultaSql, Dictionary<string, string>? parametros)
     {
         try
         {
@@ -99,6 +101,7 @@ public class ConsultasEmpresarialesController : Controller
                     IdConexion = idConexion,
                     IdPlantilla = idPlantilla,
                     ConsultaSql = consultaSql,
+                    Parametros = parametros?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value),
                     Pregunta = consultaSql
                 }, GetCurrentUserId(), GetIpAddress());
 
@@ -108,6 +111,17 @@ public class ConsultasEmpresarialesController : Controller
             TempData["ConsultaSql"] = consultaSql;
             TempData["ConsultaTipo"] = resultado.Estado;
             TempData["ConsultaError"] = resultado.Exitoso ? null : resultado.Error;
+            // Mostrar los datos, no solo el conteo (máx. 50 filas por tamaño de TempData).
+            if (resultado.Exitoso)
+            {
+                var filas = (resultado.Registros ?? new List<Dictionary<string, object?>>()).Take(50).ToList();
+                TempData["ConsultaColumnasJson"] = JsonSerializer.Serialize(resultado.Columnas ?? new List<string>());
+                TempData["ConsultaFilasJson"] = JsonSerializer.Serialize(filas);
+                TempData["ConsultaResumen"] = resultado.ResumenDatos;
+                TempData["ConsultaTruncado"] = resultado.CantidadRegistros > filas.Count
+                    ? $"Mostrando {filas.Count} de {resultado.CantidadRegistros} filas."
+                    : null;
+            }
         }
         catch (Exception ex)
         {

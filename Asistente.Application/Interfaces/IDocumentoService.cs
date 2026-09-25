@@ -24,4 +24,10 @@ public interface IDocumentoService
     // Auditoría
     Task<IEnumerable<AuditoriaDocumentalDto>> ObtenerAuditoriaAsync(int documentoId);
     Task<IEnumerable<AuditoriaDocumentalDto>> ObtenerTodasAuditoriasAsync();
+
+    // Fuentes de Conocimiento
+    Task<IEnumerable<FuenteConocimientoDto>> ObtenerFuentesDocumentoAsync(int documentoId);
+    Task AsignarFuentesDocumentoAsync(int documentoId, List<int> fuentes, int currentUserId, string ipAddress);
+    Task<IEnumerable<FuenteConocimientoDto>> ObtenerFuentesConocimientoAsync();
+    Task<IEnumerable<DocumentoDto>> ObtenerDocumentosDisponiblesAsync(int? idFuenteExcluir);
 }

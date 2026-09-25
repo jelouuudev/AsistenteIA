@@ -8,9 +8,23 @@
     <h2 class="fw-bold" style="background:linear-gradient(90deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
         <i class="bi bi-chat-dots me-2"></i>Mis Conversaciones
     </h2>
-    <a href="/Chat" class="btn" style="background:linear-gradient(135deg,#6366f1,#a855f7);color:white;border:none;border-radius:10px;">
-        <i class="bi bi-plus-lg"></i> Nueva Conversación
-    </a>
+    <div class="d-flex gap-2">
+        @if (ViewBag.MostrarArchivadas == true)
+        {
+            <a href="/Conversaciones" class="btn btn-sm" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+                <i class="bi bi-eye-slash me-1"></i> Ocultar archivadas
+            </a>
+        }
+        else
+        {
+            <a href="/Conversaciones?mostrarArchivadas=true" class="btn btn-sm" style="background:rgba(255,255,255,0.05);color:#94a3b8;border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+                <i class="bi bi-eye me-1"></i> Mostrar archivadas
+            </a>
+        }
+        <a href="/Chat" class="btn" style="background:linear-gradient(135deg,#6366f1,#a855f7);color:white;border:none;border-radius:10px;">
+            <i class="bi bi-plus-lg"></i> Nueva Conversación
+        </a>
+    </div>
 </div>
 
 <form method="get" action="/Conversaciones" class="mb-4">

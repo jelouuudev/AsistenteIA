@@ -169,6 +169,7 @@ public class PromptsController : Controller
 
             var historial = await _apiService.GetHistorialPromptAsync(id, GetCurrentUserId(), GetIpAddress());
 
+            ViewBag.PromptId = id;
             ViewBag.PromptNombre = prompt.Nombre;
             ViewBag.VersionActual = prompt.Version;
             ViewBag.IdAsistente = prompt.IdAsistente;
@@ -201,12 +202,12 @@ public class PromptsController : Controller
                 ViewBag.Prompts = new List<PromptSistemaDto>();
             }
 
-            return View(new PruebaAsistenteRequest());
+            return View(new PruebaAsistenteRequest { IdAsistente = asistenteId ?? 0 });
         }
         catch (Exception ex)
         {
             TempData["ErrorMessage"] = $"Error: {ex.Message}";
-            return View(new PruebaAsistenteRequest());
+            return View(new PruebaAsistenteRequest { IdAsistente = asistenteId ?? 0 });
         }
     }
 
@@ -305,5 +306,21 @@ public class PromptsController : Controller
             TempData["ErrorMessage"] = $"Error: {ex.Message}";
         }
         return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Restaurar(int id, int idHistorial)
+    {
+        try
+        {
+            await _apiService.RestaurarPromptDesdeHistorialAsync(id, idHistorial, GetCurrentUserId(), GetIpAddress());
+            TempData["SuccessMessage"] = "Versión restaurada exitosamente.";
+        }
+        catch (Exception ex)
+        {
+            TempData["ErrorMessage"] = $"Error: {ex.Message}";
+        }
+        return RedirectToAction(nameof(Historial), new { id });
     }
 }

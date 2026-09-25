@@ -1,15 +1,15 @@
+using Moq;
+using Xunit;
+using Asistente.Application.Interfaces;
 using Asistente.Application.Services;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
-using Moq;
-using Xunit;
 
 namespace Asistente.Tests.Services;
 
 /// <summary>
-/// Pruebas del Agent Manager (ETAPA 16): versionamiento, publicación,
-/// duplicación y asignaciones de fuentes/herramientas/workflows/roles/usuarios.
+/// Pruebas unitarias para AsistenteService (ETAPA 16).
 /// </summary>
 public class AgenteManagerTests
 {
@@ -25,15 +25,12 @@ public class AgenteManagerTests
     }
 
     [Fact]
-    public async Task CrearAsistenteAsync_Asigna_Codigo_Objetivo_PromptSistema_Y_EstadoBorrador()
+    public async Task CrearAsistenteAsync_DatosValidos_CreaCorrectamente()
     {
-        _mockRepo.Setup(x => x.GetByCodigoAsync(It.IsAny<string>())).ReturnsAsync((Domain.Entities.Asistente?)null);
-        _mockRepo.Setup(x => x.AddAsync(It.IsAny<Domain.Entities.Asistente>())).Returns(Task.CompletedTask);
-
         var request = new CrearAsistenteRequest
         {
             Codigo = "COMERCIAL-01",
-            Nombre = "Agente Comercial",
+            Nombre = "Comercial",
             Objetivo = "Atender ventas",
             PromptSistema = "Eres un agente comercial.",
             ModeloIA = "deepseek-r1:7b",
@@ -49,7 +46,7 @@ public class AgenteManagerTests
         Assert.Equal("COMERCIAL-01", result.Codigo);
         Assert.Equal("Atender ventas", result.Objetivo);
         Assert.Equal("Eres un agente comercial.", result.PromptSistema);
-        Assert.Equal(EstadoAgente.Borrador, result.Estado);
+        Assert.Equal(EstadoAgente.Activo, result.Estado);
         Assert.Equal(1, result.Version);
         Assert.Equal(1, result.Fuentes.Count);
         Assert.Equal(1, result.Herramientas.Count);
@@ -61,28 +58,28 @@ public class AgenteManagerTests
     }
 
     [Fact]
-    public async Task PublicarAsync_Cambia_Estado_A_Publicado()
+    public async Task ActivarAsync_Cambia_Estado_A_Activo()
     {
-        var agente = new Domain.Entities.Asistente { IdAsistente = 1, Nombre = "X", ModeloIA = "m", Estado = EstadoAgente.Borrador, Activo = true };
+        var agente = new Domain.Entities.Asistente { IdAsistente = 1, Nombre = "X", ModeloIA = "m", Estado = EstadoAgente.Inactivo, Activo = true };
         _mockRepo.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(agente);
         _mockRepo.Setup(x => x.Update(It.IsAny<Domain.Entities.Asistente>())).Verifiable();
 
-        await _service.PublicarAsync(1);
+        await _service.ActivarAsync(1);
 
-        Assert.Equal(EstadoAgente.Publicado, agente.Estado);
+        Assert.Equal(EstadoAgente.Activo, agente.Estado);
         _mockRepo.Verify(x => x.Update(agente), Times.Once);
         _mockUow.Verify(x => x.SaveChangesAsync(), Times.Once);
     }
 
     [Fact]
-    public async Task EnviarAPruebaAsync_Cambia_Estado_A_Prueba()
+    public async Task DesactivarAsync_Cambia_Estado_A_Inactivo()
     {
-        var agente = new Domain.Entities.Asistente { IdAsistente = 1, Nombre = "X", ModeloIA = "m", Estado = EstadoAgente.Borrador };
+        var agente = new Domain.Entities.Asistente { IdAsistente = 1, Nombre = "X", ModeloIA = "m", Estado = EstadoAgente.Activo, Activo = true };
         _mockRepo.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(agente);
 
-        await _service.EnviarAPruebaAsync(1);
+        await _service.DesactivarAsync(1);
 
-        Assert.Equal(EstadoAgente.Prueba, agente.Estado);
+        Assert.Equal(EstadoAgente.Inactivo, agente.Estado);
     }
 
     [Fact]
@@ -93,7 +90,7 @@ public class AgenteManagerTests
             IdAsistente = 1,
             Nombre = "X",
             ModeloIA = "deepseek-r1:7b",
-            Estado = EstadoAgente.Publicado,
+            Estado = EstadoAgente.Activo,
             Version = 1,
             AsistentesFuentes = new List<AsistenteFuente> { new() { IdFuente = 1, Activo = true } },
             AsistentesHerramientas = new List<AsistenteHerramienta> { new() { IdHerramienta = 2, Activa = true } }
@@ -109,7 +106,7 @@ public class AgenteManagerTests
     }
 
     [Fact]
-    public async Task DuplicarAsync_Crea_Copia_Con_NuevoCodigo_Y_MismoEstadoBorrador()
+    public async Task DuplicarAsync_Crea_Copia_Con_NuevoCodigo_Y_MismoEstadoActivo()
     {
         var orig = new Domain.Entities.Asistente
         {
@@ -119,7 +116,7 @@ public class AgenteManagerTests
             ModeloIA = "m",
             Objetivo = "Obj",
             PromptSistema = "Prompt",
-            Estado = EstadoAgente.Publicado,
+            Estado = EstadoAgente.Activo,
             Version = 3,
             AsistentesFuentes = new List<AsistenteFuente> { new() { IdFuente = 1, Activo = true } },
             AsistentesHerramientas = new List<AsistenteHerramienta> { new() { IdHerramienta = 2, Activa = true } },
@@ -134,7 +131,7 @@ public class AgenteManagerTests
 
         Assert.NotEqual("ORIG-01", copia.Codigo);
         Assert.Contains("ORIG-01", copia.Codigo);
-        Assert.Equal(EstadoAgente.Borrador, copia.Estado);
+        Assert.Equal(EstadoAgente.Activo, copia.Estado);
         Assert.Single(copia.Fuentes);
         Assert.Single(copia.Herramientas);
         Assert.Single(copia.Workflows);

@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Shared;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Asistente.API.Controllers;
@@ -43,6 +44,25 @@ public class AuthController : ControllerBase
         }
 
         return Ok(response);
+    }
+
+    [Authorize]
+    [HttpGet("me")]
+    public async Task<ActionResult<UsuarioDto>> GetCurrentUser()
+    {
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new { error = "Token inválido." });
+        }
+
+        var usuario = await _usuarioService.ObtenerPorIdAsync(userId);
+        if (usuario == null)
+        {
+            return NotFound(new { error = "Usuario no encontrado." });
+        }
+
+        return Ok(usuario);
     }
 
     [HttpPost("logout/{sessionId}")]

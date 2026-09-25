@@ -41,6 +41,7 @@ public interface IApiService
     Task EnviarAgenteAPruebaAsync(int id, int currentUserId, string ip);
     Task<AsistenteDto> DuplicarAgenteAsync(int id, int currentUserId, string ip);
     Task<AgenteVersionDto> CrearVersionAgenteAsync(int id, int currentUserId, string ip);
+    Task<AgenteVersionDto> RestaurarVersionAgenteAsync(int id, int idVersion, int currentUserId, string ip);
     Task<IEnumerable<AgenteVersionDto>> GetVersionesAgenteAsync(int id, int currentUserId, string ip);
     Task<IEnumerable<PromptSistemaDto>> GetPromptsByAsistenteIdAsync(int asistenteId, int currentUserId, string ip);
     Task<PromptSistemaDto?> GetPromptActivoByAsistenteIdAsync(int asistenteId, int currentUserId, string ip);
@@ -54,7 +55,13 @@ public interface IApiService
     Task DesactivarPromptAsync(int id, int currentUserId, string ip);
     Task EliminarPromptAsync(int id, int currentUserId, string ip);
     Task<PromptSistemaDto> DuplicarPromptAsync(int id, int currentUserId, string ip);
+    Task<PromptSistemaDto> RestaurarPromptDesdeHistorialAsync(int id, int idHistorial, int currentUserId, string ip);
     Task<IEnumerable<HistorialPromptDto>> GetHistorialPromptAsync(int promptId, int currentUserId, string ip);
+
+    // Fuentes de Conocimiento
+    Task<IEnumerable<FuenteConocimientoDto>> GetFuentesConocimientoAsync(int currentUserId, string ip);
+    Task<IEnumerable<FuenteConocimientoDto>> GetFuentesDocumentoAsync(int idDocumento, int currentUserId, string ip);
+    Task AsignarFuentesDocumentoAsync(int idDocumento, List<int> fuentes, int currentUserId, string ip);
 
     // Prueba Asistente
     Task<PruebaAsistenteResponse> ProbarAsistenteAsync(PruebaAsistenteRequest request, int currentUserId, string ip);
@@ -85,6 +92,7 @@ public interface IApiService
     Task<DocumentoDto?> GetDocumentoByIdAsync(int id, int currentUserId, string ip);
     Task<DocumentoDto> CrearDocumentoAsync(CrearDocumentoRequest request, int currentUserId, string ip);
     Task<DocumentoDto> ActualizarDocumentoAsync(int id, ActualizarDocumentoRequest request, int currentUserId, string ip);
+    Task<IEnumerable<DocumentoDto>> GetDocumentosDisponiblesAsync(int? idFuenteExcluir, int currentUserId, string ip);
     Task ActivarDocumentoAsync(int id, int currentUserId, string ip);
     Task ArchivarDocumentoAsync(int id, int currentUserId, string ip);
     Task EliminarDocumentoAsync(int id, int currentUserId, string ip);
@@ -127,9 +135,6 @@ public interface IApiService
 
     // Busqueda Semantica
     Task<BusquedaSemanticaResponse> BuscarSemanticamenteAsync(BusquedaSemanticaRequest request, int currentUserId, string ip);
-
-    // Fuentes de Conocimiento
-    Task<IEnumerable<FuenteConocimientoDto>> GetFuentesConocimientoAsync(int currentUserId, string ip);
     Task<IEnumerable<FuenteConocimientoDto>> GetFuentesConocimientoActivasAsync(int currentUserId, string ip);
     Task<FuenteConocimientoDto?> GetFuenteConocimientoByIdAsync(int id, int currentUserId, string ip);
     Task<FuenteConocimientoDto> CrearFuenteConocimientoAsync(CrearFuenteConocimientoRequest request, int currentUserId, string ip);
@@ -247,6 +252,15 @@ public interface IApiService
     Task GuardarConfiguracionEventoMotorAsync(ConfiguracionEventoMotorDto config, int currentUserId, string ip);
     Task<MonitoreoEventosDto> GetMonitoreoEventosAsync(int currentUserId, string ip);
     Task<EventoProcesadoDto> DispararEventoAsync(DispararEventoRequest request, int currentUserId, string ip);
+
+    // Disparadores de Evento (ETAPA 13)
+    Task<List<DisparadorEventoDto>> GetDisparadoresEventoAsync(int currentUserId, string ip);
+    Task<DisparadorEventoDto?> GetDisparadorEventoByIdAsync(int id, int currentUserId, string ip);
+    Task<DisparadorEventoDto> CrearDisparadorEventoAsync(CrearDisparadorEventoRequest request, int currentUserId, string ip);
+    Task ActualizarDisparadorEventoAsync(int id, ActualizarDisparadorEventoRequest request, int currentUserId, string ip);
+    Task ActivarDisparadorEventoAsync(int id, int currentUserId, string ip);
+    Task DesactivarDisparadorEventoAsync(int id, int currentUserId, string ip);
+    Task EliminarDisparadorEventoAsync(int id, int currentUserId, string ip);
 
     // Seguridad, Gobierno, Auditoría y Observabilidad (ETAPA 14)
     Task<IEnumerable<PermisoDto>> GetPermisosAsync(int currentUserId, string ip);

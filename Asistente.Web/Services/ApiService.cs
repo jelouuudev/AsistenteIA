@@ -231,6 +231,24 @@ public class ApiService : IApiService
         }
     }
 
+    public async Task<IEnumerable<FuenteConocimientoDto>> GetFuentesConocimientoAsync(int currentUserId, string ip)
+    {
+        var req = CrearRequest(HttpMethod.Get, "/api/documentos/fuentes-disponibles", null, currentUserId, ip);
+        return await EnviarYLeerAsync<IEnumerable<FuenteConocimientoDto>>(req);
+    }
+
+    public async Task<IEnumerable<FuenteConocimientoDto>> GetFuentesDocumentoAsync(int idDocumento, int currentUserId, string ip)
+    {
+        var req = CrearRequest(HttpMethod.Get, $"/api/documentos/{idDocumento}/fuentes", null, currentUserId, ip);
+        return await EnviarYLeerAsync<IEnumerable<FuenteConocimientoDto>>(req);
+    }
+
+    public async Task AsignarFuentesDocumentoAsync(int idDocumento, List<int> fuentes, int currentUserId, string ip)
+    {
+        var req = CrearRequest(HttpMethod.Put, $"/api/documentos/{idDocumento}/fuentes", new { Fuentes = fuentes }, currentUserId, ip);
+        await EnviarYLeerAsync<object>(req);
+    }
+
     public async Task<RolDto> CrearRolAsync(CrearRolRequest request, int currentUserId, string ip)
     {
         var req = CrearRequest(HttpMethod.Post, "/api/roles", request, currentUserId, ip);
@@ -327,6 +345,12 @@ public class ApiService : IApiService
         return await EnviarYLeerAsync<AgenteVersionDto>(req);
     }
 
+    public async Task<AgenteVersionDto> RestaurarVersionAgenteAsync(int id, int idVersion, int currentUserId, string ip)
+    {
+        var req = CrearRequest(HttpMethod.Post, $"/api/agentes/{id}/versiones/{idVersion}/restaurar", null, currentUserId, ip);
+        return await EnviarYLeerAsync<AgenteVersionDto>(req);
+    }
+
     public async Task<IEnumerable<AgenteVersionDto>> GetVersionesAgenteAsync(int id, int currentUserId, string ip)
     {
         var req = CrearRequest(HttpMethod.Get, $"/api/agentes/{id}/versiones", null, currentUserId, ip);
@@ -399,6 +423,12 @@ public class ApiService : IApiService
     public async Task<PromptSistemaDto> DuplicarPromptAsync(int id, int currentUserId, string ip)
     {
         var req = CrearRequest(HttpMethod.Post, $"/api/prompts/{id}/duplicar", null, currentUserId, ip);
+        return await EnviarYLeerAsync<PromptSistemaDto>(req);
+    }
+
+    public async Task<PromptSistemaDto> RestaurarPromptDesdeHistorialAsync(int id, int idHistorial, int currentUserId, string ip)
+    {
+        var req = CrearRequest(HttpMethod.Post, $"/api/prompts/{id}/historial/{idHistorial}/restaurar", null, currentUserId, ip);
         return await EnviarYLeerAsync<PromptSistemaDto>(req);
     }
 
@@ -558,6 +588,16 @@ public class ApiService : IApiService
     {
         var req = CrearRequest(HttpMethod.Put, $"/api/documentos/{id}", request, currentUserId, ip);
         return await EnviarYLeerAsync<DocumentoDto>(req);
+    }
+
+    public async Task<IEnumerable<DocumentoDto>> GetDocumentosDisponiblesAsync(int? idFuenteExcluir, int currentUserId, string ip)
+    {
+        var url = "/api/documentos/disponibles";
+        if (idFuenteExcluir.HasValue)
+            url += $"?idFuenteExcluir={idFuenteExcluir.Value}";
+
+        var req = CrearRequest(HttpMethod.Get, url, null, currentUserId, ip);
+        return await EnviarYLeerAsync<IEnumerable<DocumentoDto>>(req);
     }
 
     public async Task ActivarDocumentoAsync(int id, int currentUserId, string ip)
@@ -797,12 +837,7 @@ public class ApiService : IApiService
         return await EnviarYLeerAsync<BusquedaSemanticaResponse>(req);
     }
 
-    // Fuentes de Conocimiento
-    public async Task<IEnumerable<FuenteConocimientoDto>> GetFuentesConocimientoAsync(int currentUserId, string ip)
-    {
-        var req = CrearRequest(HttpMethod.Get, "/api/fuentesconocimiento", null, currentUserId, ip);
-        return await EnviarYLeerAsync<IEnumerable<FuenteConocimientoDto>>(req);
-    }
+
 
     public async Task<IEnumerable<FuenteConocimientoDto>> GetFuentesConocimientoActivasAsync(int currentUserId, string ip)
     {
@@ -1252,6 +1287,34 @@ public class ApiService : IApiService
 
     public async Task EliminarEventoEmpresarialAsync(int id, int currentUserId, string ip)
         => await EnviarSinRetornoAsync(CrearRequest(HttpMethod.Delete, $"/api/eventosempresariales/{id}", null, currentUserId, ip));
+
+    // Disparadores de Evento
+    public async Task<List<DisparadorEventoDto>> GetDisparadoresEventoAsync(int currentUserId, string ip)
+    {
+        try { return await EnviarYLeerAsync<List<DisparadorEventoDto>>(CrearRequest(HttpMethod.Get, "/api/disparadores-evento", null, currentUserId, ip)); }
+        catch { return new List<DisparadorEventoDto>(); }
+    }
+
+    public async Task<DisparadorEventoDto?> GetDisparadorEventoByIdAsync(int id, int currentUserId, string ip)
+    {
+        try { return await EnviarYLeerAsync<DisparadorEventoDto>(CrearRequest(HttpMethod.Get, $"/api/disparadores-evento/{id}", null, currentUserId, ip)); }
+        catch { return null; }
+    }
+
+    public async Task<DisparadorEventoDto> CrearDisparadorEventoAsync(CrearDisparadorEventoRequest request, int currentUserId, string ip)
+        => await EnviarYLeerAsync<DisparadorEventoDto>(CrearRequest(HttpMethod.Post, "/api/disparadores-evento", request, currentUserId, ip));
+
+    public async Task ActualizarDisparadorEventoAsync(int id, ActualizarDisparadorEventoRequest request, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(CrearRequest(HttpMethod.Put, $"/api/disparadores-evento/{id}", request, currentUserId, ip));
+
+    public async Task ActivarDisparadorEventoAsync(int id, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(CrearRequest(HttpMethod.Post, $"/api/disparadores-evento/{id}/activar", null, currentUserId, ip));
+
+    public async Task DesactivarDisparadorEventoAsync(int id, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(CrearRequest(HttpMethod.Post, $"/api/disparadores-evento/{id}/desactivar", null, currentUserId, ip));
+
+    public async Task EliminarDisparadorEventoAsync(int id, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(CrearRequest(HttpMethod.Delete, $"/api/disparadores-evento/{id}", null, currentUserId, ip));
 
     public async Task<List<ReglaEventoDto>> GetReglasEventoAsync(int currentUserId, string ip)
     {

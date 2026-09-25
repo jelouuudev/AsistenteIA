@@ -15,7 +15,7 @@ public class AgenteVersionConfiguration : IEntityTypeConfiguration<AgenteVersion
         builder.Property(av => av.ModeloIA).HasMaxLength(50);
         builder.Property(av => av.Configuracion).HasColumnType("nvarchar(max)");
         builder.Property(av => av.UsuarioCreacion).HasMaxLength(100);
-        builder.Property(av => av.Estado).IsRequired().HasDefaultValue(EstadoAgente.Borrador);
+        builder.Property(av => av.Estado).IsRequired().HasDefaultValue(EstadoAgente.Activo);
 
         builder.HasOne(av => av.Asistente)
             .WithMany(a => a.Versiones)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
@@ -135,6 +136,13 @@ public class IndexacionBackgroundService : BackgroundService
                         _logger.LogInformation(
                             "Documento '{Nombre}' indexado exitosamente.",
                             doc.DocumentoNombre);
+
+                        // El documento ya tiene vectores en la base vectorial: recién ahora
+                        // una búsqueda RAG puede encontrarlo. Se avisa con DOC_INDEXADO para
+                        // automatizaciones (ej. resumir el documento al subirlo). Lo hace el
+                        // workflow atado a ese evento, no DOC_PROCESADO (que se dispara antes
+                        // de indexar y siempre encontraba vacío).
+                        await DispararDocIndexadoAsync(scope, doc.IdDocumentoProcesado, false, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -194,6 +202,12 @@ public class IndexacionBackgroundService : BackgroundService
                         _logger.LogInformation(
                             "Documento '{Nombre}' indexado exitosamente.",
                             documento.DocumentoNombre);
+
+                        // Solo avisar si es una indexación nueva (venía de Pendiente/Error/
+                        // EnProceso). Los ya indexados no re-disparan en cada ciclo.
+                        var eraIndexado = string.Equals(documento.Estado,
+                            EstadoIndexacion.Indexado.ToString(), StringComparison.OrdinalIgnoreCase);
+                        await DispararDocIndexadoAsync(scope, documento.IdDocumentoProcesado, eraIndexado, cancellationToken);
                     }
                 }
                 catch (Exception ex)
@@ -205,9 +219,56 @@ public class IndexacionBackgroundService : BackgroundService
                 }
             }
         }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al obtener documentos para indexar.");
+            }
+        }
+
+    /// <summary>
+    /// Dispara DOC_INDEXADO cuando un documento queda con vectores por primera vez.
+    /// Nunca rompe la indexación: si el evento no existe o falla, solo se registra.
+    /// El contexto lleva Nombre/Codigo para que los pasos usen {{Nombre}}.
+    /// </summary>
+    private async Task DispararDocIndexadoAsync(IServiceScope scope, int idDocumentoProcesado, bool yaEstabaIndexado, CancellationToken ct)
+    {
+        if (yaEstabaIndexado) return;
+        try
+        {
+            var indexacionService = scope.ServiceProvider.GetRequiredService<IIndexacionService>();
+            var actual = (await indexacionService.ObtenerTodosAsync())
+                .FirstOrDefault(i => i.IdDocumentoProcesado == idDocumentoProcesado);
+            if (actual == null || !string.Equals(actual.Estado,
+                    EstadoIndexacion.Indexado.ToString(), StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // Verificar si hay un disparador tipo Documento activo para DOC_INDEXADO
+            var disparadoresService = scope.ServiceProvider.GetRequiredService<IDisparadorEventoService>();
+            var activos = await disparadoresService.ObtenerActivosAsync(ct);
+            var evento = activos.FirstOrDefault(d => d.CodigoEvento == "DOC_INDEXADO" && d.Tipo == "Documento");
+            if (evento == null)
+            {
+                _logger.LogInformation("No hay disparador activo para DOC_INDEXADO; se omite evento para documento '{Nombre}'.", actual.DocumentoNombre);
+                return;
+            }
+
+            var contexto = JsonSerializer.Serialize(new
+            {
+                IdDocumento = actual.IdDocumento,
+                Codigo = actual.DocumentoCodigo,
+                Nombre = actual.DocumentoNombre,
+                IdDocumentoProcesado = actual.IdDocumentoProcesado,
+                TotalChunks = actual.TotalChunks
+            });
+
+            var motor = scope.ServiceProvider.GetRequiredService<IEventoMotorService>();
+            await motor.DispararEventoAsync("DOC_INDEXADO", contexto, null, ct);
+            _logger.LogInformation("Evento DOC_INDEXADO disparado para documento '{Nombre}'.",
+                actual.DocumentoNombre);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al obtener documentos para indexar.");
+            _logger.LogWarning(ex, "No se pudo disparar DOC_INDEXADO para procesado {Id}.", idDocumentoProcesado);
         }
     }
 }

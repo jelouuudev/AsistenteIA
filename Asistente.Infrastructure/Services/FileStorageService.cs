@@ -26,6 +26,15 @@ public class FileStorageService : IFileStorageService
             baseDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DocumentosAI");
         }
 
+        // En Linux, el volumen se monta en /AsistenteIA_Documentos
+        if (Environment.OSVersion.Platform != PlatformID.Win32NT && baseDirectory.Contains(':'))
+        {
+            var afterColon = baseDirectory.Substring(baseDirectory.IndexOf(':') + 1);
+            // Limpiar barras iniciales para evitar dobles slashes
+            afterColon = afterColon.TrimStart('\\', '/');
+            baseDirectory = "/" + afterColon.Replace('\\', '/');
+        }
+
         var targetDir = Path.Combine(baseDirectory, subDirectory);
         if (!Directory.Exists(targetDir))
         {
@@ -74,11 +83,27 @@ public class FileStorageService : IFileStorageService
         if (File.Exists(ruta))
             return ruta;
 
-        if (ruta.Contains(':') && Environment.OSVersion.Platform != PlatformID.Win32NT)
+        // Si estamos en Linux y la ruta es Windows, convertir
+        if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            var linux = "/" + ruta.Substring(ruta.IndexOf(':') + 1).Replace('\\', '/');
-            if (File.Exists(linux))
-                return linux;
+            // Reemplazar backslashes por forward slashes
+            var normalized = ruta.Replace('\\', '/');
+            
+            // Eliminar dobles slashes (excepto al inicio)
+            while (normalized.Contains("//"))
+                normalized = normalized.Replace("//", "/");
+            
+            // Si tiene letra de unidad (ej: C:/), convertir a ruta Linux
+            if (normalized.Length > 1 && normalized[1] == ':')
+            {
+                var linux = "/" + normalized.Substring(2);
+                if (File.Exists(linux))
+                    return linux;
+            }
+            
+            // Si ya es una ruta relativa con forward slashes
+            if (File.Exists(normalized))
+                return normalized;
         }
 
         return ruta;

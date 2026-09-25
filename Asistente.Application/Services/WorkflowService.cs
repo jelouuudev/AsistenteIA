@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
@@ -15,18 +11,36 @@ public class WorkflowService : IWorkflowService
     private readonly IWorkflowRepository _workflowRepository;
     private readonly IWorkflowPasoRepository _pasoRepository;
     private readonly IWorkflowEjecucionRepository _ejecucionRepository;
+    private readonly IConfiguracionWorkflowRepository _configRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IWorkflowEngine _workflowEngine;
 
     public WorkflowService(
         IWorkflowRepository workflowRepository,
         IWorkflowPasoRepository pasoRepository,
         IWorkflowEjecucionRepository ejecucionRepository,
-        IUnitOfWork unitOfWork)
+        IConfiguracionWorkflowRepository configRepository,
+        IUnitOfWork unitOfWork,
+        IWorkflowEngine workflowEngine)
     {
         _workflowRepository = workflowRepository;
         _pasoRepository = pasoRepository;
         _ejecucionRepository = ejecucionRepository;
+        _configRepository = configRepository;
         _unitOfWork = unitOfWork;
+        _workflowEngine = workflowEngine;
+    }
+
+    /// <summary>
+    /// Valida el límite de pasos por workflow (Configuración). 0 o negativo = sin límite.
+    /// </summary>
+    private async Task ValidarLimitePasosAsync(int cantidad, CancellationToken ct)
+    {
+        var config = await _configRepository.GetAsync(ct);
+        var limite = config?.LimitePasosPorWorkflow ?? 0;
+        if (limite > 0 && cantidad > limite)
+            throw new InvalidOperationException(
+                $"El flujo supera el límite de {limite} pasos por workflow (tiene {cantidad}).");
     }
 
     public async Task<IEnumerable<WorkflowDto>> ObtenerTodosAsync(CancellationToken ct = default)
@@ -49,6 +63,8 @@ public class WorkflowService : IWorkflowService
         var existente = await _workflowRepository.GetByCodigoAsync(request.Codigo, ct);
         if (existente != null)
             throw new InvalidOperationException($"Ya existe un flujo con el código '{request.Codigo}'.");
+
+        await ValidarLimitePasosAsync(request.Pasos?.Count ?? 0, ct);
 
         var workflow = new Workflow
         {
@@ -89,22 +105,24 @@ public class WorkflowService : IWorkflowService
     {
         var w = await _workflowRepository.GetByIdAsync(id, ct)
                 ?? throw new KeyNotFoundException("Flujo no encontrado.");
+        if (request.Pasos != null && request.Pasos.Count > 0)
+            await ValidarLimitePasosAsync(request.Pasos.Count, ct);
         w.Nombre = request.Nombre;
         w.Descripcion = request.Descripcion;
         w.Disparadores = request.Disparadores;
 
-        // Sincronizar pasos: se reemplaza la colección completa por la enviada.
-        // IMPORTANTE: GetByIdAsync usa AsNoTracking, por lo que 'w' está desadjuntado y
-        // 'w.Pasos' NO es la fuente fiable de verdad. Por eso se eliminan y re-crean los
-        // pasos EXCLUSIVAMENTE a través de _pasoRepository (mismo DbContext que el SaveChanges),
-        // con la FK IdWorkflow explícita, y NO se muta w.Pasos (evita que Update(w) re-adjunto
-        // los pasos viejos y duplique filas en cada guardado: 2 -> 4 -> 8 ...).
-        // SEGURIDAD: si request.Pasos es nulo o vacío, NO se borra nada (se conservan los
+        // Sincronizar pasos: se reemplaza la colección completa por la enviada de forma
+        // ATÓMICA (todo o nada en un solo SaveChanges). Antes se usaba ExecuteDelete
+        // (confirma inmediato) y si el SaveChanges posterior fallaba, los pasos quedaban
+        // borrados sin reemplazo. Ahora se marcan borrados con seguimiento (RemoveRange) y
+        // todo se confirma junto: ante cualquier error no se pierde nada.
+        // SEGURIDAD: si request.Pasos es nulo o vacío, NO se toca nada (se conservan los
         // pasos existentes). Esto evita perder todos los pasos cuando el formulario no envía
         // la lista (p.ej. un bindeo fallido del lado del cliente).
         if (request.Pasos != null && request.Pasos.Count > 0)
         {
-            await _pasoRepository.DeleteByWorkflowAsync(id, ct);
+            var existentes = await _pasoRepository.GetTrackedByWorkflowAsync(id, ct) ?? new List<WorkflowPaso>();
+            _pasoRepository.RemoveRange(existentes);
             foreach (var p in request.Pasos.OrderBy(x => x.Orden))
             {
                 await _pasoRepository.AddAsync(new WorkflowPaso
@@ -122,8 +140,24 @@ public class WorkflowService : IWorkflowService
             }
         }
 
+        // w.Pasos viene poblado del GetById (Include): hay que vaciarlo antes del
+        // Update o EF re-adjunta los pasos viejos como Modified, los "resucita" y cada
+        // guardado duplica filas (2 -> 4 -> 8). Los pasos viajan solo por RemoveRange/Add.
+        w.Pasos = new List<WorkflowPaso>();
         await _workflowRepository.UpdateAsync(w, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            // Un solo SaveChanges: borrado+inserción+update son atómicos (todo o nada).
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex.GetType().Name == "DbUpdateConcurrencyException")
+        {
+            // Otro proceso tocó el flujo a la vez: no se perdió nada (transacción
+            // revertida), pero hay que recargar e intentarlo de nuevo.
+            // (Chequeo por nombre para no referenciar EF Core desde Application.)
+            throw new InvalidOperationException(
+                "Otro proceso modificó el flujo al mismo tiempo. Recarga la página e intenta guardar de nuevo.", ex);
+        }
     }
 
     public async Task CambiarEstadoAsync(int id, EstadoWorkflow estado, CancellationToken ct = default)
@@ -189,6 +223,12 @@ public class WorkflowService : IWorkflowService
         // Validar existencia (GetByIdAsync es AsNoTracking, solo lectura).
         var w = await _workflowRepository.GetByIdAsync(id, ct)
                 ?? throw new KeyNotFoundException("Flujo no encontrado.");
+        // Las ejecuciones son auditoría (FK restrictiva): no se pueden borrar con el flujo.
+        var ejecuciones = await _ejecucionRepository.GetByWorkflowAsync(id, ct);
+        if (ejecuciones.Any())
+            throw new InvalidOperationException(
+                $"No se puede eliminar el flujo '{w.Nombre}' porque tiene {ejecuciones.Count()} ejecucion(es) registrada(s) en auditoría. " +
+                "Suspenda el flujo en su lugar para conservar el historial.");
         // Borrar pasos (ExecuteDelete, sin RowVersion).
         await _pasoRepository.DeleteByWorkflowAsync(id, ct);
         // Borrar el workflow por ID directo (ExecuteDelete, sin RowVersion) para
@@ -196,6 +236,11 @@ public class WorkflowService : IWorkflowService
         // AsNoTracking cuando el background service (Quartz) la actualiza.
         await _workflowRepository.DeleteByIdAsync(id, ct);
         await _unitOfWork.SaveChangesAsync(ct);
+    }
+
+    public async Task<WorkflowExecutionResult> EjecutarWorkflowAsync(int id, int idUsuario, Dictionary<string, object>? parametros = null, CancellationToken ct = default)
+    {
+        return await _workflowEngine.EjecutarAsync(id, idUsuario, null, cancellationToken: ct);
     }
 
     public async Task<IEnumerable<WorkflowEjecucionDto>> ObtenerEjecucionesAsync(CancellationToken ct = default)
@@ -284,5 +329,24 @@ public class ConfiguracionWorkflowService : IConfiguracionWorkflowService
         c.LimitePasosPorWorkflow = config.LimitePasosPorWorkflow;
         await _repository.UpdateAsync(c, ct);
         await _unitOfWork.SaveChangesAsync(ct);
+    }
+}
+
+public static class WorkflowServiceExtensions
+{
+    /// <summary>
+    /// Extensión que ejecuta un workflow usando el motor IWorkflowEngine.
+    /// </summary>
+    public static async Task<WorkflowExecutionResult> EjecutarWorkflowAsync(
+        this IWorkflowService service, int id, int idUsuario, 
+        Dictionary<string, object>? parametros = null, CancellationToken ct = default)
+    {
+        // Si el servicio implementa IWorkflowEngine, lo usamos directamente
+        if (service is IWorkflowEngine engine)
+        {
+            return await engine.EjecutarAsync(id, idUsuario, null, cancellationToken: ct);
+        }
+        
+        throw new InvalidOperationException("El servicio no soporta ejecución de workflows.");
     }
 }

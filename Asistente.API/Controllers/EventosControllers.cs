@@ -1,7 +1,12 @@
 using Asistente.Application.Interfaces;
+using Asistente.Domain.Entities;
+using Asistente.Domain.Interfaces;
+using Asistente.Infrastructure.Services;
 using Asistente.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Quartz;
+using Quartz.Impl.Matchers;
 
 namespace Asistente.API.Controllers;
 
@@ -137,8 +142,42 @@ public class ReglasEventoController : ControllerBase
 public class TareasProgramadasController : ControllerBase
 {
     private readonly ITareaProgramadaService _service;
+    private readonly ISchedulerFactory _schedulerFactory;
+    private readonly ITareaProgramadaRepository _tareaRepo;
 
-    public TareasProgramadasController(ITareaProgramadaService service) => _service = service;
+    public TareasProgramadasController(
+        ITareaProgramadaService service,
+        ISchedulerFactory schedulerFactory,
+        ITareaProgramadaRepository tareaRepo)
+    {
+        _service = service;
+        _schedulerFactory = schedulerFactory;
+        _tareaRepo = tareaRepo;
+    }
+
+    private async Task ReprogramarTareasAsync()
+    {
+        var scheduler = await _schedulerFactory.GetScheduler();
+        var jobs = await scheduler.GetJobKeys(GroupMatcher<JobKey>.GroupEquals("TareasProgramadas"));
+        foreach (var jk in jobs) await scheduler.DeleteJob(jk);
+
+        var tareas = await _tareaRepo.GetActivasAsync();
+        foreach (var tarea in tareas)
+        {
+            var job = JobBuilder.Create<TareaProgramadaJob>()
+                .WithIdentity($"tarea-{tarea.IdTarea}", "TareasProgramadas")
+                .UsingJobData("IdTarea", tarea.IdTarea)
+                .UsingJobData("IdWorkflow", tarea.IdWorkflow)
+                .UsingJobData("IdUsuario", tarea.UsuarioCreacion)
+                .UsingJobData("NombreTarea", tarea.Nombre)
+                .Build();
+            var trigger = TriggerBuilder.Create()
+                .WithIdentity($"trigger-tarea-{tarea.IdTarea}", "TareasProgramadas")
+                .WithCronSchedule(tarea.ExpresionCron)
+                .Build();
+            await scheduler.ScheduleJob(job, trigger);
+        }
+    }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<TareaProgramadaDto>>> GetAll()
@@ -157,6 +196,7 @@ public class TareasProgramadasController : ControllerBase
         try
         {
             var creada = await _service.CrearAsync(request);
+            await ReprogramarTareasAsync();
             return CreatedAtAction(nameof(GetById), new { id = creada.IdTarea }, creada);
         }
         catch (Exception ex) { return BadRequest(ex.Message); }
@@ -165,7 +205,7 @@ public class TareasProgramadasController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] ActualizarTareaProgramadaRequest request)
     {
-        try { await _service.ActualizarAsync(id, request); return NoContent(); }
+        try { await _service.ActualizarAsync(id, request); await ReprogramarTareasAsync(); return NoContent(); }
         catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
         catch (Exception ex) { return BadRequest(ex.Message); }
     }
@@ -173,21 +213,21 @@ public class TareasProgramadasController : ControllerBase
     [HttpPut("{id}/activar")]
     public async Task<IActionResult> Activar(int id)
     {
-        try { await _service.CambiarEstadoAsync(id, true); return NoContent(); }
+        try { await _service.CambiarEstadoAsync(id, true); await ReprogramarTareasAsync(); return NoContent(); }
         catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
     }
 
     [HttpPut("{id}/desactivar")]
     public async Task<IActionResult> Desactivar(int id)
     {
-        try { await _service.CambiarEstadoAsync(id, false); return NoContent(); }
+        try { await _service.CambiarEstadoAsync(id, false); await ReprogramarTareasAsync(); return NoContent(); }
         catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        try { await _service.EliminarAsync(id); return NoContent(); }
+        try { await _service.EliminarAsync(id); await ReprogramarTareasAsync(); return NoContent(); }
         catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
     }
 }

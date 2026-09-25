@@ -65,7 +65,7 @@ public class AsistentesController : ControllerBase
     {
         try
         {
-            await _asistenteService.ActivarAsistenteAsync(id);
+            await _asistenteService.ActivarAsync(id);
             return NoContent();
         }
         catch (KeyNotFoundException ex)
@@ -79,7 +79,7 @@ public class AsistentesController : ControllerBase
     {
         try
         {
-            await _asistenteService.DesactivarAsistenteAsync(id);
+            await _asistenteService.DesactivarAsync(id);
             return NoContent();
         }
         catch (KeyNotFoundException ex)

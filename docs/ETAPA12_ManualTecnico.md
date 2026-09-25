@@ -28,7 +28,7 @@ permisos y la auditoría de herramientas ya existentes.
 | `ConfiguracionWorkflow` | Configuración global (singleton): ReintentosMaximos, TiempoMaximoPasoMs, TiempoMaximoFlujoMs, ConfirmacionesObligatorias, LimitePasosPorWorkflow. |
 
 `EstadoWorkflow`: `Borrador`, `Activo`, `Suspendido`, `Finalizado`, `Error`.
-`EstrategiaError` (Actividad 5): `Reintentar`, `Omitir`, `Cancelar`, `RegistrarIncidencia`.
+`EstrategiaError` (Actividad 5): `Reintentar`, `Omitir`, `Cancelar`. (`RegistrarIncidencia` se eliminó por ser idéntica a Omitir.)
 
 ## 4. Componentes (capa Application)
 

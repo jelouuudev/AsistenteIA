@@ -88,10 +88,20 @@ public class WorkflowPasoRepository : IWorkflowPasoRepository
         // DELETE directo en SQL (ExecuteDeleteAsync) para garantizar que los pasos
         // viejos se eliminen de verdad, sin depender del seguimiento de cambios del
         // contexto (que en ActualizarAsync permitía que se duplicaran al re-guardar).
+        // NOTA: confirma de inmediato (fuera de transacción). No usar en flujos que
+        // deban ser atómicos; para eso están GetTrackedByWorkflowAsync + RemoveRange.
         await _context.WorkflowPasos
             .Where(p => p.IdWorkflow == idWorkflow)
             .ExecuteDeleteAsync(ct);
     }
+
+    public async Task<List<WorkflowPaso>> GetTrackedByWorkflowAsync(int idWorkflow, CancellationToken ct = default)
+        => await _context.WorkflowPasos
+            .Where(p => p.IdWorkflow == idWorkflow)
+            .OrderBy(p => p.Orden).ToListAsync(ct);
+
+    public void RemoveRange(IEnumerable<WorkflowPaso> pasos)
+        => _context.WorkflowPasos.RemoveRange(pasos);
 }
 
 public class WorkflowEjecucionRepository : IWorkflowEjecucionRepository
@@ -114,10 +124,15 @@ public class WorkflowEjecucionRepository : IWorkflowEjecucionRepository
             .OrderByDescending(e => e.FechaInicio).ToListAsync(ct);
 
     public async Task<WorkflowEjecucion?> GetPendienteConfirmacionAsync(int idUsuario, CancellationToken ct = default)
-        => await _context.WorkflowEjecuciones.AsNoTracking()
+        => await _context.WorkflowEjecuciones
             .Where(e => e.IdUsuario == idUsuario && e.Estado == "RequiereConfirmacion")
             .OrderByDescending(e => e.FechaInicio)
             .FirstOrDefaultAsync(ct);
+
+    public async Task<WorkflowEjecucion?> GetByIdForUpdateAsync(int id, CancellationToken ct = default)
+        => await _context.WorkflowEjecuciones
+            .Include(e => e.PasosEjecucion)
+            .FirstOrDefaultAsync(e => e.IdEjecucion == id, ct);
 
     public async Task AddAsync(WorkflowEjecucion ejecucion, CancellationToken ct = default)
         => await _context.WorkflowEjecuciones.AddAsync(ejecucion, ct);

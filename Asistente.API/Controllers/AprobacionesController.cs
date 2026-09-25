@@ -69,6 +69,19 @@ public class AprobacionesController : ControllerBase
         return Ok(todas.Select(ToDto).ToList());
     }
 
+    /// <summary>Crea una solicitud de aprobación (Actividad 1).</summary>
+    [HttpPost]
+    public async Task<ActionResult> CrearSolicitud([FromBody] CrearSolicitudRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var resultado = await _manager.CrearSolicitudAsync(
+                req.IdPlan, req.Tipo, UsuarioId(), req.Observaciones, req.Aprobadores, req.IdPolicy, ct);
+            return Ok(ToDto(resultado));
+        }
+        catch (InvalidOperationException ex) { return BadRequest(ex.Message); }
+    }
+
     /// <summary>Decide (aprobar / rechazar) una solicitud (Actividades 9 y 10).</summary>
     [HttpPost("{id:int}/decidir")]
     public async Task<ActionResult> Decidir(int id, [FromBody] DecidirRequest req, CancellationToken ct)
@@ -80,7 +93,7 @@ public class AprobacionesController : ControllerBase
             var resultado = await _manager.DecidirAsync(id, UsuarioId(), req.Decision, req.Comentario, ct);
             return Ok(ToDto(resultado));
         }
-        catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { exitoso = false, error = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(ex.Message); }
     }
 
@@ -88,12 +101,14 @@ public class AprobacionesController : ControllerBase
     [HttpPost("{id:int}/delegar")]
     public async Task<ActionResult> Delegar(int id, [FromBody] DelegarRequest req, CancellationToken ct)
     {
+        if (req.IdUsuarioDestino <= 0)
+            return BadRequest("Debe indicar un ID de usuario destino para delegar la solicitud.");
         try
         {
             var resultado = await _manager.DelegarAsync(id, UsuarioId(), req.IdUsuarioDestino, req.Comentario, ct);
             return Ok(ToDto(resultado));
         }
-        catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { exitoso = false, error = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(ex.Message); }
     }
 
@@ -132,3 +147,4 @@ public class AprobacionesController : ControllerBase
 
 public class DecidirRequest { public string Decision { get; set; } = "Aprobar"; public string? Comentario { get; set; } }
 public class DelegarRequest { public int IdUsuarioDestino { get; set; } public string? Comentario { get; set; } }
+public class CrearSolicitudRequest { public int IdPlan { get; set; } public TipoAprobacion Tipo { get; set; } public string Observaciones { get; set; } = string.Empty; public List<int> Aprobadores { get; set; } = new(); public int? IdPolicy { get; set; } }

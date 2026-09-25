@@ -43,6 +43,13 @@ public class HistorialPromptRepository : IHistorialPromptRepository
         await _context.HistorialPrompts.AddAsync(historial);
     }
 
+    public async Task<int> GetMaxVersionAsync(int promptId)
+    {
+        return await _context.HistorialPrompts
+            .Where(h => h.IdPrompt == promptId)
+            .MaxAsync(h => (int?)h.Version) ?? 0;
+    }
+
     public void Delete(HistorialPrompt historial)
     {
         _context.HistorialPrompts.Remove(historial);

@@ -33,6 +33,7 @@ public class ConfiguracionOrchestratorRepository : IConfiguracionOrchestratorRep
             existente.TiempoMaximoEjecucionMs = config.TiempoMaximoEjecucionMs;
             existente.MaxEjecucionesSimultaneas = config.MaxEjecucionesSimultaneas;
             existente.RequiereAutorizacion = config.RequiereAutorizacion;
+            existente.MaxTiempoTotalMs = config.MaxTiempoTotalMs;
             existente.FechaActualizacion = System.DateTime.UtcNow;
         }
     }

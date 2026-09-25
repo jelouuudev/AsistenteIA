@@ -2,6 +2,8 @@
 @{
     ViewData["Title"] = "Reglas de Automatización";
     var lista = Model.ToList();
+    int? idEventoFiltro = ViewBag.IdEventoFiltro as int?;
+    string? nombreEventoFiltro = ViewBag.NombreEventoFiltro as string;
 }
 
 <div class="mb-4">
@@ -12,8 +14,16 @@
     <div>
         <h4 class="text-white fw-bold mb-0"><i class="bi bi-link-45deg me-2" style="color:#818cf8;"></i>Reglas de Automatización</h4>
         <p class="text-secondary small mb-0">Asocie eventos a flujos de trabajo con prioridad y condiciones</p>
+        @if (idEventoFiltro.HasValue)
+        {
+            <div class="mt-2">
+                <span class="badge" style="background:rgba(129,140,248,0.15);color:#a5b4fc;border:1px solid rgba(129,140,248,0.3);border-radius:20px;">
+                    <i class="bi bi-funnel-fill me-1"></i>Evento: @(nombreEventoFiltro ?? $"#{idEventoFiltro.Value}")
+                </span>
+            </div>
+        }
     </div>
-    <a asp-action="Crear" asp-route-idEvento="0" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Nueva Regla</a>
+    <a asp-action="Crear" asp-route-idEvento="@(idEventoFiltro ?? 0)" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Nueva Regla</a>
 </div>
 
 <div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
@@ -55,6 +65,7 @@
                                         <form asp-action="Desactivar" method="post" class="d-inline">
                                             @Html.AntiForgeryToken()
                                             <input type="hidden" name="id" value="@r.IdRegla" />
+                                            <input type="hidden" name="idEvento" value="@(idEventoFiltro?.ToString() ?? "")" />
                                             <button type="submit" class="btn btn-outline-warning btn-sm py-1 px-2" title="Desactivar"><i class="bi bi-pause-fill"></i></button>
                                         </form>
                                     }
@@ -63,12 +74,14 @@
                                         <form asp-action="Activar" method="post" class="d-inline">
                                             @Html.AntiForgeryToken()
                                             <input type="hidden" name="id" value="@r.IdRegla" />
+                                            <input type="hidden" name="idEvento" value="@(idEventoFiltro?.ToString() ?? "")" />
                                             <button type="submit" class="btn btn-outline-success btn-sm py-1 px-2" title="Activar"><i class="bi bi-play-fill"></i></button>
                                         </form>
                                     }
                                     <form asp-action="Eliminar" method="post" class="d-inline" onsubmit="return confirm('¿Eliminar la regla?');">
                                         @Html.AntiForgeryToken()
                                         <input type="hidden" name="id" value="@r.IdRegla" />
+                                        <input type="hidden" name="idEvento" value="@(idEventoFiltro?.ToString() ?? "")" />
                                         <button type="submit" class="btn btn-outline-danger btn-sm py-1 px-2" title="Eliminar"><i class="bi bi-trash"></i></button>
                                     </form>
                                 </div>

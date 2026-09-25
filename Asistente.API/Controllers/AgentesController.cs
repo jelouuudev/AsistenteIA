@@ -62,28 +62,14 @@ public class AgentesController : ControllerBase
     [HttpPost("{id}/activar")]
     public async Task<IActionResult> Activar(int id)
     {
-        await _agenteManager.ActivarAsistenteAsync(id);
+        await _agenteManager.ActivarAsync(id);
         return NoContent();
     }
 
     [HttpPost("{id}/desactivar")]
     public async Task<IActionResult> Desactivar(int id)
     {
-        await _agenteManager.DesactivarAsistenteAsync(id);
-        return NoContent();
-    }
-
-    [HttpPost("{id}/publicar")]
-    public async Task<IActionResult> Publicar(int id)
-    {
-        await _agenteManager.PublicarAsync(id);
-        return NoContent();
-    }
-
-    [HttpPost("{id}/enviar-prueba")]
-    public async Task<IActionResult> EnviarAPrueba(int id)
-    {
-        await _agenteManager.EnviarAPruebaAsync(id);
+        await _agenteManager.DesactivarAsync(id);
         return NoContent();
     }
 
@@ -94,6 +80,10 @@ public class AgentesController : ControllerBase
     [HttpPost("{id}/versiones")]
     public async Task<ActionResult<AgenteVersionDto>> CrearVersion(int id)
         => Ok(await _agenteManager.CrearVersionAsync(id));
+
+    [HttpPost("{id}/versiones/{idVersion}/restaurar")]
+    public async Task<ActionResult<AgenteVersionDto>> RestaurarVersion(int id, int idVersion)
+        => Ok(await _agenteManager.RestaurarVersionAsync(id, idVersion));
 
     [HttpGet("{id}/versiones")]
     public async Task<ActionResult<IEnumerable<AgenteVersionDto>>> Versiones(int id)

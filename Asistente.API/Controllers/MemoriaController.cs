@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Asistente.Application.Interfaces;
 using Asistente.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -17,11 +18,19 @@ public class MemoriaController : ControllerBase
         _memoriaService = memoriaService;
     }
 
+    private int GetCurrentUserId()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+            return -1;
+        return userId;
+    }
+
     [HttpGet("conversaciones")]
     public async Task<ActionResult<IEnumerable<ConversacionListDto>>> ObtenerConversaciones()
     {
-        var userIdHeader = Request.Headers["X-User-Id"].FirstOrDefault();
-        if (!int.TryParse(userIdHeader, out var userId))
+        var userId = GetCurrentUserId();
+        if (userId == -1)
             return Unauthorized(new { error = "Usuario no autenticado." });
 
         var conversaciones = await _memoriaService.ObtenerConversacionesAsync(userId);
@@ -31,8 +40,8 @@ public class MemoriaController : ControllerBase
     [HttpGet("conversaciones/buscar")]
     public async Task<ActionResult<IEnumerable<ConversacionListDto>>> BuscarConversaciones([FromQuery] string q)
     {
-        var userIdHeader = Request.Headers["X-User-Id"].FirstOrDefault();
-        if (!int.TryParse(userIdHeader, out var userId))
+        var userId = GetCurrentUserId();
+        if (userId == -1)
             return Unauthorized(new { error = "Usuario no autenticado." });
 
         if (string.IsNullOrWhiteSpace(q))
@@ -55,8 +64,8 @@ public class MemoriaController : ControllerBase
     [HttpPost("conversaciones")]
     public async Task<ActionResult<ConversacionDto>> CrearConversacion()
     {
-        var userIdHeader = Request.Headers["X-User-Id"].FirstOrDefault();
-        if (!int.TryParse(userIdHeader, out var userId))
+        var userId = GetCurrentUserId();
+        if (userId == -1)
             return Unauthorized(new { error = "Usuario no autenticado." });
 
         var conversacion = await _memoriaService.CrearConversacionAsync(userId);

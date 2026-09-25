@@ -25,7 +25,9 @@ public class DocumentoServiceTests
     private readonly Mock<IFileStorageService> _fileStorageMock = new();
     private readonly Mock<IAuditoriaService> _auditoriaServiceMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
+    private readonly Mock<IFuenteConocimientoService> _fuenteServiceMock = new();
     private readonly Mock<IDocumentoFuenteRepository> _documentoFuenteRepoMock = new();
+    private readonly Mock<IIndexacionService> _indexacionServiceMock = new();
     private readonly Mock<ILogger<DocumentoService>> _loggerMock = new();
     private readonly DocumentoService _service;
 
@@ -40,7 +42,9 @@ public class DocumentoServiceTests
             _fileStorageMock.Object,
             _auditoriaServiceMock.Object,
             _unitOfWorkMock.Object,
+            _fuenteServiceMock.Object,
             _documentoFuenteRepoMock.Object,
+            _indexacionServiceMock.Object,
             _loggerMock.Object);
     }
 
@@ -282,6 +286,53 @@ public class DocumentoServiceTests
         await _service.EliminarAsync(1, 1, "127.0.0.1");
 
         Assert.Equal(EstadoDocumento.Eliminado, doc.Estado);
+    }
+
+    // --- Revocacion de acceso por estado ---
+
+    private void SetupProcesadoDeDocumento(int idDocumento = 1, int idVersion = 3, int idProcesado = 7)
+    {
+        _versionRepoMock.Setup(x => x.GetByDocumentoIdAsync(idDocumento))
+            .ReturnsAsync(new List<DocumentoVersion> { new() { IdVersion = idVersion, IdDocumento = idDocumento, Activo = true } });
+        _procesamientoRepoMock.Setup(x => x.GetByVersionIdAsync(idVersion))
+            .ReturnsAsync(new DocumentoProcesado { IdDocumentoProcesado = idProcesado, IdVersionDocumento = idVersion });
+    }
+
+    [Fact]
+    public async Task ArchivarAsync_Should_EliminarVectores_When_Valid()
+    {
+        var doc = CreateDocumento(estado: EstadoDocumento.Activo);
+        _documentoRepoMock.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(doc);
+        SetupProcesadoDeDocumento();
+
+        await _service.ArchivarAsync(1, 1, "127.0.0.1");
+
+        Assert.Equal(EstadoDocumento.Archivado, doc.Estado);
+        _indexacionServiceMock.Verify(x => x.EliminarIndiceAsync(7), Times.Once);
+    }
+
+    [Fact]
+    public async Task EliminarAsync_Should_EliminarVectores_When_Valid()
+    {
+        var doc = CreateDocumento(estado: EstadoDocumento.Activo);
+        _documentoRepoMock.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(doc);
+        SetupProcesadoDeDocumento();
+
+        await _service.EliminarAsync(1, 1, "127.0.0.1");
+
+        _indexacionServiceMock.Verify(x => x.EliminarIndiceAsync(7), Times.Once);
+    }
+
+    [Fact]
+    public async Task ActivarAsync_Should_Reindexar_When_Valid()
+    {
+        var doc = CreateDocumento(estado: EstadoDocumento.Archivado);
+        _documentoRepoMock.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(doc);
+
+        await _service.ActivarAsync(1, 1, "127.0.0.1");
+
+        Assert.Equal(EstadoDocumento.Activo, doc.Estado);
+        _indexacionServiceMock.Verify(x => x.ReindexarPorDocumentoAsync(1), Times.Once);
     }
 
     [Fact]

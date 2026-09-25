@@ -52,6 +52,11 @@ public class AprobacionesController : Controller
     public async Task<IActionResult> Delegar(int id, int idUsuarioDestino, string? comentario)
     {
         var (userId, ip) = GetUserInfo();
+        if (idUsuarioDestino <= 0)
+        {
+            TempData["ErrorMessage"] = "Debe indicar un ID de usuario destino para delegar la solicitud.";
+            return RedirectToAction(nameof(Bandeja));
+        }
         try
         {
             await _apiService.DelegarAprobacionAsync(id, idUsuarioDestino, comentario, userId, ip);

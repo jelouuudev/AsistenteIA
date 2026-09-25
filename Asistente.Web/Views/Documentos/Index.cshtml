@@ -130,7 +130,7 @@
                                     </span>
                                 }
                             </td>
-                            <td class="py-3 text-secondary small" style="background:transparent;">@doc.FechaRegistro.ToLocalTime().ToString("g")</td>
+                            <td class="py-3 text-secondary small" style="background:transparent;">@doc.FechaRegistro.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                             <td class="py-3 text-end px-4" style="background:transparent;">
                                 <a asp-action="Detalle" asp-route-id="@doc.IdDocumento" class="btn btn-sm btn-icon"
                                    style="background:rgba(129,140,248,0.1);color:#818cf8;border:1px solid rgba(129,140,248,0.15);border-radius:8px;"

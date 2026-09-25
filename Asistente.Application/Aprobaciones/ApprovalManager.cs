@@ -148,7 +148,8 @@ public class ApprovalManager
                 $"El usuario {idUsuario} no está autorizado para decidir la solicitud {idApproval}.");
 
         // Regla 6: la IA / solicitante nunca aprueba sus propias acciones.
-        if (idUsuario == req.Solicitante)
+        // Rechazar siempre está permitido (cancelar propia solicitud).
+        if (decision == "Aprobar" && idUsuario == req.Solicitante)
             throw new UnauthorizedAccessException("El solicitante no puede aprobar su propia acción (Regla 6).");
 
         await _decRepo.AddAsync(new ApprovalDecision
@@ -170,6 +171,7 @@ public class ApprovalManager
         var policy = req.Policy;
         var aprobados = req.Asignados.Count(a => a.Estado == "Aprobado");
         var rechazados = req.Asignados.Count(a => a.Estado == "Rechazado");
+        var pendientes = req.Asignados.Count(a => a.Estado == "Pendiente");
 
         if (decision == "Rechazar")
         {
@@ -179,9 +181,18 @@ public class ApprovalManager
             return req;
         }
 
+        // Si hay más aprobadores pendientes, mantener en Delegado (cadena secuencial).
+        if (pendientes > 0)
+        {
+            req.Estado = EstadoAprobacion.Delegado;
+            await _reqRepo.UpdateAsync(req, ct);
+            return req;
+        }
+
+        // No hay más pendientes: evaluar política para resolución final.
         bool cumple = false;
         if (policy?.RequiereUnanimidad == true)
-            cumple = req.Asignados.All(a => a.Estado == "Aprobado");
+            cumple = req.Asignados.All(a => a.Estado == "Aprobado" || a.Estado == "Delegado");
         else if (policy != null)
             cumple = aprobados >= policy.CantidadMinimaAprobaciones;
         else
@@ -211,6 +222,9 @@ public class ApprovalManager
     {
         var req = await _reqRepo.GetByIdAsync(idApproval, ct)
                   ?? throw new InvalidOperationException($"Solicitud {idApproval} no encontrada.");
+
+        if (idUsuarioDestino <= 0)
+            throw new InvalidOperationException("Debe indicar un ID de usuario destino para delegar la solicitud.");
 
         if (req.Policy != null && !req.Policy.PermiteDelegacion)
             throw new InvalidOperationException("La política no permite delegación.");

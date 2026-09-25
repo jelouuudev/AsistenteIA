@@ -14,6 +14,23 @@ public interface IAgentOrchestrator
     Task<int> IniciarAsync(AgentRequest request, CancellationToken cancellationToken = default);
     /// <summary>Ejecuta el Execution Graph en segundo plano para una ejecución ya creada.</summary>
     Task EjecutarGrafoAsync(int idExecution, AgentRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Ejecuta UN paso de un plan validado (Etapa 18). El Orchestrator NO re-selecciona
+    /// ni reconstruye: ejecuta exactamente el PlanStep recibido (fuente de verdad del DAG).
+    /// </summary>
+    Task<ResultadoPasoOrquestado> EjecutarPasoValidadoAsync(
+        Plan plan, PlanStep paso, string? contextoPrevio, string? datoPrevio,
+        int idUsuario, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Resultado de ejecutar un paso validado del plan en el Orchestrator.</summary>
+public class ResultadoPasoOrquestado
+{
+    public bool Exito { get; set; }
+    public bool Omitido { get; set; }
+    public string? Resultado { get; set; }
+    public string? Error { get; set; }
+    public long TiempoMs { get; set; }
 }
 
 /// <summary>Selecciona agentes colaboradores según tipo, capacidades, permisos, prioridad y reglas (RF Actividad 2).</summary>

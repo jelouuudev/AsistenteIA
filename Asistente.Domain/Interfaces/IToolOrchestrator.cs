@@ -23,4 +23,10 @@ public interface IToolOrchestrator
     /// herramienta autorizada y estado. Registra auditoría en cualquier caso.
     /// </summary>
     Task<ToolExecutionResult> EjecutarAsync(ToolExecutionRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Indica si el motor de herramientas está habilitado globalmente.</summary>
+    Task<bool> MotorHabilitadoAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Indica si se exige autorización por asistente para ejecutar herramientas.</summary>
+    Task<bool> RequiereAutorizacionAsync(CancellationToken cancellationToken = default);
 }

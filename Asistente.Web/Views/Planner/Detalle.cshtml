@@ -88,19 +88,16 @@
                 <div class="card-body p-4">
                     <h6 class="text-white fw-semibold mb-3">Acciones</h6>
                     <div class="d-grid gap-2">
-                        @if (plan.Estado == "Borrador" || plan.Estado == "Validado")
+                        @if (plan.Estado == "Borrador" || plan.Estado == "Validado" || plan.Estado == "Pendiente" || plan.Estado == "EnEsperaAprobacion")
                         {
                             <form asp-action="Ejecutar" method="post" asp-route-id="@plan.IdPlan">
-                                <button class="btn btn-sm btn-success w-100">▶ Ejecutar</button>
+                                <button type="submit" class="btn btn-sm btn-success w-100"
+                                        onclick="this.disabled=true; this.textContent='⏳ Ejecutando...'; this.form.submit(); return false;">
+                                    ▶ Ejecutar
+                                </button>
                             </form>
                         }
                         <a asp-action="Simular" asp-route-id="@plan.IdPlan" class="btn btn-sm btn-outline-info">🔍 Simular</a>
-                        @if (plan.RequiereAprobacion && !plan.Aprobado)
-                        {
-                            <form asp-action="Aprobar" method="post" asp-route-id="@plan.IdPlan">
-                                <button class="btn btn-sm btn-warning w-100">✓ Aprobar</button>
-                            </form>
-                        }
                         @if (plan.Estado == "EnEjecucion")
                         {
                             <form asp-action="Cancelar" method="post" asp-route-id="@plan.IdPlan">

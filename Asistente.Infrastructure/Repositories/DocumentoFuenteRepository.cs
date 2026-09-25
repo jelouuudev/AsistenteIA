@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Asistente.Domain.Entities;
+using Asistente.Domain.Enums;
 using Asistente.Domain.Interfaces;
 using Asistente.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -66,8 +67,11 @@ public class DocumentoFuenteRepository : IDocumentoFuenteRepository
 
     public async Task<IEnumerable<int>> GetDocumentosProcesadosIdsByFuenteAsync(int idFuente)
     {
+        // SEGURIDAD: solo documentos en estado Activo. Archivados, borradores y
+        // eliminados no deben aparecer en recuperacion aunque sigan asignados.
         var documentoIds = await _context.DocumentosFuentes
-            .Where(df => df.IdFuente == idFuente && df.Activo)
+            .Where(df => df.IdFuente == idFuente && df.Activo
+                && df.Documento != null && df.Documento.Estado == EstadoDocumento.Activo)
             .Select(df => df.IdDocumento)
             .ToListAsync();
 

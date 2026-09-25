@@ -54,21 +54,14 @@
                             <td><span class="badge" style="background:rgba(129,140,248,0.2);color:#a5b4fc;border:1px solid rgba(129,140,248,0.3);border-radius:20px;font-size:0.72rem;padding:3px 10px;">@a.ModeloIA</span></td>
                             <td>
                                 @{
-                                    string colorEstado = a.Estado switch
-                                    {
-                                        Asistente.Domain.Entities.EstadoAgente.Borrador => "rgba(148,163,184,0.2);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3)",
-                                        Asistente.Domain.Entities.EstadoAgente.Prueba => "rgba(251,191,36,0.2);color:#fcd34d;border:1px solid rgba(251,191,36,0.3)",
-                                        Asistente.Domain.Entities.EstadoAgente.Publicado => "rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3)",
-                                        Asistente.Domain.Entities.EstadoAgente.Deshabilitado => "rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25)",
-                                        _ => "rgba(148,163,184,0.2);color:#cbd5e1;border:1px solid rgba(148,163,184,0.3)"
-                                    };
-                                    string textoEstado = a.Estado.ToString();
+                                    string colorEstado = a.Activo ? "rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3)" : "rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25)";
+                                    string textoEstado = a.Activo ? "Activo" : "Inactivo";
                                 }
                                 <span class="badge" style="background:@colorEstado;border-radius:20px;padding:4px 10px;">
                                     <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>@textoEstado
                                 </span>
                             </td>
-                            <td class="text-secondary">v@a.Version</td>
+                            <td class="text-secondary">@("v" + a.Version)</td>
                             <td class="text-secondary small">@a.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy")</td>
                             <td class="text-end px-4">
                                 <div class="d-flex gap-1 justify-content-end">
@@ -84,27 +77,6 @@
                                        class="btn btn-sm" style="background:rgba(45,212,191,0.15);color:#5eead4;border:1px solid rgba(45,212,191,0.2);border-radius:8px;" title="Versiones">
                                         <i class="bi bi-tag"></i>
                                     </a>
-                                    @if (a.Estado != Asistente.Domain.Entities.EstadoAgente.Publicado)
-                                    {
-                                        <form asp-action="Publicar" asp-route-id="@a.IdAsistente" method="post" class="d-inline"
-                                              onsubmit="return confirm('¿Publicar al agente @a.Nombre? Debe estar probado.')">
-                                            @Html.AntiForgeryToken()
-                                            <button type="submit" class="btn btn-sm"
-                                                    style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2);border-radius:8px;" title="Publicar">
-                                                <i class="bi bi-upload"></i>
-                                            </button>
-                                        </form>
-                                    }
-                                    @if (a.Estado != Asistente.Domain.Entities.EstadoAgente.Prueba && a.Estado != Asistente.Domain.Entities.EstadoAgente.Publicado)
-                                    {
-                                        <form asp-action="EnviarPrueba" asp-route-id="@a.IdAsistente" method="post" class="d-inline">
-                                            @Html.AntiForgeryToken()
-                                            <button type="submit" class="btn btn-sm"
-                                                    style="background:rgba(251,191,36,0.15);color:#fcd34d;border:1px solid rgba(251,191,36,0.2);border-radius:8px;" title="Enviar a prueba">
-                                                <i class="bi bi-flask"></i>
-                                            </button>
-                                        </form>
-                                    }
                                     <form asp-action="Duplicar" asp-route-id="@a.IdAsistente" method="post" class="d-inline"
                                           onsubmit="return confirm('¿Duplicar al agente @a.Nombre?')">
                                         @Html.AntiForgeryToken()
@@ -113,10 +85,6 @@
                                             <i class="bi bi-files"></i>
                                         </button>
                                     </form>
-                                    <a asp-controller="Prompts" asp-action="Prueba" asp-route-asistenteId="@a.IdAsistente"
-                                       class="btn btn-sm" style="background:rgba(251,191,36,0.15);color:#fcd34d;border:1px solid rgba(251,191,36,0.2);border-radius:8px;" title="Probar">
-                                        <i class="bi bi-play-circle"></i>
-                                    </a>
                                     @if (a.Activo)
                                     {
                                         <form asp-action="Desactivar" asp-route-id="@a.IdAsistente" method="post" class="d-inline"

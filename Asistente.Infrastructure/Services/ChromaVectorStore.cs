@@ -74,8 +74,12 @@ public class ChromaVectorStore : IVectorStore
 
     public async Task IndexBatchAsync(IEnumerable<VectorDocument> documents)
     {
-        var docs = documents.ToList();
-        if (!docs.Any()) return;
+        var docs = documents.Where(d => d.Embedding != null && d.Embedding.Length > 0).ToList();
+        if (!docs.Any())
+        {
+            _logger.LogWarning("No hay documentos con embeddings válidos para indexar.");
+            return;
+        }
 
         try
         {

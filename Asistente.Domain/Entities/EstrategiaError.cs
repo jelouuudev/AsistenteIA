@@ -11,7 +11,7 @@ public enum EstrategiaError
     /// <summary>Omite el paso y continúa con el siguiente.</summary>
     Omitir = 1,
     /// <summary>Cancela la ejecución del flujo completo.</summary>
-    Cancelar = 2,
-    /// <summary>Registra la incidencia y continúa (equivalente a Omitir pero con auditoría explícita).</summary>
-    RegistrarIncidencia = 3
+    Cancelar = 2
+    // RegistrarIncidencia (= 3) se eliminó: era idéntica a Omitir sin registrar nada.
+    // Las filas existentes se migraron a Omitir.
 }

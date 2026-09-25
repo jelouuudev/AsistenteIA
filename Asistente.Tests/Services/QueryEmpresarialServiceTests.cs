@@ -94,7 +94,7 @@ public class QueryEmpresarialServiceTests
             });
         }
         _mockExecutor.Setup(e => e.ExecuteReadOnlyAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<CancellationToken>(), It.IsAny<int>()))
             .ReturnsAsync(datos);
     }
 
@@ -137,7 +137,7 @@ public class QueryEmpresarialServiceTests
         ConfigurarConexionActiva();
         ConfigurarTablaClientes();
         _mockExecutor.Setup(e => e.ExecuteReadOnlyAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<CancellationToken>(), It.IsAny<int>()))
             .ReturnsAsync(new List<Dictionary<string, object?>> { new() { ["Total"] = 5L } });
 
         var resultado = await _service.ProcesarPreguntaAsync("¿Cuántos clientes hay en la base de datos?", 1);
@@ -173,14 +173,15 @@ public class QueryEmpresarialServiceTests
         {
             IdConfiguracion = 1,
             Activo = true,
-            MaximoRegistros = 2
+            MaximoRegistros = 2,
+            TiempoMaximoEjecucionSegundos = 15
         });
         ConfigurarResultadoEjecutor(2);
 
         await _service.ProcesarPreguntaAsync("Muéstrame la lista de clientes", 1);
 
         _mockExecutor.Verify(e => e.ExecuteReadOnlyAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.Is<int>(m => m == 2), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.Is<int>(m => m == 2), It.IsAny<CancellationToken>(), It.Is<int>(t => t == 15)), Times.Once);
     }
 
     [Fact]
@@ -266,7 +267,7 @@ public class QueryEmpresarialServiceTests
             }
         });
         _mockExecutor.Setup(e => e.ExecuteReadOnlyAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<CancellationToken>(), It.IsAny<int>()))
             .ReturnsAsync(new List<Dictionary<string, object?>> { new() { ["Total"] = 5L } });
 
         var resultado = await _service.ProcesarPreguntaAsync("Cuál es el total de clientes?", 1);

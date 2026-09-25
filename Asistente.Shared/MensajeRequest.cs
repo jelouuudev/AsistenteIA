@@ -24,4 +24,10 @@ public class MensajeRequest
     /// Se incluye en el system prompt para que el LLM tenga datos reales y no invente valores.
     /// </summary>
     public string? ContextoAgente { get; set; }
+
+    /// <summary>
+    /// Alcance forzado para nodos orquestados: "documental" (solo RAG, sin SQL),
+    /// "datos" (solo SQL/datos, sin RAG) o null (flujo normal).
+    /// </summary>
+    public string? Alcance { get; set; }
 }

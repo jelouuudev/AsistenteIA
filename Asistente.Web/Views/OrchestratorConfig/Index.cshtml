@@ -31,16 +31,13 @@
                     @Html.AntiForgeryToken()
 
                     <div class="form-check form-switch mb-4">
-                        <input asp-for="Habilitado" class="form-check-input" type="checkbox" id="chkHabilitado" checked />
+                        <input asp-for="Habilitado" class="form-check-input" type="checkbox" id="chkHabilitado" />
                         <label class="form-check-label text-white" for="chkHabilitado">Motor de Herramientas habilitado</label>
                         <div class="form-text text-secondary small">Si se desactiva, ninguna herramienta será ejecutada por el asistente.</div>
                     </div>
 
-                    <div class="mb-3">
-                        <label asp-for="Prioridad" class="form-label text-secondary small">Prioridad (orden de resolución)</label>
-                        <input asp-for="Prioridad" type="number" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
-                        <span asp-validation-for="Prioridad" class="text-danger small"></span>
-                    </div>
+                    @* Prioridad oculta: sin pesos por herramienta no ordena nada. *@
+                    <input type="hidden" asp-for="Prioridad" />
 
                     <div class="mb-3">
                         <label asp-for="TiempoMaximoEjecucionMs" class="form-label text-secondary small">Tiempo máximo de ejecución (ms)</label>
@@ -54,8 +51,15 @@
                         <span asp-validation-for="MaxEjecucionesSimultaneas" class="text-danger small"></span>
                     </div>
 
+                    <div class="mb-3">
+                        <label asp-for="MaxTiempoTotalMs" class="form-label text-secondary small">Tiempo máximo por nodo orquestado (ms)</label>
+                        <input asp-for="MaxTiempoTotalMs" type="number" min="30000" step="1000" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
+                        <span asp-validation-for="MaxTiempoTotalMs" class="text-danger small"></span>
+                        <div class="form-text text-secondary small">Tope por agente en ejecuciones multi-agente. En CPU súbelo (ej: 600000).</div>
+                    </div>
+
                     <div class="form-check form-switch mb-4">
-                        <input asp-for="RequiereAutorizacion" class="form-check-input" type="checkbox" id="chkAuth" checked />
+                        <input asp-for="RequiereAutorizacion" class="form-check-input" type="checkbox" id="chkAuth" />
                         <label class="form-check-label text-white" for="chkAuth">Requiere autorización (permisos y asociación al asistente)</label>
                         <div class="form-text text-secondary small">Si está activo, una herramienta con RequierePermiso=true solo se ejecuta si está autorizada para el asistente.</div>
                     </div>

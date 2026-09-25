@@ -378,6 +378,6 @@ public class ConexionBaseDatosService : IConexionBaseDatosService
             return $"Server={request.Servidor};Database={request.BaseDatos};Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False;";
         }
 
-        return $"Server={request.Servidor};Database={request.BaseDatos};User Id={request.UsuarioConexion};Password={request.Contrasena};TrustServerCertificate=True;Encrypt=False;";
+        return $"Server={request.Servidor};Database={request.BaseDatos};User Id={request.UsuarioConexion};Password={request.Contrasena};TrustServerCertificate=True;Encrypt=False;Integrated Security=false;";
     }
 }

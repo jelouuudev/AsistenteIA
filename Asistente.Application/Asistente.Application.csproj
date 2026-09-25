@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Asistente.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Asistente.Domain\Asistente.Domain.csproj" />
     <ProjectReference Include="..\Asistente.Shared\Asistente.Shared.csproj" />
   </ItemGroup>
@@ -19,6 +23,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+    <PackageReference Include="QuestPDF" Version="2025.4.0" />
   </ItemGroup>
 
 </Project>

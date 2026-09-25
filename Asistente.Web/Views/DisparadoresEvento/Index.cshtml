@@ -1,0 +1,103 @@
+@model IEnumerable<Asistente.Shared.DisparadorEventoDto>
+@{
+    ViewData["Title"] = "Disparadores de Evento";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-lightning-charge-fill me-2" style="color:#818cf8;"></i>Disparadores de Evento</h4>
+        <p class="text-secondary small mb-0">Configure orígenes automáticos que disparan eventos sin intervención del usuario</p>
+    </div>
+    <a asp-action="Crear" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Nuevo Disparador</a>
+</div>
+
+<div class="card border-0" style="background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.07);">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle" style="background:transparent;">
+                <thead style="background:rgba(0,0,0,0.2);">
+                    <tr class="border-bottom border-secondary">
+                        <th class="text-secondary fw-normal py-3 px-4">Evento</th>
+                        <th class="text-secondary fw-normal py-3">Tipo</th>
+                        <th class="text-secondary fw-normal py-3">Configuración</th>
+                        <th class="text-secondary fw-normal py-3">Última Ejecución</th>
+                        <th class="text-secondary fw-normal py-3">Estado</th>
+                        <th class="text-secondary fw-normal py-3 text-end pe-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in Model)
+                    {
+                        <tr class="border-bottom" style="border-color:rgba(255,255,255,0.05) !important;">
+                            <td class="px-4 py-3">
+                                <div class="text-white fw-semibold">@d.NombreEvento</div>
+                                <div class="text-secondary small font-monospace">@d.CodigoEvento</div>
+                            </td>
+                            <td>
+                                <span class="badge" style="background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.25);border-radius:20px;">@d.Tipo</span>
+                            </td>
+                            <td>
+                                <div class="text-secondary small font-monospace" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="@d.ConfigJson">@d.ConfigJson</div>
+                            </td>
+                            <td>
+                                @if (d.UltimaEjecucion.HasValue)
+                                {
+                                    <div class="text-secondary small">@d.UltimaEjecucion.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                }
+                                else
+                                {
+                                    <div class="text-secondary small">Nunca</div>
+                                }
+                            </td>
+                            <td>
+                                @if (d.Activo)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);border-radius:20px;">Activo</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border:1px solid rgba(148,163,184,0.25);border-radius:20px;">Inactivo</span>
+                                }
+                            </td>
+                            <td class="text-end pe-4">
+                                <div class="d-flex gap-1 justify-content-end flex-wrap">
+                                    <a asp-action="Editar" asp-route-id="@d.IdDisparador" class="btn btn-outline-light btn-sm py-1 px-2" title="Editar"><i class="bi bi-pencil"></i></a>
+                                    @if (d.Activo)
+                                    {
+                                        <form asp-action="Desactivar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@d.IdDisparador" />
+                                            <button type="submit" class="btn btn-outline-warning btn-sm py-1 px-2" title="Desactivar"><i class="bi bi-pause-fill"></i></button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="Activar" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@d.IdDisparador" />
+                                            <button type="submit" class="btn btn-outline-success btn-sm py-1 px-2" title="Activar"><i class="bi bi-play-fill"></i></button>
+                                        </form>
+                                    }
+                                    <form asp-action="Eliminar" method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este disparador?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@d.IdDisparador" />
+                                        <button type="submit" class="btn btn-outline-danger btn-sm py-1 px-2" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (!Model.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary py-5">
+                                <i class="bi bi-lightning-charge fs-1 d-block mb-2 opacity-25"></i>
+                                No hay disparadores de evento configurados.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

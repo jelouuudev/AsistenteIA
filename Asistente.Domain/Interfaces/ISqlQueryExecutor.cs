@@ -11,5 +11,6 @@ public interface ISqlQueryExecutor
         string sql,
         object? parameters = null,
         int maxRows = 100,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        int commandTimeoutSegundos = 30);
 }

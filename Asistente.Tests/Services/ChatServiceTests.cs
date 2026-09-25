@@ -21,6 +21,7 @@ public class ChatServiceTests
     private readonly Mock<ILogger<ChatService>> _mockLogger;
     private readonly Mock<AsistenteService> _mockAsistenteService;
     private readonly Mock<PromptSistemaService> _mockPromptService;
+    private readonly Mock<ContextoService> _mockContextoService;
     private readonly Mock<IRecuperacionService> _mockRecuperacionService;
     private readonly Mock<IQueryEmpresarialService> _mockQueryEmpresarialService;
     private readonly Mock<IDecisionHerramientaService> _mockDecisionService;
@@ -79,6 +80,39 @@ public class ChatServiceTests
         _mockUsuarioFuente.Setup(r => r.GetFuentesAutorizadasAsync(It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new List<int>());
         _mockAgentOrchestrator = new Mock<IAgentOrchestrator>();
         _mockWorkflowEngine = new Mock<IWorkflowEngine>();
+        _mockWorkflowEngine.Setup(w => w.BuscarPorDisparadorAsync(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync((Workflow?)null);
+
+        // Asistente por defecto activo (el flujo actual exige un agente disponible).
+        var asistenteTest = new AsistenteDto
+        {
+            IdAsistente = 1,
+            Codigo = "TEST-01",
+            Nombre = "Test",
+            Activo = true,
+            Estado = EstadoAgente.Activo
+        };
+        _mockAsistenteService.Setup(s => s.ObtenerTodosAsync()).ReturnsAsync(new List<AsistenteDto> { asistenteTest });
+        _mockAsistenteService.Setup(s => s.ObtenerPorIdAsync(It.IsAny<int>())).ReturnsAsync(asistenteTest);
+
+        _mockPromptService.Setup(p => p.ObtenerActivoPorAsistenteIdAsync(It.IsAny<int>()))
+            .ReturnsAsync((PromptSistemaDto?)null);
+
+        _mockContextoService = new Mock<ContextoService>(
+            Mock.Of<Asistente.Domain.Interfaces.IConfiguracionMemoriaRepository>(),
+            Mock.Of<Asistente.Domain.Interfaces.IMensajeRepository>(),
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<Asistente.Application.Services.ContextoService>>());
+        _mockContextoService.Setup(c => c.ConstruirContextoAsync(It.IsAny<Conversacion>(), It.IsAny<Mensaje>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync(new ContextoConstruido { MensajesRecientes = new List<Mensaje>() });
+        _mockContextoService.Setup(c => c.RequiereResumenAsync(It.IsAny<Conversacion>(), It.IsAny<int>()))
+            .ReturnsAsync(false);
+
+        _mockOrchestrator.Setup(o => o.ObtenerHerramientasParaAsistenteAsync(It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync(new List<Herramienta>());
+        _mockRecuperacionService.Setup(r => r.RecuperarContextoConFuentesAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync((string.Empty, new List<ReferenciaDocumentalDto>()));
+        _mockMessageRepository.Setup(x => x.GetByConversacionIdAsync(It.IsAny<int>()))
+            .ReturnsAsync(new List<Mensaje>());
 
         _chatService = new ChatService(
             _mockConversationRepository.Object,
@@ -88,10 +122,7 @@ public class ChatServiceTests
             _mockLogger.Object,
             _mockAsistenteService.Object,
             _mockPromptService.Object,
-            new Mock<Asistente.Application.Services.ContextoService>(
-                Mock.Of<Asistente.Domain.Interfaces.IConfiguracionMemoriaRepository>(),
-                Mock.Of<Asistente.Domain.Interfaces.IMensajeRepository>(),
-                Mock.Of<Microsoft.Extensions.Logging.ILogger<Asistente.Application.Services.ContextoService>>()).Object,
+            _mockContextoService.Object,
             Mock.Of<Asistente.Application.Interfaces.IMemoriaService>(),
             _mockRecuperacionService.Object,
             _mockQueryEmpresarialService.Object,

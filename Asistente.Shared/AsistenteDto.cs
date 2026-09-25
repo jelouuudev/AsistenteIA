@@ -11,7 +11,7 @@ public class AsistenteDto
     public string? Objetivo { get; set; }
     public string? PromptSistema { get; set; }
     public string ModeloIA { get; set; } = "qwen2.5:14b";
-    public EstadoAgente Estado { get; set; } = EstadoAgente.Borrador;
+    public EstadoAgente Estado { get; set; } = EstadoAgente.Activo;
     public int Version { get; set; } = 1;
     public bool Activo { get; set; }
     public DateTime FechaCreacion { get; set; }

@@ -37,7 +37,7 @@
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="d-flex align-items-center justify-content-center rounded-circle"
                                          style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#a855f7);font-weight:bold;font-size:0.9rem;">
-                                        @u.UsuarioNombre[0].ToString().ToUpper()
+                                        @(u.UsuarioNombre.Length > 0 ? u.UsuarioNombre[0].ToString().ToUpper() : "?")
                                     </div>
                                     <span class="fw-semibold text-white">@u.UsuarioNombre</span>
                                 </div>

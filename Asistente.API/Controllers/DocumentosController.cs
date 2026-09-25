@@ -123,6 +123,43 @@ public class DocumentosController : ControllerBase
         }
     }
 
+    // --- Fuentes de Conocimiento ---
+
+    [HttpGet("disponibles")]
+    public async Task<ActionResult<IEnumerable<DocumentoDto>>> GetDisponibles([FromQuery] int? idFuenteExcluir)
+    {
+        var documentos = await _documentoService.ObtenerDocumentosDisponiblesAsync(idFuenteExcluir);
+        return Ok(documentos);
+    }
+
+    [HttpGet("{id}/fuentes")]
+    public async Task<ActionResult<IEnumerable<FuenteConocimientoDto>>> GetFuentesDocumento(int id)
+    {
+        var fuentes = await _documentoService.ObtenerFuentesDocumentoAsync(id);
+        return Ok(fuentes);
+    }
+
+    [HttpPut("{id}/fuentes")]
+    public async Task<IActionResult> AsignarFuentes(int id, [FromBody] AsignarFuentesDocumentoApiRequest request)
+    {
+        try
+        {
+            await _documentoService.AsignarFuentesDocumentoAsync(id, request.Fuentes, GetCurrentUserId(), GetIpAddress());
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ex.Message);
+        }
+    }
+
+    [HttpGet("fuentes-disponibles")]
+    public async Task<ActionResult<IEnumerable<FuenteConocimientoDto>>> GetFuentesDisponibles()
+    {
+        var fuentes = await _documentoService.ObtenerFuentesConocimientoAsync();
+        return Ok(fuentes);
+    }
+
     // --- Versiones ---
 
     [HttpGet("{id}/versiones")]

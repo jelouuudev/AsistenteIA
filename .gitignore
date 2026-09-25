@@ -107,3 +107,29 @@ AsistenteIA_Documentos/
 # Carpeta ajena al proyecto (no es parte de AsistenteIA)
 # ============================================================
 backend-red-salud/
+# Credenciales y secretos
+.env
+.env.bak.*
+*.env.local
+appsettings.Development.json
+appsettings.Production.json
+
+# Claves y certificados
+*.pfx
+*.key
+*.pem
+*.crt
+
+# Archivos temporales de Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+
+# Bases de datos locales (nunca commitear datos)
+*.db
+*.sqlite
+*.sqlite-journal

@@ -19,7 +19,7 @@ public class Asistente
     public string ModeloIA { get; set; } = "qwen2.5:14b";
 
     // Ciclo de vida (ETAPA 16)
-    public EstadoAgente Estado { get; set; } = EstadoAgente.Borrador;
+    public EstadoAgente Estado { get; set; } = EstadoAgente.Activo;
     public int Version { get; set; } = 1;
     public bool Activo { get; set; } = true;
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;

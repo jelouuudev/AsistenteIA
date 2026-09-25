@@ -23,7 +23,9 @@ public class DocumentoService : IDocumentoService
     private readonly IFileStorageService _fileStorageService;
     private readonly IAuditoriaService _auditoriaService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IFuenteConocimientoService _fuenteConocimientoService;
     private readonly IDocumentoFuenteRepository _documentoFuenteRepository;
+    private readonly IIndexacionService _indexacionService;
     private readonly ILogger<DocumentoService> _logger;
 
     public DocumentoService(
@@ -35,7 +37,9 @@ public class DocumentoService : IDocumentoService
         IFileStorageService fileStorageService,
         IAuditoriaService auditoriaService,
         IUnitOfWork unitOfWork,
+        IFuenteConocimientoService fuenteConocimientoService,
         IDocumentoFuenteRepository documentoFuenteRepository,
+        IIndexacionService indexacionService,
         ILogger<DocumentoService> logger)
     {
         _documentoRepository = documentoRepository;
@@ -46,7 +50,9 @@ public class DocumentoService : IDocumentoService
         _fileStorageService = fileStorageService;
         _auditoriaService = auditoriaService;
         _unitOfWork = unitOfWork;
+        _fuenteConocimientoService = fuenteConocimientoService;
         _documentoFuenteRepository = documentoFuenteRepository;
+        _indexacionService = indexacionService;
         _logger = logger;
     }
 
@@ -100,7 +106,7 @@ public class DocumentoService : IDocumentoService
             Descripcion = request.Descripcion,
             IdCategoria = request.IdCategoria,
             VersionActual = 0,
-            Estado = EstadoDocumento.Activo,
+            Estado = EstadoDocumento.Borrador,
             PendienteProcesamiento = true,
             FechaRegistro = DateTime.UtcNow,
             UsuarioRegistro = currentUserId
@@ -184,6 +190,16 @@ public class DocumentoService : IDocumentoService
             documento.IdDocumento, null, "CambioEstado",
             $"Estado cambiado de '{oldEstado}' a 'Activo'",
             currentUserId, ipAddress);
+
+        // Al reactivar se restauran los vectores (archivar los habia eliminado).
+        try
+        {
+            await _indexacionService.ReindexarPorDocumentoAsync(id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo reindexar el documento {Id} tras activarlo. Se actualizara en el proximo ciclo.", id);
+        }
     }
 
     public async Task ArchivarAsync(int id, int currentUserId, string ipAddress)
@@ -205,6 +221,10 @@ public class DocumentoService : IDocumentoService
             documento.IdDocumento, null, "CambioEstado",
             $"Estado cambiado de '{oldEstado}' a 'Archivado'",
             currentUserId, ipAddress);
+
+        // SEGURIDAD: archivar revoca el acceso. Se eliminan los vectores para que
+        // el documento deje de aparecer en busquedas inmediatamente.
+        await EliminarVectoresDeDocumentoAsync(id);
     }
 
     public async Task EliminarAsync(int id, int currentUserId, string ipAddress)
@@ -225,6 +245,39 @@ public class DocumentoService : IDocumentoService
             currentUserId, ipAddress);
 
         _logger.LogInformation("Documento {Id} eliminado lógicamente por usuario {UserId}", id, currentUserId);
+
+        // SEGURIDAD: eliminar revoca el acceso igual que archivar.
+        await EliminarVectoresDeDocumentoAsync(id);
+    }
+
+    /// <summary>
+    /// Resuelve los procesados de un documento y elimina sus vectores.
+    /// Nunca lanza: un fallo en Chroma no debe revertir el cambio de estado.
+    /// </summary>
+    private async Task EliminarVectoresDeDocumentoAsync(int documentoId)
+    {
+        try
+        {
+            var versiones = await _versionRepository.GetByDocumentoIdAsync(documentoId) ?? Enumerable.Empty<DocumentoVersion>();
+            foreach (var version in versiones)
+            {
+                var procesado = await _procesamientoRepository.GetByVersionIdAsync(version.IdVersion);
+                if (procesado == null) continue;
+
+                try
+                {
+                    await _indexacionService.EliminarIndiceAsync(procesado.IdDocumentoProcesado);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "No se pudo eliminar el indice del procesado {Id} del documento {DocumentoId}.", procesado.IdDocumentoProcesado, documentoId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudieron eliminar los vectores del documento {DocumentoId}. Se limpiaran en el proximo ciclo.", documentoId);
+        }
     }
 
     // --- Versiones ---
@@ -280,6 +333,17 @@ public class DocumentoService : IDocumentoService
         documento.PendienteProcesamiento = true;
         _documentoRepository.Update(documento);
 
+        await _unitOfWork.SaveChangesAsync();
+
+        // Solo la versión vigente debe ser buscable: desactivar versiones anteriores.
+        // Sus vectores se eliminan al indexar la nueva versión (sin hueco de búsqueda).
+        // Las versiones viejas siguen descargables/visibles.
+        var versionesPrevias = await _versionRepository.GetByDocumentoIdAsync(documentoId) ?? Enumerable.Empty<DocumentoVersion>();
+        foreach (var previa in versionesPrevias.Where(v => v.IdVersion != version.IdVersion && v.Activo))
+        {
+            previa.Activo = false;
+            _versionRepository.Update(previa);
+        }
         await _unitOfWork.SaveChangesAsync();
 
         var procesado = new DocumentoProcesado
@@ -467,5 +531,74 @@ public class DocumentoService : IDocumentoService
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation("Documento {IdDocumento} vinculado automáticamente a la fuente RAG {IdFuente} (categoría {IdCategoria}).", idDocumento, idFuente, idCategoria);
+    }
+
+    // ---- Fuentes de Conocimiento ----
+
+    public async Task<IEnumerable<FuenteConocimientoDto>> ObtenerFuentesDocumentoAsync(int documentoId)
+    {
+        var fuentes = await _documentoFuenteRepository.GetByDocumentoIdAsync(documentoId);
+        return fuentes.Select(df => new FuenteConocimientoDto
+        {
+            IdFuente = df.IdFuente,
+            Nombre = df.Fuente?.Nombre ?? "",
+            Codigo = df.Fuente?.Codigo ?? "",
+            Prioridad = df.Fuente?.Prioridad ?? 0,
+            Activo = df.Activo
+        });
+    }
+
+    public async Task AsignarFuentesDocumentoAsync(int documentoId, List<int> fuentes, int currentUserId, string ipAddress)
+    {
+        // Eliminar asignaciones existentes
+        var existentes = await _documentoFuenteRepository.GetByDocumentoIdAsync(documentoId);
+        foreach (var existente in existentes)
+        {
+            _documentoFuenteRepository.Delete(existente);
+        }
+
+        // Crear nuevas asignaciones
+        foreach (var idFuente in fuentes.Distinct())
+        {
+            await _documentoFuenteRepository.AddAsync(new DocumentoFuente
+            {
+                IdDocumento = documentoId,
+                IdFuente = idFuente,
+                Activo = true
+            });
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        _logger.LogInformation("Fuentes asignadas al documento {DocumentoId}: {Fuentes}", documentoId, string.Join(", ", fuentes));
+
+        // SEGURIDAD: reindexar para que los vectores reflejen la asignacion vigente.
+        // Sin esto, un documento desasignado seguiria apareciendo en busquedas
+        // por vectores huerfanos con la fuente anterior.
+        try
+        {
+            await _indexacionService.ReindexarPorDocumentoAsync(documentoId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo reindexar el documento {DocumentoId} tras asignar fuentes. Se actualizara en el proximo ciclo.", documentoId);
+        }
+    }
+
+    public async Task<IEnumerable<FuenteConocimientoDto>> ObtenerFuentesConocimientoAsync()
+    {
+        return await _fuenteConocimientoService.ObtenerTodasAsync();
+    }
+
+    public async Task<IEnumerable<DocumentoDto>> ObtenerDocumentosDisponiblesAsync(int? idFuenteExcluir)
+    {
+        var todos = await _documentoRepository.GetAllAsync();
+        
+        if (idFuenteExcluir.HasValue)
+        {
+            var idsAsignados = await _documentoFuenteRepository.GetDocumentosProcesadosIdsByFuenteAsync(idFuenteExcluir.Value);
+            todos = todos.Where(d => !idsAsignados.Contains(d.IdDocumento));
+        }
+
+        return todos.Where(d => d.Estado == EstadoDocumento.Activo).Select(MapToDto);
     }
 }

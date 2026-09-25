@@ -25,11 +25,15 @@ if (asistenteSelector) {
     asistenteSelector.addEventListener('change', function () {
         const id = parseInt(this.value);
         if (id) {
+            // Cambiar de asistente = conversacion nueva: no mezclar historial
+            // ni bienvenida del asistente anterior.
             asistenteActual = id;
             idAsistenteConversacionActual = id;
-            if (idConversacion) {
-                renderizarListaConversaciones();
-            }
+            idConversacion = null;
+            mensajesDiv.innerHTML = '';
+            mostrarBienvenidaAsistente(id);
+            renderizarListaConversaciones();
+            inputMensaje.focus();
         }
     });
 }

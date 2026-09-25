@@ -13,6 +13,7 @@ public class EventoProcesadoConfiguration : IEntityTypeConfiguration<EventoProce
         builder.Property(e => e.IdEventoProcesado).ValueGeneratedOnAdd();
         builder.Property(e => e.Estado).IsRequired().HasMaxLength(30);
         builder.Property(e => e.Resultado).HasMaxLength(4000);
+        builder.Property(e => e.ContextoDisparo).HasMaxLength(4000);
         builder.HasOne(e => e.Evento)
             .WithMany()
             .HasForeignKey(e => e.IdEvento)

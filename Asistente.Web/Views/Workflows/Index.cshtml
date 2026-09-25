@@ -1,7 +1,9 @@
 @model IEnumerable<Asistente.Shared.WorkflowDto>
+@using Asistente.Shared
 @{
     ViewData["Title"] = "Flujos de Trabajo";
     var lista = Model.ToList();
+    var reglasPorWorkflow = ViewBag.ReglasPorWorkflow as Dictionary<int, List<ReglaEventoDto>> ?? new();
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -25,6 +27,7 @@
                         <th class="text-secondary fw-normal py-3">Código</th>
                         <th class="text-secondary fw-normal py-3 text-center">Versión</th>
                         <th class="text-secondary fw-normal py-3 text-center">Pasos</th>
+                        <th class="text-secondary fw-normal py-3">Invocado por</th>
                         <th class="text-secondary fw-normal py-3">Estado</th>
                         <th class="text-secondary fw-normal py-3 text-end pe-4">Acciones</th>
                     </tr>
@@ -47,6 +50,26 @@
                             <td><span class="font-monospace text-white small">@w.Codigo</span></td>
                             <td class="text-center text-secondary">v@(w.Version)</td>
                             <td class="text-center text-secondary">@w.CantidadPasos</td>
+                            <td class="small" style="max-width:260px;">
+                                @if (reglasPorWorkflow.TryGetValue(w.IdWorkflow, out var reglas) && reglas.Any())
+                                {
+                                    @foreach (var r in reglas)
+                                    {
+                                        <div class="mb-1">
+                                            <i class="bi bi-lightning-charge me-1" style="color:#818cf8;"></i><span class="text-white">@r.NombreEvento</span>
+                                            @if (!r.Activa)
+                                            {
+                                                <span class="badge ms-1" style="background:rgba(148,163,184,0.15);color:#cbd5e1;border-radius:20px;">inactiva</span>
+                                            }
+                                            <div class="font-monospace text-secondary" style="font-size:0.75rem;">@(string.IsNullOrEmpty(r.Condicion) ? "(siempre)" : r.Condicion)</div>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">—</span>
+                                }
+                            </td>
                             <td>
                                 @if (w.Estado == "Activo")
                                 {
@@ -101,7 +124,7 @@
                     @if (!lista.Any())
                     {
                         <tr>
-                            <td colspan="6" class="text-center text-secondary py-5">
+                            <td colspan="7" class="text-center text-secondary py-5">
                                 <i class="bi bi-diagram-3 fs-1 d-block mb-2 opacity-25"></i>
                                 Aún no hay flujos de trabajo. Haga clic en <strong>Nuevo Flujo</strong> para crear uno.
                             </td>

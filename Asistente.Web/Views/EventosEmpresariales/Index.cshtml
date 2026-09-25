@@ -55,11 +55,16 @@
                             </td>
                             <td class="text-end pe-4">
                                 <div class="d-flex gap-1 justify-content-end flex-wrap">
-                                    <a asp-controller="ReglasEvento" asp-action="Index" class="btn btn-outline-light btn-sm py-1 px-2" title="Ver reglas"><i class="bi bi-link-45deg"></i></a>
+                                    <a asp-controller="ReglasEvento" asp-action="Index" asp-route-idEvento="@e.IdEvento" class="btn btn-outline-light btn-sm py-1 px-2" title="Ver reglas de este evento"><i class="bi bi-link-45deg"></i></a>
                                     <form asp-action="Disparar" method="post" class="d-inline" onsubmit="return confirm('¿Disparar el evento @e.Codigo?');">
                                         @Html.AntiForgeryToken()
                                         <input type="hidden" name="codigo" value="@e.Codigo" />
-                                        <button type="submit" class="btn btn-outline-info btn-sm py-1 px-2" title="Disparar evento (prueba)"><i class="bi bi-play-fill"></i></button>
+                                        <div class="d-flex gap-1 align-items-center">
+                                            <input type="text" name="contextoJson" class="form-control form-control-sm py-1" placeholder='{"Prioridad": 3}'
+                                                   style="width:160px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;font-size:0.75rem;"
+                                                   title='JSON opcional, ej: {"Prioridad": 3}' />
+                                            <button type="submit" class="btn btn-outline-info btn-sm py-1 px-2" title="Disparar evento (prueba)"><i class="bi bi-play-fill"></i></button>
+                                        </div>
                                     </form>
                                     @if (e.Activo)
                                     {

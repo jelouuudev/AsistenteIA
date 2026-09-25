@@ -6,9 +6,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator;
+using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Asistente.Application.Orchestrator;
@@ -35,6 +37,7 @@ public class AgentOrchestrator : IAgentOrchestrator
     private readonly IAsistenteRepository _asistenteRepo;
     private readonly IChatService _chatService;
     private readonly IOllamaService _ollama;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AgentOrchestrator> _logger;
     // Serializa el acceso a DbContext (no thread-safe) entre nodos del grafo.
     // El DbContext es Scoped y se comparte entre los repos; al ejecutar nodos en paralelo
@@ -53,6 +56,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         IAsistenteRepository asistenteRepo,
         IChatService chatService,
         IOllamaService ollama,
+        IServiceScopeFactory scopeFactory,
         ILogger<AgentOrchestrator> logger)
     {
         _selector = selector;
@@ -66,6 +70,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         _asistenteRepo = asistenteRepo;
         _chatService = chatService;
         _ollama = ollama;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -252,6 +257,177 @@ public class AgentOrchestrator : IAgentOrchestrator
         }
     }
 
+    /// <summary>
+    /// Ejecuta UN paso de un plan validado de Etapa 18. Fuente de verdad: el PlanStep
+    /// recibido (nodos, orden y dependencias los gobierna el Planner). El Orchestrator
+    /// NO re-selecciona agentes ni reconstruye el grafo: solo ejecuta el paso.
+    /// </summary>
+    public async Task<ResultadoPasoOrquestado> EjecutarPasoValidadoAsync(
+        Plan plan, PlanStep paso, string? contextoPrevio, string? datoPrevio,
+        int idUsuario, CancellationToken cancellationToken = default)
+    {
+        var inicio = DateTime.UtcNow;
+        long Transcurrido() => (long)(DateTime.UtcNow - inicio).TotalMilliseconds;
+
+        // Scope propio: el Planner ejecuta en background (fire-and-forget) y el scope
+        // del request ya puede estar dispuesto. Resolver servicios frescos por llamada.
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var sp = scope.ServiceProvider;
+        var toolOrchestrator = sp.GetRequiredService<IToolOrchestrator>();
+        var chatService = sp.GetRequiredService<IChatService>();
+        var workflowEngine = sp.GetRequiredService<IWorkflowEngine>();
+        var configRepo = sp.GetRequiredService<IConfiguracionOrchestratorRepository>();
+
+        try
+        {
+            // Coordination: texto fijo, sin LLM (igual que PlannerEngine).
+            if (paso.Tipo == "Coordination")
+            {
+                return new ResultadoPasoOrquestado
+                {
+                    Exito = true,
+                    Resultado = GenerarTextoCoordinacion(plan),
+                    TiempoMs = Transcurrido()
+                };
+            }
+
+            // Approval: lo gestiona ApprovalManager a nivel Planner; aquí se omite.
+            if (paso.Tipo == "Approval")
+            {
+                return new ResultadoPasoOrquestado { Exito = true, Omitido = true, TiempoMs = Transcurrido() };
+            }
+
+            // Workflow: motor de workflows con el IdWorkflow del paso.
+            if (paso.Tipo == "Workflow")
+            {
+                if (!paso.IdWorkflow.HasValue)
+                    return new ResultadoPasoOrquestado { Exito = false, Error = "Paso Workflow sin IdWorkflow.", TiempoMs = Transcurrido() };
+
+                var wf = await workflowEngine.EjecutarAsync(
+                    paso.IdWorkflow.Value, idUsuario,
+                    paso.IdAsistente > 0 ? paso.IdAsistente : null,
+                    confirmado: true, cancellationToken: cancellationToken);
+
+                if (wf != null && wf.Exitoso && !wf.RequiereConfirmacion)
+                    return new ResultadoPasoOrquestado { Exito = true, Resultado = wf.ResultadoFinal, TiempoMs = Transcurrido() };
+                return new ResultadoPasoOrquestado
+                {
+                    Exito = false,
+                    Error = wf?.ResultadoFinal ?? "El workflow no devolvió resultado.",
+                    TiempoMs = Transcurrido()
+                };
+            }
+
+            // Tool / RAG: ejecución vía ToolOrchestrator (autorización + auditoría + timeout).
+            if (paso.Tipo == "Tool" || paso.Tipo == "RAG")
+            {
+                var herramienta = paso.CodigoHerramienta
+                    ?? (paso.Tipo == "RAG" ? "DocumentSearchTool" : "SqlQueryTool");
+                var parametros = new Dictionary<string, object?>();
+                if (herramienta == "ReportTool")
+                {
+                    parametros["titulo"] = paso.Nombre;
+                    parametros["datos"] = datoPrevio ?? plan.Objetivo;
+                }
+                else if (herramienta == "DocumentSearchTool")
+                {
+                    parametros["consulta"] = plan.Objetivo;
+                }
+                else
+                {
+                    parametros["pregunta"] = plan.Objetivo;
+                    var nombreLower = (paso.Nombre ?? "").ToLowerInvariant();
+                    parametros["forzarAgregacion"] = nombreLower.Contains("indicador") || nombreLower.Contains("calcular") ||
+                        nombreLower.Contains("métrica") || nombreLower.Contains("metrica") ||
+                        nombreLower.Contains("agrupar") || nombreLower.Contains("agrupado") ||
+                        nombreLower.Contains("conteos") || nombreLower.Contains("totales");
+                    parametros["forzarRaw"] = nombreLower.Contains("consultar") || nombreLower.Contains("obtener") ||
+                        nombreLower.Contains("listar") || nombreLower.Contains("mostrar") ||
+                        nombreLower.Contains("detalle") || nombreLower.Contains("datos");
+                }
+
+                var resTool = await toolOrchestrator.EjecutarAsync(new ToolExecutionRequest
+                {
+                    HerramientaCodigo = herramienta,
+                    Parametros = parametros,
+                    IdUsuario = idUsuario,
+                    IdAsistente = paso.IdAsistente,
+                    PreguntaOriginal = paso.Nombre + " " + plan.Objetivo
+                }, cancellationToken);
+
+                if (resTool.Exitoso)
+                    return new ResultadoPasoOrquestado { Exito = true, Resultado = resTool.Contenido, TiempoMs = Transcurrido() };
+                return new ResultadoPasoOrquestado { Exito = false, Error = $"{herramienta}: " + resTool.Error, TiempoMs = Transcurrido() };
+            }
+
+            // Agent (y otros): vía Agent Runtime con contexto previo de pasos anteriores.
+            var config = await configRepo.GetAsync();
+            var timeoutMs = config?.MaxTiempoTotalMs ?? 900000;
+            var respTask = chatService.ProcesarMensajeAsync(new MensajeRequest
+            {
+                IdAsistente = paso.IdAsistente,
+                Mensaje = paso.Descripcion ?? paso.Nombre,
+                UsuarioPropietario = idUsuario,
+                EsEjecucionPlan = true,
+                ContextoAgente = contextoPrevio
+            }, cancellationToken);
+
+            var completed = await Task.WhenAny(respTask, Task.Delay(timeoutMs, cancellationToken));
+            if (completed != respTask)
+                throw new TimeoutException($"El paso '{paso.Nombre}' no respondió en {timeoutMs} ms.");
+
+            var resp = await respTask;
+            if (resp == null || !resp.Exitoso)
+                return new ResultadoPasoOrquestado
+                {
+                    Exito = false,
+                    Error = resp?.Error ?? "Sin respuesta del agente.",
+                    TiempoMs = Transcurrido()
+                };
+            return new ResultadoPasoOrquestado { Exito = true, Resultado = resp.Respuesta, TiempoMs = Transcurrido() };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Orchestrator: fallo al ejecutar paso validado '{Paso}' del plan {Plan}.", paso.Nombre, plan.IdPlan);
+            return new ResultadoPasoOrquestado { Exito = false, Error = $"Error al ejecutar {paso.CodigoHerramienta ?? paso.Tipo}: " + ex.Message, TiempoMs = Transcurrido() };
+        }
+    }
+
+    private static string GenerarTextoCoordinacion(Plan plan)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("**Plan de acción coordinado:**");
+        sb.AppendLine();
+        sb.AppendLine($"He analizado tu solicitud: \"{plan.Objetivo}\".");
+        sb.AppendLine("He diseñado un plan de trabajo con los siguientes pasos:");
+        sb.AppendLine();
+
+        foreach (var paso in plan.Pasos.OrderBy(p => p.Orden))
+        {
+            var tipoLabel = paso.Tipo switch
+            {
+                "Tool" => "🛠️",
+                "Agent" => "🤖",
+                "RAG" => "📚",
+                "Approval" => "✅",
+                _ => "📋"
+            };
+            sb.AppendLine($"- {tipoLabel} **Paso {paso.Orden}:** {paso.Nombre}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Cada paso será ejecutado en orden, y los resultados se consolidarán para entregarte la respuesta final.");
+        sb.AppendLine();
+        sb.AppendLine($"⏱️ Tiempo estimado: ~{Math.Max(1, plan.Pasos.Count / 2)} minutos en CPU local.");
+        sb.AppendLine("🔒 Tus datos permanecen en tu infraestructura (IA local, sin nube).");
+
+        return sb.ToString();
+    }
+
     private ExecutionGraph ConstruirGrafo(int idExecution, Asistente.Domain.Entities.Asistente principal, List<AgentCandidate> candidatos, AgentRequest request, ConfiguracionOrchestrator? config)
     {
         var grafo = new ExecutionGraph();
@@ -271,13 +447,22 @@ public class AgentOrchestrator : IAgentOrchestrator
         var idNodo = 1;
         foreach (var c in candidatos.Take(limite))
         {
+            // Cada colaborador recibe la pregunta con instruccion de su rol: sin esto todos
+            // responden lo mismo (el primer short-circuit determinista) y el duplicado se elimina.
+            var preguntaPorRol = c.Rol switch
+            {
+                "RAG" => "Responde ÚNICAMENTE la parte documental (políticas, manuales, procedimientos) de la siguiente solicitud. Ignora cualquier pedido de datos numéricos o de sistemas.\nSolicitud: " + request.Pregunta,
+                "SQL" => "Responde ÚNICAMENTE con datos de la base de datos para la siguiente solicitud. Ignora lo documental.\nSolicitud: " + request.Pregunta,
+                "Reporte" => "Elabora un resumen ejecutivo de la siguiente solicitud.\nSolicitud: " + request.Pregunta,
+                _ => string.IsNullOrWhiteSpace(c.Objetivo) ? request.Pregunta : c.Objetivo,
+            };
             grafo.Nodos.Add(new ExecutionNode
             {
                 IdNodo = idNodo++,
                 IdAgente = c.IdAgente,
                 NombreAgente = c.Nombre,
                 Accion = $"Colaborar ({c.Rol})",
-                PreguntaAsignada = c.Objetivo,
+                PreguntaAsignada = preguntaPorRol,
                 DependeDe = c.DependeDe.Contains(principal.IdAsistente) ? new List<int> { 0 } : new List<int>()
             });
         }
@@ -315,7 +500,12 @@ public class AgentOrchestrator : IAgentOrchestrator
                 IdAsistente = nodo.IdAgente,
                 Mensaje = nodo.PreguntaAsignada,
                 UsuarioPropietario = execution.IdUsuario,
-                EsEjecucionPlan = true,
+                // Alcance por rol: el nodo RAG no dispara SQL y el nodo SQL no recupera documentos.
+                Alcance = nodo.Accion.Contains("(RAG)") ? "documental" : nodo.Accion.Contains("(SQL)") ? "datos" : null,
+                // Solo se omite RAG/contexto empresarial (modo plan rapido) cuando hay
+                // contexto previo con datos reales. Sin el, el nodo debe recuperar solo
+                // o alucina (nombres/filas inventadas).
+                EsEjecucionPlan = !string.IsNullOrWhiteSpace(ctxAgente.ContextoPrevio),
                 ContextoAgente = ctxAgente.ContextoPrevio
             }, cancellationToken);
 

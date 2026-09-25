@@ -22,7 +22,7 @@ superior aparece el ítem **Flujos**; en el menú **Configuración** encontrará
 3. En **Pasos del flujo** agregue uno o más pasos con:
    - **Nombre**, **Herramienta** (SqlQueryTool, DocumentSearchTool, ReportTool, CalculatorTool, DateTimeTool).
    - **Parámetros (JSON)**: use `{{resultado}}` para insertar el resultado del paso anterior.
-   - **Reintentos**, **Tiempo máx. (ms)** y **Estrategia de error** (Cancelar / Omitir / RegistrarIncidencia).
+   - **Reintentos**, **Tiempo máx. (ms)** y **Estrategia de error** (Cancelar / Omitir).
    - **Requiere confirmación**: marque si el paso es sensible y debe pedir aprobación.
 4. Guarde. El flujo queda en estado **Borrador**; actívelo desde la lista.
 

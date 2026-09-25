@@ -9,4 +9,5 @@ public interface IHistorialPromptRepository
     Task<IEnumerable<HistorialPrompt>> GetAllAsync();
     Task AddAsync(HistorialPrompt historial);
     void Delete(HistorialPrompt historial);
+    Task<int> GetMaxVersionAsync(int promptId);
 }

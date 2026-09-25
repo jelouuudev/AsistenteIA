@@ -36,18 +36,14 @@
                             </select>
                         </div>
                     </div>
-                    <div class="form-check form-switch mb-2">
-                        <input name="permitido" class="form-check-input" type="checkbox" id="chkPerm" value="true" checked />
-                        <label class="form-check-label text-white" for="chkPerm">Permitido</label>
-                    </div>
+                    @* Permitido oculto: con denegación por defecto, basta Activa (siempre true). *@
+                    <input name="permitido" type="hidden" value="true" />
                     <div class="form-check form-switch mb-3">
                         <input name="activa" class="form-check-input" type="checkbox" id="chkAct" value="true" checked />
                         <label class="form-check-label text-white" for="chkAct">Activa</label>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label text-secondary small">Prioridad</label>
-                        <input name="prioridad" type="number" value="100" class="form-control bg-dark text-white border-secondary" style="border-radius:10px;" />
-                    </div>
+                    @* Prioridad oculta: se guarda pero nada la usa para ordenar. *@
+                    <input name="prioridad" type="hidden" value="100" />
                     <button type="submit" class="btn btn-sm px-4 py-2 fw-semibold" style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;">
                         <i class="bi bi-plus-lg me-1"></i> Crear regla
                     </button>
@@ -62,13 +58,13 @@
                 <h6 class="text-white fw-semibold mb-3">Reglas activas</h6>
                 <div class="table-responsive">
                     <table class="table table-sm table-dark align-middle">
-                        <thead><tr><th>Origen → Destino</th><th>Perm.</th><th></th></tr></thead>
+                        <thead><tr><th>Origen → Destino</th><th>Estado</th><th></th></tr></thead>
                         <tbody>
                         @foreach (var r in (IEnumerable<AgentCollaborationRuleDto>)(ViewBag.Reglas ?? new List<AgentCollaborationRuleDto>()))
                         {
                             <tr>
                                 <td>@r.NombreOrigen → @r.NombreDestino</td>
-                                <td>@(r.Permitido ? "✓" : "✗")</td>
+                                <td>@(r.Activa ? "Activa" : "Inactiva")</td>
                                 <td>
                                     <form asp-action="EliminarRegla" method="post" style="display:inline;">
                                         @Html.AntiForgeryToken()

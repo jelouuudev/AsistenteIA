@@ -1,4 +1,5 @@
 using Asistente.Application.Interfaces;
+using Asistente.Application.Services.Workflows;
 using Asistente.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,10 +12,12 @@ namespace Asistente.API.Controllers;
 public class WorkflowsController : ControllerBase
 {
     private readonly IWorkflowService _workflowService;
+    private readonly IWorkflowEngine _workflowEngine;
 
-    public WorkflowsController(IWorkflowService workflowService)
+    public WorkflowsController(IWorkflowService workflowService, IWorkflowEngine workflowEngine)
     {
         _workflowService = workflowService;
+        _workflowEngine = workflowEngine;
     }
 
     [HttpGet]
@@ -73,6 +76,37 @@ public class WorkflowsController : ControllerBase
     {
         try { await _workflowService.EliminarAsync(id); return NoContent(); }
         catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
+    }
+
+    [HttpPost("{id}/ejecutar")]
+    public async Task<ActionResult<EjecutarWorkflowResponse>> Ejecutar(int id, [FromBody] EjecutarWorkflowRequest request)
+    {
+        try
+        {
+            var userId = 1;
+            if (int.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var idUser))
+                userId = idUser;
+
+            var resultado = await _workflowEngine.EjecutarAsync(id, userId, null, cancellationToken: CancellationToken.None);
+            return Ok(new EjecutarWorkflowResponse
+            {
+                Exitoso = resultado.Exitoso,
+                Estado = resultado.Estado,
+                ResultadoFinal = resultado.ResultadoFinal,
+                TiempoTotalMs = resultado.TiempoTotalMs,
+                Pasos = resultado.Pasos.Select(p => new PasoEjecucionResponse
+                {
+                    Nombre = p.Nombre,
+                    Herramienta = p.Herramienta,
+                    Exitoso = p.Exitoso,
+                    Resultado = p.Resultado,
+                    TiempoMs = p.TiempoMs,
+                    Intentos = p.Intentos
+                }).ToList()
+            });
+        }
+        catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
+        catch (Exception ex) { return BadRequest(ex.Message); }
     }
 }
 

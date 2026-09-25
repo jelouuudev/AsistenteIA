@@ -61,11 +61,17 @@ public class PlanStepRepository : IPlanStepRepository
         await _context.SaveChangesAsync(ct);
     }
 
-    public async Task<List<PlanStep>> GetByPlanAsync(int idPlan, CancellationToken ct = default)
-        => await _context.PlanSteps
+    public async Task<List<PlanStep>> GetByPlanAsync(int idPlan, CancellationToken ct = default, bool asNoTracking = false)
+    {
+        var query = _context.PlanSteps
             .Where(s => s.IdPlan == idPlan)
-            .OrderBy(s => s.Orden)
-            .ToListAsync(ct);
+            .OrderBy(s => s.Orden);
+        
+        if (asNoTracking)
+            return await query.AsNoTracking().ToListAsync(ct);
+        
+        return await query.ToListAsync(ct);
+    }
 
     public async Task<PlanStep?> GetByIdAsync(int idStep, CancellationToken ct = default)
         => await _context.PlanSteps

@@ -159,8 +159,12 @@ public class FuentesConocimientoController : Controller
             if (fuente == null) return NotFound();
 
             var documentos = await _apiService.GetDocumentosDeFuenteAsync(id, GetCurrentUserId(), GetIpAddress());
+            var todosLosDocumentos = await _apiService.GetDocumentosDisponiblesAsync(id, GetCurrentUserId(), GetIpAddress());
+
             ViewBag.FuenteId = id;
             ViewBag.FuenteNombre = fuente.Nombre;
+            ViewBag.DocumentosDisponibles = todosLosDocumentos;
+
             return View(documentos);
         }
         catch (Exception ex)

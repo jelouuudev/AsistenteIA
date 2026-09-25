@@ -26,14 +26,15 @@
             </div>
 
             <div class="mb-3">
-                <label asp-for="IdConexion" class="form-label text-secondary small">Conexión (opcional)</label>
-                <select asp-for="IdConexion" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;">
-                    <option value="">Todas las conexiones</option>
+                <label asp-for="IdConexion" class="form-label text-secondary small">Conexión *</label>
+                <select asp-for="IdConexion" class="form-select bg-dark text-white border-secondary" style="border-radius:10px;" required>
+                    <option value="">Seleccione una conexión</option>
                     @foreach (var c in conexiones)
                     {
                         <option value="@c.IdConexion">@c.Nombre</option>
                     }
                 </select>
+                <span asp-validation-for="IdConexion" class="text-danger small"></span>
             </div>
 
             <div class="mb-3">

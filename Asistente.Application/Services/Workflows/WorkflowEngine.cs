@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -60,6 +61,7 @@ public class WorkflowEngine : IWorkflowEngine
     private readonly IConfiguracionWorkflowRepository _configRepository;
     private readonly IToolOrchestrator _toolOrchestrator;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAutorizacionService _autorizacionService;
     private readonly ILogger<WorkflowEngine> _logger;
 
     public WorkflowEngine(
@@ -69,6 +71,7 @@ public class WorkflowEngine : IWorkflowEngine
         IConfiguracionWorkflowRepository configRepository,
         IToolOrchestrator toolOrchestrator,
         IUnitOfWork unitOfWork,
+        IAutorizacionService autorizacionService,
         ILogger<WorkflowEngine> logger)
     {
         _workflowRepository = workflowRepository;
@@ -77,12 +80,14 @@ public class WorkflowEngine : IWorkflowEngine
         _configRepository = configRepository;
         _toolOrchestrator = toolOrchestrator;
         _unitOfWork = unitOfWork;
+        _autorizacionService = autorizacionService;
         _logger = logger;
     }
 
     public async Task<WorkflowExecutionResult> EjecutarAsync(
         int idWorkflow, int idUsuario, int? idAsistente, bool confirmado = false,
-        int? idEjecucionExistente = null, CancellationToken cancellationToken = default)
+        int? idEjecucionExistente = null, CancellationToken cancellationToken = default,
+        Dictionary<string, string>? contextoInicial = null)
     {
         var inicio = DateTime.UtcNow;
         var config = await _configRepository.GetAsync(cancellationToken);
@@ -94,6 +99,18 @@ public class WorkflowEngine : IWorkflowEngine
         if (workflow.Estado != EstadoWorkflow.Activo)
             return new WorkflowExecutionResult { Exitoso = false, Estado = "Error", ResultadoFinal = "El flujo de trabajo no está activo." };
 
+        // El workflow debe estar asignado al asistente invocador (mundo cerrado).
+        // Sin idAsistente (ejecución manual administrativa) se conserva el acceso.
+        if (idAsistente.HasValue)
+        {
+            var auth = await _autorizacionService.VerificarWorkflowAsistenteAsync(idAsistente.Value, idWorkflow, cancellationToken);
+            if (!auth.Permitido)
+            {
+                _logger.LogWarning("Workflow {Id} rechazado para asistente {Asistente}: {Motivo}", idWorkflow, idAsistente.Value, auth.Motivo);
+                return new WorkflowExecutionResult { Exitoso = false, Estado = "Error", ResultadoFinal = auth.Motivo };
+            }
+        }
+
         var pasos = workflow.Pasos.OrderBy(p => p.Orden).ToList();
         if (pasos.Count == 0)
             return new WorkflowExecutionResult { Exitoso = false, Estado = "Error", ResultadoFinal = "El flujo no tiene pasos configurados." };
@@ -102,7 +119,7 @@ public class WorkflowEngine : IWorkflowEngine
         WorkflowEjecucion ejecucion;
         if (idEjecucionExistente.HasValue)
         {
-            ejecucion = await _ejecucionRepository.GetByIdAsync(idEjecucionExistente.Value, cancellationToken)
+            ejecucion = await _ejecucionRepository.GetByIdForUpdateAsync(idEjecucionExistente.Value, cancellationToken)
                        ?? await CrearEjecucionAsync(workflow, idUsuario, idAsistente);
         }
         else
@@ -115,7 +132,14 @@ public class WorkflowEngine : IWorkflowEngine
 
         // Contexto compartido: resultado (Contenido) de cada paso indexado por orden y por código de herramienta.
         // 'resultado' contiene el resultado del ÚLTIMO paso ejecutado (para {{resultado}} en el paso siguiente).
-        var contexto = new Dictionary<string, string>();
+        // Se siembra primero con el contexto inicial (ej. datos del evento), que los resultados
+        // de pasos pueden sobrescribir si colisionan claves.
+        var contexto = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (contextoInicial != null)
+        {
+            foreach (var kv in contextoInicial)
+                contexto[kv.Key] = kv.Value ?? string.Empty;
+        }
         string? ultimoResultado = null;
         foreach (var pe in pasosYaEjecutados.Values.Where(p => p.Estado == "Exitosa" && !string.IsNullOrEmpty(p.Resultado)).OrderBy(p => p.IdPaso))
         {
@@ -207,8 +231,7 @@ public class WorkflowEngine : IWorkflowEngine
                 switch (paso.EstrategiaError)
                 {
                     case EstrategiaError.Omitir:
-                    case EstrategiaError.RegistrarIncidencia:
-                        _logger.LogWarning("Paso '{Paso}' omitido por estrategia {E} en workflow {W}.", paso.Nombre, paso.EstrategiaError, workflow.Codigo);
+                        _logger.LogWarning("Paso '{Paso}' omitido por estrategia Omitir en workflow {W}.", paso.Nombre, workflow.Codigo);
                         continue;
                     case EstrategiaError.Cancelar:
                     default:
@@ -241,7 +264,15 @@ public class WorkflowEngine : IWorkflowEngine
         }
         else if (string.IsNullOrEmpty(ejecucion.ResultadoFinal))
         {
-            ejecucion.ResultadoFinal = "El flujo finalizó con errores.";
+            // Con Omitir puede haber pasos exitosos: incluir sus resultados parciales
+            // para no tragarlos. El estado sigue siendo Error (honesto).
+            var parciales = resultado.Pasos
+                .Where(p => p.Exitoso && !string.IsNullOrEmpty(p.Resultado))
+                .Select(p => $"[{p.Nombre}] {p.Resultado}")
+                .ToList();
+            ejecucion.ResultadoFinal = parciales.Any()
+                ? "El flujo finalizó con errores.\n\nResultados parciales:\n" + string.Join("\n\n", parciales)
+                : "El flujo finalizó con errores.";
         }
 
         ejecucion.FechaFin = DateTime.UtcNow;
@@ -279,7 +310,11 @@ public class WorkflowEngine : IWorkflowEngine
             try
             {
                 var parametros = SustituirContexto(paso.Parametros, contexto);
-                _logger.LogInformation("Workflow: ejecutando paso '{Paso}' (herramienta {H}, intento {I}).", paso.Nombre, paso.Herramienta, intento);
+                _logger.LogInformation("Workflow: ejecutando paso '{Paso}' (herramienta {H}, intento {I}, tmax {T}ms).", paso.Nombre, paso.Herramienta, intento, tiempoMax);
+
+                // T. máx. por paso: corta la herramienta si excede (antes se calculaba y no se aplicaba).
+                using var pasoCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                pasoCts.CancelAfter(TimeSpan.FromMilliseconds(tiempoMax));
 
                 var r = await _toolOrchestrator.EjecutarAsync(new ToolExecutionRequest
                 {
@@ -288,7 +323,7 @@ public class WorkflowEngine : IWorkflowEngine
                     IdUsuario = idUsuario,
                     IdAsistente = idAsistente,
                     PreguntaOriginal = $"Ejecutado por workflow: {paso.Nombre}"
-                }, cancellationToken);
+                }, pasoCts.Token);
 
                 resultado.TiempoMs = (long)(DateTime.UtcNow - inicioPaso).TotalMilliseconds;
 
@@ -300,6 +335,13 @@ public class WorkflowEngine : IWorkflowEngine
                 }
 
                 resultado.Resultado = r.Error;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Lo cortó el T. máx. del paso (no el usuario): reintentable.
+                resultado.TiempoMs = (long)(DateTime.UtcNow - inicioPaso).TotalMilliseconds;
+                resultado.Resultado = $"El paso excedió su tiempo máximo de {tiempoMax} ms.";
+                _logger.LogWarning("Paso '{Paso}' excedió T. máx. ({T}ms) en intento {I}.", paso.Nombre, tiempoMax, intento);
             }
             catch (Exception ex)
             {
@@ -385,5 +427,61 @@ public class WorkflowEngine : IWorkflowEngine
             pendiente.IdWorkflow, idUsuario, idAsistente,
             confirmado: true, idEjecucionExistente: pendiente.IdEjecucion,
             cancellationToken: cancellationToken);
+    }
+
+    public async Task<WorkflowExecutionResult?> CancelarPendienteConfirmacionAsync(
+        int idUsuario, CancellationToken cancellationToken = default)
+    {
+        var pendiente = await _ejecucionRepository.GetPendienteConfirmacionAsync(idUsuario, cancellationToken);
+        if (pendiente == null)
+            return null;
+
+        pendiente.Estado = "Cancelado";
+        pendiente.FechaFin = DateTime.UtcNow;
+        await _ejecucionRepository.UpdateAsync(pendiente, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Ejecución {IdEjecucion} cancelada por usuario {IdUsuario}", pendiente.IdEjecucion, idUsuario);
+
+        return new WorkflowExecutionResult
+        {
+            IdEjecucion = pendiente.IdEjecucion,
+            Exitoso = false,
+            Estado = "Cancelado",
+            ResultadoFinal = "Flujo de trabajo cancelado por el usuario.",
+            TiempoTotalMs = 0
+        };
+    }
+
+    public async Task<Workflow?> BuscarPorDisparadorAsync(
+        string mensaje, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mensaje))
+            return null;
+
+        var texto = mensaje.Trim().ToLowerInvariant();
+        var flujos = await _workflowRepository.GetActivosAsync(cancellationToken);
+
+        Workflow? mejor = null;
+        var mejorLen = 0;
+        foreach (var wf in flujos)
+        {
+            if (string.IsNullOrWhiteSpace(wf.Disparadores))
+                continue;
+
+            foreach (var frase in wf.Disparadores.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (frase.Length > mejorLen && texto.Contains(frase.ToLowerInvariant()))
+                {
+                    mejor = wf;
+                    mejorLen = frase.Length;
+                }
+            }
+        }
+
+        if (mejor != null)
+            _logger.LogInformation("Workflow '{Nombre}' (id {Id}) disparado por frase desde el chat.", mejor.Nombre, mejor.IdWorkflow);
+
+        return mejor;
     }
 }

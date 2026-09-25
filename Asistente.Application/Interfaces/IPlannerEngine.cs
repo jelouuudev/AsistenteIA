@@ -8,8 +8,8 @@ namespace Asistente.Application.Interfaces;
 /// <summary>
 /// Planner Engine (ETAPA 18). Punto de entrada del componente: comprende objetivos,
 /// identifica tareas, crea el plan, determina riesgos, solicita aprobaciones y entrega
-/// un plan ejecutable. NUNCA ejecuta acciones directamente (Regla 3): delega en el
-/// Agent Orchestrator (ETAPA 17).
+/// un plan ejecutable. Ejecuta directamente el Execution Graph (fuente de verdad).
+/// NUNCA delega al Agent Orchestrator — el grafo que se visualiza es el que se ejecuta.
 /// </summary>
 public interface IPlannerEngine
 {
@@ -19,27 +19,24 @@ public interface IPlannerEngine
     /// <summary>Valida permisos, herramientas, agentes, restricciones y riesgos (Regla 1).</summary>
     Task<ResultadoValidacionPlan> ValidarPlanAsync(Plan plan, CancellationToken cancellationToken = default);
 
-    /// <summary>Transforma el plan en un grafo ejecutable (DAG) y lo entrega al Orchestrator.</summary>
+    /// <summary>Ejecuta el plan directamente desde su Execution Graph (fuente de verdad).</summary>
     Task<AgentExecutionResult> EjecutarPlanAsync(int idPlan, CancellationToken cancellationToken = default);
 
     /// <summary>Construye el grafo de ejecución (DAG) a partir de un plan ya validado.</summary>
     ExecutionGraph ConstruirGrafo(Plan plan);
 
     /// <summary>Simulación en seco (Actividad 5): valida el plan SIN ejecutarlo y predice
-    /// participantes, herramientas y riesgos. No delega al Orchestrator (Regla 3).</summary>
+    /// participantes, herramientas y riesgos.</summary>
     Task<SimulacionPlan> SimularAsync(int idPlan, CancellationToken cancellationToken = default);
-
-    /// <summary>Sincroniza el estado de los PlanStep con los AgentExecutionStep del Orchestrator
-    /// para que el DAG del Planner refleje el progreso real (en vivo o al recargar).</summary>
-    Task SincronizarPlanStepsAsync(int idPlan, string idExecution, CancellationToken cancellationToken = default);
-
-    /// <summary>Ejecuta el grafo del Orchestrator con la política de reintentos del Supervisor.
-    /// Corre DENTRO de un scope propio (el llamador debe crearlo). Expuesto para que el
-    /// fire-and-forget de EjecutarPlanAsync lo invoque desde un scope nuevo.</summary>
-    Task EjecutarGrafoConReintentosAsync(int idPlan, int idExecution, AgentRequest request);
 
     /// <summary>Registra un evento en el log de auditoría del plan (Regla 5 / Sección 13).</summary>
     Task RegistrarLogAsync(int idPlan, int? idStep, string evento, string? detalle, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancelación real (B-03): invoca Cancel() sobre el trabajo activo del plan
+    /// (si existe) y marca el estado. Devuelve false si el plan no existe.
+    /// </summary>
+    Task<bool> CancelarEjecucionAsync(int idPlan, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Resultado de la simulación en seco: validación + predicción de ejecución.</summary>

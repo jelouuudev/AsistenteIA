@@ -566,12 +566,7 @@ namespace Asistente.Infrastructure.Migrations
                     b.Property<bool>("Activa")
                         .HasColumnType("bit");
 
-                    b.Property<int?>("AsistenteIdAsistente")
-                        .HasColumnType("int");
-
                     b.HasKey("IdAsistente", "IdHerramienta");
-
-                    b.HasIndex("AsistenteIdAsistente");
 
                     b.HasIndex("IdHerramienta");
 
@@ -1260,6 +1255,49 @@ namespace Asistente.Infrastructure.Migrations
                     b.ToTable("Conversacion", (string)null);
                 });
 
+            modelBuilder.Entity("Asistente.Domain.Entities.DisparadorEvento", b =>
+                {
+                    b.Property<int>("IdDisparador")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdDisparador"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ConfigJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("IdEvento")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ProximaEjecucion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime?>("UltimaEjecucion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UsuarioCreacion")
+                        .HasColumnType("int");
+
+                    b.HasKey("IdDisparador");
+
+                    b.HasIndex("IdEvento", "Activo");
+
+                    b.ToTable("DisparadoresEvento", (string)null);
+                });
+
             modelBuilder.Entity("Asistente.Domain.Entities.Documento", b =>
                 {
                     b.Property<int>("IdDocumento")
@@ -1665,6 +1703,10 @@ namespace Asistente.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdEventoProcesado"));
+
+                    b.Property<string>("ContextoDisparo")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("Estado")
                         .IsRequired()
@@ -2848,12 +2890,8 @@ namespace Asistente.Infrastructure.Migrations
 
             modelBuilder.Entity("Asistente.Domain.Entities.AsistenteHerramienta", b =>
                 {
-                    b.HasOne("Asistente.Domain.Entities.Asistente", null)
-                        .WithMany("AsistentesHerramientas")
-                        .HasForeignKey("AsistenteIdAsistente");
-
                     b.HasOne("Asistente.Domain.Entities.Asistente", "Asistente")
-                        .WithMany()
+                        .WithMany("AsistentesHerramientas")
                         .HasForeignKey("IdAsistente")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2937,6 +2975,17 @@ namespace Asistente.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Conexion");
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.DisparadorEvento", b =>
+                {
+                    b.HasOne("Asistente.Domain.Entities.EventoEmpresarial", "Evento")
+                        .WithMany()
+                        .HasForeignKey("IdEvento")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Evento");
                 });
 
             modelBuilder.Entity("Asistente.Domain.Entities.Documento", b =>

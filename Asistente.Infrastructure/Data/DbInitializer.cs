@@ -219,16 +219,18 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // Seed Workflow de ejemplo: "Reporte de Clientes" (3 pasos, uno con confirmación)
+        // Seed Workflow de ejemplo: "Resumen de Documento" (resume el contenido de un
+        // documento recién indexado; se dispara vía DOC_INDEXADO, cuando los vectores ya
+        // existen en la base vectorial — no vía DOC_PROCESADO, que llega antes de indexar).
         if (!await context.Workflows.AnyAsync())
         {
             var adminId = (await context.Usuarios.FirstOrDefaultAsync(u => u.UsuarioNombre == "admin"))?.IdUsuario ?? 1;
             var workflow = new Workflow
             {
-                Nombre = "Reporte de Clientes",
+                Nombre = "Resumen de Documento",
                 Codigo = "ReporteClientes",
-                Descripcion = "Consulta los clientes registrados, genera un reporte y presenta el resultado. Flujo de ejemplo de la ETAPA 12.",
-                Disparadores = "reporte de clientes;generar reporte de clientes;reporte clientes",
+                Descripcion = "Resume el contenido de un documento recién indexado y genera un PDF. Flujo de ejemplo de la ETAPA 12.",
+                Disparadores = "resumen del documento;resumir documento;resumen documento",
                 Version = 1,
                 Estado = EstadoWorkflow.Activo,
                 FechaCreacion = DateTime.UtcNow,
@@ -238,9 +240,9 @@ public static class DbInitializer
                     new WorkflowPaso
                     {
                         Orden = 1,
-                        Nombre = "Consultar clientes",
-                        Herramienta = "SqlQueryTool",
-                        Parametros = "{\"pregunta\":\"total de clientes\"}",
+                        Nombre = "Obtener contenido del documento",
+                        Herramienta = "DocumentSearchTool",
+                        Parametros = "{\"consulta\":\"Resumen del contenido\",\"documento\":\"{{Nombre}}\"}",
                         RequiereConfirmacion = false,
                         ReintentosMaximos = 2,
                         TiempoMaximoMs = 30000,
@@ -249,9 +251,9 @@ public static class DbInitializer
                     new WorkflowPaso
                     {
                         Orden = 2,
-                        Nombre = "Generar reporte",
+                        Nombre = "Generar resumen",
                         Herramienta = "ReportTool",
-                        Parametros = "{\"contenido\":\"{{resultado}}\",\"titulo\":\"Reporte de Clientes\"}",
+                        Parametros = "{\"datos\":\"{{resultado}}\",\"titulo\":\"Resumen: {{Nombre}}\"}",
                         RequiereConfirmacion = true,
                         ReintentosMaximos = 1,
                         TiempoMaximoMs = 30000,
@@ -308,13 +310,28 @@ public static class DbInitializer
             await context.EventosEmpresariales.AddAsync(evento);
             await context.SaveChangesAsync();
 
-            // Regla que asocia el evento al flujo "Reporte de Clientes"
+            // El resumen se dispara vía DOC_INDEXADO (vectores listos), no vía DOC_PROCESADO
+            // (que llega antes de indexar y siempre encontraba la búsqueda vacía).
+            var eventoIndexado = new EventoEmpresarial
+            {
+                Codigo = "DOC_INDEXADO",
+                Nombre = "Documento Indexado",
+                Descripcion = "Se dispara automáticamente cuando un documento queda con vectores en la base vectorial (RAG listo).",
+                Categoria = "Documento",
+                Activo = true,
+                FechaCreacion = DateTime.UtcNow,
+                UsuarioCreacion = adminId
+            };
+            await context.EventosEmpresariales.AddAsync(eventoIndexado);
+            await context.SaveChangesAsync();
+
+            // Regla que asocia DOC_INDEXADO al flujo "Resumen de Documento"
             var workflowReporte = await context.Workflows.FirstOrDefaultAsync(w => w.Codigo == "ReporteClientes");
             if (workflowReporte != null)
             {
                 await context.ReglasEvento.AddAsync(new ReglaEvento
                 {
-                    IdEvento = evento.IdEvento,
+                    IdEvento = eventoIndexado.IdEvento,
                     IdWorkflow = workflowReporte.IdWorkflow,
                     Condicion = "",
                     Prioridad = 1,

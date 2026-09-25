@@ -23,7 +23,7 @@ public class ContextoService
         _logger = logger;
     }
 
-    public async Task<ContextoConstruido> ConstruirContextoAsync(
+    public virtual async Task<ContextoConstruido> ConstruirContextoAsync(
         Conversacion conversacion,
         Mensaje nuevoMensaje,
         CancellationToken cancellationToken = default)
@@ -32,6 +32,8 @@ public class ContextoService
 
         var config = await _configRepo.GetActivaAsync();
         var maxMensajes = config?.MaximoMensajesContexto ?? 20;
+        // Tope de tokens (antes no se leia: parametro muerto). Estimacion: 1 token ~= 4 caracteres.
+        var maxTokens = Math.Max(50, config?.MaximoTokensContexto ?? 4096);
 
         var historial = (await _mensajeRepository.GetByConversacionIdAsync(conversacion.IdConversacion))
             .ToList();
@@ -50,9 +52,21 @@ public class ContextoService
 
         mensajesRecientes.Add(nuevoMensaje);
 
+        // Recorte por tokens estimados: quita los mas antiguos hasta entrar en el limite.
+        // Siempre conserva al menos el mensaje nuevo y el resumen.
+        var tokensVentana = CalcularTokensEstimados(mensajesRecientes, conversacion.ResumenContexto);
+        while (tokensVentana > maxTokens && mensajesRecientes.Count > 1)
+        {
+            mensajesRecientes.RemoveAt(0);
+            tokensVentana = CalcularTokensEstimados(mensajesRecientes, conversacion.ResumenContexto);
+        }
+        if (mensajesRecientes.Count < historial.Count + 1)
+            _logger.LogInformation("Contexto recortado por tokens: {Total} -> {Ventana} mensajes ({Tokens} tokens estimados, tope {Tope}).",
+                historial.Count + 1, mensajesRecientes.Count, tokensVentana, maxTokens);
+
         cronometro.Stop();
 
-        var tokensEstimados = CalcularTokensEstimados(mensajesRecientes, conversacion.ResumenContexto);
+        var tokensEstimados = tokensVentana;
 
         return new ContextoConstruido
         {
@@ -256,7 +270,7 @@ RESUMEN (3-5 líneas, sin pensar en voz alta):";
         return resumen;
     }
 
-    public async Task<bool> RequiereResumenAsync(Conversacion conversacion, int mensajesEnMemoria = 0)
+    public virtual async Task<bool> RequiereResumenAsync(Conversacion conversacion, int mensajesEnMemoria = 0)
     {
         var config = await _configRepo.GetActivaAsync();
         var maxMensajes = config?.MaximoMensajesContexto ?? 20;

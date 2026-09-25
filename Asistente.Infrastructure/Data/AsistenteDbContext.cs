@@ -80,6 +80,7 @@ public class AsistenteDbContext : DbContext, IUnitOfWork
     public DbSet<EventoProcesado> EventosProcesados => Set<EventoProcesado>();
     public DbSet<TareaProgramada> TareasProgramadas => Set<TareaProgramada>();
     public DbSet<ConfiguracionEventoMotor> ConfiguracionEventoMotor => Set<ConfiguracionEventoMotor>();
+    public DbSet<DisparadorEvento> DisparadoresEvento => Set<DisparadorEvento>();
 
     // Seguridad, Gobierno y Observabilidad (ETAPA 14)
     public DbSet<Permiso> Permisos => Set<Permiso>();

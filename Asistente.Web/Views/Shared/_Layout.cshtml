@@ -79,7 +79,7 @@
 
                 <div class="collapse navbar-collapse" id="navbarMain">
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0 ms-3 gap-1">
-                        @if (User.IsInRole("Administrador") || User.IsInRole("Operador"))
+                        @if (User.IsInRole("Administrador") || User.IsInRole("Operador") || User.IsInRole("Supervisor"))
                         {
                             <li class="nav-item">
                                 <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Chat" ? "active" : "")"
@@ -93,38 +93,47 @@
                                     <i class="bi bi-file-earmark-text"></i> Documentos
                                 </a>
                             </li>
-                            @if (User.IsInRole("Administrador"))
+                            @if (User.IsInRole("Administrador") || User.IsInRole("Operador") || User.IsInRole("Supervisor"))
                             {
-                                <li class="nav-item">
-                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "ConsultasEmpresariales" ? "active" : "")"
-                                       asp-controller="ConsultasEmpresariales" asp-action="Index">
-                                        <i class="bi bi-cpu"></i> Consultas BD
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Herramientas" ? "active" : "")"
-                                       asp-controller="Herramientas" asp-action="Index">
-                                        <i class="bi bi-tools"></i> Herramientas
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Workflows" ? "active" : "")"
-                                       asp-controller="Workflows" asp-action="Index">
-                                        <i class="bi bi-diagram-3"></i> Flujos
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "EventosEmpresariales" ? "active" : "")"
-                                       asp-controller="EventosEmpresariales" asp-action="Index">
-                                        <i class="bi bi-lightning-charge-fill"></i> Eventos
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "TareasProgramadas" ? "active" : "")"
-                                       asp-controller="TareasProgramadas" asp-action="Index">
-                                        <i class="bi bi-calendar-check"></i> Tareas
-                                    </a>
-                                </li>
+                                @if (User.IsInRole("Administrador"))
+                                {
+                                    <li class="nav-item">
+                                        <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "ConsultasEmpresariales" ? "active" : "")"
+                                           asp-controller="ConsultasEmpresariales" asp-action="Index">
+                                            <i class="bi bi-cpu"></i> Consultas BD
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Herramientas" ? "active" : "")"
+                                           asp-controller="Herramientas" asp-action="Index">
+                                            <i class="bi bi-tools"></i> Herramientas
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Workflows" ? "active" : "")"
+                                           asp-controller="Workflows" asp-action="Index">
+                                            <i class="bi bi-diagram-3"></i> Flujos
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "EventosEmpresariales" ? "active" : "")"
+                                           asp-controller="EventosEmpresariales" asp-action="Index">
+                                            <i class="bi bi-lightning-charge-fill"></i> Eventos
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "DisparadoresEvento" ? "active" : "")"
+                                           asp-controller="DisparadoresEvento" asp-action="Index">
+                                            <i class="bi bi-play-circle"></i> Disparadores
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "TareasProgramadas" ? "active" : "")"
+                                           asp-controller="TareasProgramadas" asp-action="Index">
+                                            <i class="bi bi-calendar-check"></i> Tareas
+                                        </a>
+                                    </li>
+                                }
                             }
                         }
                         @if (User.IsInRole("Administrador") || User.IsInRole("Supervisor"))
@@ -166,43 +175,62 @@
                                 </a>
                             </li>
                         }
-                        @if (User.IsInRole("Administrador"))
+                        @if (User.IsInRole("Administrador") || User.IsInRole("Operador") || User.IsInRole("Supervisor"))
                         {
-                            <li class="nav-item dropdown">
-                                <a class="nav-link-custom dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
-                                    <i class="bi bi-gear"></i> Configuración
-                                </a>
-                                <ul class="dropdown-menu dropdown-menu-dark" style="background:#1e293b;border:1px solid rgba(255,255,255,0.07);min-width:200px;">
-                                    <li><a class="dropdown-item" asp-controller="Asistentes" asp-action="Index"><i class="bi bi-robot me-2"></i>Asistentes</a></li>
-                                    <li><a class="dropdown-item" asp-controller="FuentesConocimiento" asp-action="Index"><i class="bi bi-book me-2"></i>Fuentes de Conocimiento</a></li>
-                                    <li><a class="dropdown-item" asp-controller="ConfiguracionRAG" asp-action="Index"><i class="bi bi-sliders me-2"></i>Config. RAG</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Prompts" asp-action="Index"><i class="bi bi-file-text me-2"></i>Prompts</a></li>
-                                    <li><a class="dropdown-item" asp-controller="ConfiguracionMemoria" asp-action="Index"><i class="bi bi-memory me-2"></i>Memoria</a></li>
-                                    <li><a class="dropdown-item" asp-controller="CategoriasDocumento" asp-action="Index"><i class="bi bi-tags me-2"></i>Categorías Doc.</a></li>
-                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
-                                    <li><a class="dropdown-item" asp-controller="ConexionesBaseDatos" asp-action="Index"><i class="bi bi-database me-2"></i>Conexiones BD</a></li>
-                                    <li><a class="dropdown-item" asp-controller="ConsultasPlantillas" asp-action="Index"><i class="bi bi-file-earmark-code me-2"></i>Plantillas de Consulta</a></li>
-                                    <li><a class="dropdown-item" asp-controller="ConfiguracionMotorConsultas" asp-action="Index"><i class="bi bi-sliders2 me-2"></i>Config. Motor Consultas</a></li>
-                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
-                                    <li><a class="dropdown-item" asp-controller="Herramientas" asp-action="Index"><i class="bi bi-tools me-2"></i>Herramientas (Orchestrator)</a></li>
-                                    <li><a class="dropdown-item" asp-controller="AsistenteHerramientas" asp-action="Index"><i class="bi bi-link-45deg me-2"></i>Asociar Herramientas</a></li>
-                                    <li><a class="dropdown-item" asp-controller="OrchestratorConfig" asp-action="Index"><i class="bi bi-sliders me-2"></i>Config. Orquestador</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Orchestrator" asp-action="Index"><i class="bi bi-diagram-3 me-2"></i>Agent Orchestrator</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Planner" asp-action="Index"><i class="bi bi-diagram-2 me-2"></i>Planner Engine</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Aprobaciones" asp-action="Index"><i class="bi bi-shield-check me-2"></i>Centro de Aprobaciones</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Workflows" asp-action="Configuracion"><i class="bi bi-diagram-3 me-2"></i>Config. Workflow Engine</a></li>
-                                    <li><a class="dropdown-item" asp-controller="ReglasEvento" asp-action="Index"><i class="bi bi-link-45deg me-2"></i>Reglas de Automatización</a></li>
-                                    <li><a class="dropdown-item" asp-controller="MonitoreoEventos" asp-action="Configuracion"><i class="bi bi-sliders me-2"></i>Config. Motor Eventos</a></li>
-                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
-                                    <li><a class="dropdown-item" asp-controller="Usuarios" asp-action="Index"><i class="bi bi-people me-2"></i>Usuarios</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Roles" asp-action="Index"><i class="bi bi-shield-check me-2"></i>Roles</a></li>
-                                    <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
-                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard Seguridad</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Permisos"><i class="bi bi-key me-2"></i>Permisos</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Politicas"><i class="bi bi-shield-lock me-2"></i>Políticas de IA</a></li>
-                                    <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Usuarios"><i class="bi bi-people me-2"></i>Control de Acceso (Usuarios)</a></li>
-                                </ul>
-                            </li>
+                            @if (User.IsInRole("Administrador"))
+                            {
+                                <li class="nav-item dropdown">
+                                    <a class="nav-link-custom dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
+                                        <i class="bi bi-gear"></i> Configuración
+                                    </a>
+                                    <ul class="dropdown-menu dropdown-menu-dark" style="background:#1e293b;border:1px solid rgba(255,255,255,0.07);min-width:200px;">
+                                        <li><a class="dropdown-item" asp-controller="Asistentes" asp-action="Index"><i class="bi bi-robot me-2"></i>Asistentes</a></li>
+                                        <li><a class="dropdown-item" asp-controller="FuentesConocimiento" asp-action="Index"><i class="bi bi-book me-2"></i>Fuentes de Conocimiento</a></li>
+                                        <li><a class="dropdown-item" asp-controller="ConfiguracionRAG" asp-action="Index"><i class="bi bi-sliders me-2"></i>Config. RAG</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Prompts" asp-action="Index"><i class="bi bi-file-text me-2"></i>Prompts</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Prompts" asp-action="Prueba"><i class="bi bi-play-circle me-2"></i>Panel de Pruebas</a></li>
+                                        <li><a class="dropdown-item" asp-controller="ConfiguracionMemoria" asp-action="Index"><i class="bi bi-memory me-2"></i>Memoria</a></li>
+                                        <li><a class="dropdown-item" asp-controller="CategoriasDocumento" asp-action="Index"><i class="bi bi-tags me-2"></i>Categorías Doc.</a></li>
+                                        <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                        <li><a class="dropdown-item" asp-controller="ConexionesBaseDatos" asp-action="Index"><i class="bi bi-database me-2"></i>Conexiones BD</a></li>
+                                        <li><a class="dropdown-item" asp-controller="ConsultasPlantillas" asp-action="Index"><i class="bi bi-file-earmark-code me-2"></i>Plantillas de Consulta</a></li>
+                                        <li><a class="dropdown-item" asp-controller="ConfiguracionMotorConsultas" asp-action="Index"><i class="bi bi-sliders2 me-2"></i>Config. Motor Consultas</a></li>
+                                        <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                        <li><a class="dropdown-item" asp-controller="Herramientas" asp-action="Index"><i class="bi bi-tools me-2"></i>Herramientas (Orchestrator)</a></li>
+                                        <li><a class="dropdown-item" asp-controller="AsistenteHerramientas" asp-action="Index"><i class="bi bi-link-45deg me-2"></i>Asociar Herramientas</a></li>
+                                        <li><a class="dropdown-item" asp-controller="OrchestratorConfig" asp-action="Index"><i class="bi bi-sliders me-2"></i>Config. Orquestador</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Orchestrator" asp-action="Index"><i class="bi bi-diagram-3 me-2"></i>Agent Orchestrator</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Planner" asp-action="Index"><i class="bi bi-diagram-2 me-2"></i>Planner Engine</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Aprobaciones" asp-action="Index"><i class="bi bi-shield-check me-2"></i>Centro de Aprobaciones</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Workflows" asp-action="Configuracion"><i class="bi bi-diagram-3 me-2"></i>Config. Workflow Engine</a></li>
+                                        <li><a class="dropdown-item" asp-controller="ReglasEvento" asp-action="Index"><i class="bi bi-link-45deg me-2"></i>Reglas de Automatización</a></li>
+                                        <li><a class="dropdown-item" asp-controller="MonitoreoEventos" asp-action="Configuracion"><i class="bi bi-sliders me-2"></i>Config. Motor Eventos</a></li>
+                                        <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                        <li><a class="dropdown-item" asp-controller="Usuarios" asp-action="Index"><i class="bi bi-people me-2"></i>Usuarios</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Roles" asp-action="Index"><i class="bi bi-shield-check me-2"></i>Roles</a></li>
+                                        <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
+                                        <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard Seguridad</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Permisos"><i class="bi bi-key me-2"></i>Permisos</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Politicas"><i class="bi bi-shield-lock me-2"></i>Políticas de IA</a></li>
+                                        <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Usuarios"><i class="bi bi-people me-2"></i>Control de Acceso (Usuarios)</a></li>
+                                    </ul>
+                                </li>
+                            }
+                            else
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Planner" ? "active" : "")"
+                                       asp-controller="Planner" asp-action="Index">
+                                        <i class="bi bi-diagram-2"></i> Planner Engine
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Aprobaciones" ? "active" : "")"
+                                       asp-controller="Aprobaciones" asp-action="Index">
+                                        <i class="bi bi-shield-check"></i> Centro de Aprobaciones
+                                    </a>
+                                </li>
+                            }
                         }
                         @if (User.IsInRole("Administrador") || User.IsInRole("Supervisor"))
                         {

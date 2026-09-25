@@ -20,6 +20,11 @@ public interface IAutorizacionService
     Task<ResultadoAutorizacion> VerificarFuenteAsync(int idUsuario, int idFuente, CancellationToken ct = default);
     Task<ResultadoAutorizacion> VerificarHerramientaAsync(int idUsuario, int idAsistente, string codigoHerramienta, CancellationToken ct = default);
     Task<ResultadoAutorizacion> VerificarPermisoAsync(int idUsuario, string codigoPermiso, CancellationToken ct = default);
+    /// <summary>
+    /// Verifica que el workflow esté asignado y activo para el asistente.
+    /// Sin asignación no hay acceso (mundo cerrado, igual que fuentes).
+    /// </summary>
+    Task<ResultadoAutorizacion> VerificarWorkflowAsistenteAsync(int idAsistente, int idWorkflow, CancellationToken ct = default);
 }
 
 public interface IPoliticaIAService

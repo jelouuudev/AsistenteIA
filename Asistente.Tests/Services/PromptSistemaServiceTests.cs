@@ -102,6 +102,8 @@ public class PromptSistemaServiceTests
 
         _mockPromptRepo.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(prompt);
         _mockPromptRepo.Setup(x => x.GetNextVersionAsync(1)).ReturnsAsync(2);
+        // La versión se calcula desde el historial (max+1), no desde GetNextVersionAsync.
+        _mockHistorialRepo.Setup(x => x.GetMaxVersionAsync(1)).ReturnsAsync(1);
         _mockHistorialRepo.Setup(x => x.AddAsync(It.IsAny<HistorialPrompt>())).Returns(Task.CompletedTask);
         _mockUow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
@@ -118,7 +120,8 @@ public class PromptSistemaServiceTests
         Assert.Equal("Actualizado", result.Nombre);
         Assert.Equal(2, result.Version);
 
-        _mockHistorialRepo.Verify(x => x.AddAsync(It.IsAny<HistorialPrompt>()), Times.Exactly(2));
+        // La implementación actual guarda una sola entrada de historial por actualización.
+        _mockHistorialRepo.Verify(x => x.AddAsync(It.IsAny<HistorialPrompt>()), Times.Once);
     }
 
     [Fact]

@@ -35,6 +35,8 @@ public class EventoMotorService : IEventoMotorService
     private readonly IConfiguracionEventoMotorRepository _configRepository;
     private readonly IWorkflowEngine _workflowEngine;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IUsuarioRepository _usuarioRepository;
+    private readonly IAuditoriaService _auditoriaService;
     private readonly ILogger<EventoMotorService> _logger;
 
     public EventoMotorService(
@@ -44,6 +46,8 @@ public class EventoMotorService : IEventoMotorService
         IConfiguracionEventoMotorRepository configRepository,
         IWorkflowEngine workflowEngine,
         IUnitOfWork unitOfWork,
+        IUsuarioRepository usuarioRepository,
+        IAuditoriaService auditoriaService,
         ILogger<EventoMotorService> logger)
     {
         _eventoRepository = eventoRepository;
@@ -52,6 +56,8 @@ public class EventoMotorService : IEventoMotorService
         _configRepository = configRepository;
         _workflowEngine = workflowEngine;
         _unitOfWork = unitOfWork;
+        _usuarioRepository = usuarioRepository;
+        _auditoriaService = auditoriaService;
         _logger = logger;
     }
 
@@ -66,6 +72,8 @@ public class EventoMotorService : IEventoMotorService
         var evento = await _eventoRepository.GetByCodigoAsync(codigoEvento.Trim(), ct);
         if (evento == null)
             throw new InvalidOperationException($"No existe un evento con el código '{codigoEvento}'.");
+        if (!evento.Activo)
+            throw new InvalidOperationException($"El evento '{codigoEvento}' está desactivado.");
 
         var procesado = new EventoProcesado
         {
@@ -73,6 +81,9 @@ public class EventoMotorService : IEventoMotorService
             FechaHora = DateTime.UtcNow,
             Estado = "Pendiente",
             IdUsuario = idUsuario,
+            // El contexto del disparo se preserva en su propia columna: Resultado
+            // se sobrescribe durante el procesamiento y el dato original se perdería.
+            ContextoDisparo = contextoJson,
             Resultado = contextoJson
         };
         await _eventoProcesadoRepository.AddAsync(procesado, ct);
@@ -97,6 +108,27 @@ public class EventoMotorService : IEventoMotorService
         var config = await _configRepository.GetAsync(ct);
         var inicio = DateTime.UtcNow;
 
+        // Tiempo máximo por evento: cancela la ejecución de workflows si se excede.
+        var tiempoMaxMs = Math.Max(config.TiempoMaximoEventoMs, 1000);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(tiempoMaxMs);
+        var ctt = timeoutCts.Token;
+
+        // Actividad 4: verificar permisos — el usuario dueño debe existir y estar activo.
+        if (procesado.IdUsuario.HasValue)
+        {
+            var usuario = await _usuarioRepository.GetByIdAsync(procesado.IdUsuario.Value);
+            if (usuario == null || !usuario.Activo)
+            {
+                procesado.Estado = "Error";
+                procesado.Resultado = "Usuario sin permiso o inactivo para la ejecución automática.";
+                await _eventoProcesadoRepository.UpdateAsync(procesado, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await RegistrarIncidenteAsync(procesado, ct);
+                return;
+            }
+        }
+
         // Marcar en proceso / reintentando
         if (procesado.Estado == "Reintentando")
             procesado.Estado = "Reintentando";
@@ -119,13 +151,15 @@ public class EventoMotorService : IEventoMotorService
                 return;
             }
 
-            var contexto = ParseContexto(procesado.Resultado);
+            // Se lee del campo preservado (con fallback a Resultado para filas
+            // disparadas antes de existir la columna ContextoDisparo).
+            var contexto = ParseContexto(procesado.ContextoDisparo ?? procesado.Resultado);
             var ejecutadoAlguna = false;
             var errores = new List<string>();
 
             foreach (var regla in reglas)
             {
-                if (ct.IsCancellationRequested) break;
+                if (ctt.IsCancellationRequested) break;
 
                 if (!EvaluarCondicion(regla.Condicion, contexto))
                 {
@@ -136,15 +170,35 @@ public class EventoMotorService : IEventoMotorService
                 procesado.IdRegla = regla.IdRegla;
                 procesado.IdWorkflow = regla.IdWorkflow;
 
-                var (exito, mensaje) = await EjecutarConReintentosAsync(regla.IdWorkflow, procesado.IdUsuario, config, ct);
+                // El contexto del disparo viaja al workflow para {{Clave}} en los pasos.
+                var contextoInicial = contexto.ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value?.ToString() ?? string.Empty,
+                    StringComparer.OrdinalIgnoreCase);
+                var (exito, mensaje) = await EjecutarConReintentosAsync(regla.IdWorkflow, procesado.IdUsuario, config, contextoInicial, ctt);
                 ejecutadoAlguna = true;
                 if (!exito) errores.Add($"Regla {regla.IdRegla}: {mensaje}");
+            }
+
+            if (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested
+                && errores.Any(e => e.Contains("Tiempo máximo")))
+            {
+                procesado.Estado = "Error";
+                procesado.Resultado = $"Tiempo máximo por evento excedido ({tiempoMaxMs} ms).";
+                await _eventoProcesadoRepository.UpdateAsync(procesado, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await RegistrarIncidenteAsync(procesado, ct);
+                return;
             }
 
             if (errores.Count > 0 && ejecutadoAlguna)
             {
                 procesado.Estado = "Error";
                 procesado.Resultado = string.Join(" | ", errores);
+                await _eventoProcesadoRepository.UpdateAsync(procesado, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+                // Actividad 7: registrar el incidente y asociarlo a la ejecución.
+                await RegistrarIncidenteAsync(procesado, ct);
             }
             else
             {
@@ -159,6 +213,7 @@ public class EventoMotorService : IEventoMotorService
             _logger.LogError(ex, "Error al procesar el evento {Id}.", idEventoProcesado);
             procesado.Estado = "Error";
             procesado.Resultado = ex.Message;
+            await RegistrarIncidenteAsync(procesado, ct);
         }
         finally
         {
@@ -168,26 +223,56 @@ public class EventoMotorService : IEventoMotorService
         }
     }
 
+    /// <summary>
+    /// Actividad 7: registra el incidente en auditoría, asociado al evento procesado.
+    /// Nunca interrumpe el procesamiento.
+    /// </summary>
+    private async Task RegistrarIncidenteAsync(EventoProcesado procesado, CancellationToken ct)
+    {
+        try
+        {
+            await _auditoriaService.RegistrarActividadAsync(
+                procesado.IdUsuario ?? 0,
+                "Eventos",
+                "ErrorAutomatico",
+                $"Incidente en evento procesado {procesado.IdEventoProcesado} " +
+                $"(evento {procesado.IdEvento}, regla {procesado.IdRegla?.ToString() ?? "-"}, " +
+                $"workflow {procesado.IdWorkflow?.ToString() ?? "-"}): {procesado.Resultado}",
+                null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo registrar el incidente del evento {Id}.", procesado.IdEventoProcesado);
+        }
+    }
+
     private async Task<(bool exito, string mensaje)> EjecutarConReintentosAsync(
-        int idWorkflow, int? idUsuario, ConfiguracionEventoMotor config, CancellationToken ct)
+        int idWorkflow, int? idUsuario, ConfiguracionEventoMotor config,
+        Dictionary<string, string>? contextoInicial, CancellationToken ct)
     {
         int intentos = config.ReintentosMaximos + 1;
         for (int i = 1; i <= intentos; i++)
         {
+            ct.ThrowIfCancellationRequested();
             if (i > 1)
             {
                 _logger.LogWarning("Reintento {I} del workflow {W} por evento automático.", i, idWorkflow);
-                await Task.Delay(Math.Min(config.IntervaloReintentoMs * i, 10000), ct);
+                await Task.Delay(Math.Min(Math.Max(config.IntervaloReintentoMs, 0) * i, 10000), ct);
             }
             try
             {
                 var resultado = await _workflowEngine.EjecutarAsync(
-                    idWorkflow, idUsuario ?? 1, null, confirmado: true, cancellationToken: ct);
+                    idWorkflow, idUsuario ?? 1, null, confirmado: true,
+                    contextoInicial: contextoInicial, cancellationToken: ct);
                 if (resultado.Exitoso)
                     return (true, resultado.ResultadoFinal ?? "OK");
                 if (i < intentos)
                     continue;
                 return (false, resultado.ResultadoFinal ?? "Falló tras reintentos.");
+            }
+            catch (OperationCanceledException)
+            {
+                return (false, $"Tiempo máximo por evento excedido ({Math.Max(config.TiempoMaximoEventoMs, 1000)} ms).");
             }
             catch (Exception ex)
             {
@@ -279,6 +364,7 @@ public class EventoMotorService : IEventoMotorService
         FechaHora = e.FechaHora,
         Estado = e.Estado,
         Resultado = e.Resultado,
+        ContextoDisparo = e.ContextoDisparo,
         TiempoProcesamiento = e.TiempoProcesamiento,
         IdRegla = e.IdRegla,
         IdWorkflow = e.IdWorkflow

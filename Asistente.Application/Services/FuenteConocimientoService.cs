@@ -20,6 +20,7 @@ public class FuenteConocimientoService : IFuenteConocimientoService
     private readonly IProcesamientoDocumentalRepository _procesamientoRepository;
     private readonly IDocumentoIndexadoRepository _indexadoRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IIndexacionService _indexacionService;
     private readonly ILogger<FuenteConocimientoService> _logger;
 
     public FuenteConocimientoService(
@@ -30,6 +31,7 @@ public class FuenteConocimientoService : IFuenteConocimientoService
         IProcesamientoDocumentalRepository procesamientoRepository,
         IDocumentoIndexadoRepository indexadoRepository,
         IUnitOfWork unitOfWork,
+        IIndexacionService indexacionService,
         ILogger<FuenteConocimientoService> logger)
     {
         _fuenteRepository = fuenteRepository;
@@ -39,6 +41,7 @@ public class FuenteConocimientoService : IFuenteConocimientoService
         _procesamientoRepository = procesamientoRepository;
         _indexadoRepository = indexadoRepository;
         _unitOfWork = unitOfWork;
+        _indexacionService = indexacionService;
         _logger = logger;
     }
 
@@ -310,6 +313,16 @@ public class FuenteConocimientoService : IFuenteConocimientoService
 
         await _unitOfWork.SaveChangesAsync();
         _logger.LogInformation("Documento {IdDoc} asignado a la fuente {IdFuente}.", request.IdDocumento, request.IdFuente);
+
+        // SEGURIDAD: reindexar para que los vectores reflejen la asignacion vigente.
+        try
+        {
+            await _indexacionService.ReindexarPorDocumentoAsync(request.IdDocumento);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo reindexar el documento {IdDoc} tras asignarlo a la fuente. Se actualizara en el proximo ciclo.", request.IdDocumento);
+        }
     }
 
     public async Task DesasignarDocumentoDeFuenteAsync(int idDocumento, int idFuente)
@@ -319,6 +332,17 @@ public class FuenteConocimientoService : IFuenteConocimientoService
         {
             _documentoFuenteRepository.Delete(relacion);
             await _unitOfWork.SaveChangesAsync();
+
+            // SEGURIDAD: reindexar para eliminar vectores huerfanos de la fuente anterior.
+            // Sin esto, el documento desasignado seguiria apareciendo en busquedas.
+            try
+            {
+                await _indexacionService.ReindexarPorDocumentoAsync(idDocumento);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo reindexar el documento {IdDoc} tras desasignarlo de la fuente. Se actualizara en el proximo ciclo.", idDocumento);
+            }
         }
     }
 

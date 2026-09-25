@@ -1,7 +1,4 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
@@ -18,6 +15,7 @@ public interface IWorkflowService
     Task CambiarEstadoAsync(int id, EstadoWorkflow estado, CancellationToken ct = default);
     Task VersionarAsync(int id, CancellationToken ct = default);
     Task EliminarAsync(int id, CancellationToken ct = default);
+    Task<WorkflowExecutionResult> EjecutarWorkflowAsync(int id, int idUsuario, Dictionary<string, object>? parametros = null, CancellationToken ct = default);
 }
 
 public interface IConfiguracionWorkflowService

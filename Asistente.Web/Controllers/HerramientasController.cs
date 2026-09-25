@@ -36,26 +36,22 @@ public class HerramientasController : Controller
         }
     }
 
+    // Registro deshabilitado en UI: crear una herramienta es técnico
+    // (clase ITool + DI + BD, ETAPA 11). El formulario solo creaba fichas sin
+    // implementación que fallaban al ejecutarse.
     [HttpGet]
     public IActionResult Crear()
-        => View(new CrearHerramientaRequest { Categoria = "Utilidad", Activa = true, RequierePermiso = true });
+    {
+        TempData["ErrorMessage"] = "El registro de herramientas es técnico (código + DI + BD). Solicítalo al equipo de desarrollo.";
+        return RedirectToAction(nameof(Index));
+    }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Crear(CrearHerramientaRequest model)
+    public IActionResult Crear(CrearHerramientaRequest model)
     {
-        if (!ModelState.IsValid) return View(model);
-        try
-        {
-            await _apiService.CrearHerramientaAsync(model, GetCurrentUserId(), GetIpAddress());
-            TempData["SuccessMessage"] = "Herramienta registrada exitosamente.";
-            return RedirectToAction(nameof(Index));
-        }
-        catch (Exception ex)
-        {
-            ModelState.AddModelError(string.Empty, ex.Message);
-            return View(model);
-        }
+        TempData["ErrorMessage"] = "El registro de herramientas es técnico (código + DI + BD). Solicítalo al equipo de desarrollo.";
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpPost]

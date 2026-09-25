@@ -152,6 +152,20 @@ public class PromptsController : ControllerBase
         return Ok(historial);
     }
 
+    [HttpPost("{id}/historial/{historialId}/restaurar")]
+    public async Task<ActionResult<PromptSistemaDto>> Restaurar(int id, int historialId)
+    {
+        try
+        {
+            var result = await _promptService.RestaurarDesdeHistorialAsync(id, historialId, "admin");
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
     [HttpPost("probar")]
     public async Task<ActionResult<PruebaAsistenteResponse>> Probar([FromBody] PruebaAsistenteRequest request)
     {

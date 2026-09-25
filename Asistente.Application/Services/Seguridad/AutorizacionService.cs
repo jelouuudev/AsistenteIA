@@ -93,6 +93,13 @@ public class AutorizacionService : IAutorizacionService
         return Ok();
     }
 
+    public async Task<ResultadoAutorizacion> VerificarWorkflowAsistenteAsync(int idAsistente, int idWorkflow, CancellationToken ct = default)
+    {
+        var asistente = await _asistenteRepository.GetByIdAsync(idAsistente);
+        var autorizado = asistente?.AgentesWorkflows.Any(aw => aw.IdWorkflow == idWorkflow && aw.Activo) ?? false;
+        return autorizado ? Ok() : Denegado($"El workflow {idWorkflow} no está autorizado para este asistente.");
+    }
+
     public async Task<ResultadoAutorizacion> VerificarPermisoAsync(int idUsuario, string codigoPermiso, CancellationToken ct = default)
     {
         if (await EsAdministradorAsync(idUsuario, ct))

@@ -42,6 +42,43 @@ public class EventoEmpresarialRepository : IEventoEmpresarialRepository
     }
 }
 
+public class DisparadorEventoRepository : IDisparadorEventoRepository
+{
+    private readonly AsistenteDbContext _context;
+    public DisparadorEventoRepository(AsistenteDbContext context) => _context = context;
+
+    public async Task<DisparadorEvento?> GetByIdAsync(int id, CancellationToken ct = default)
+        => await _context.DisparadoresEvento.AsNoTracking()
+            .Include(d => d.Evento)
+            .FirstOrDefaultAsync(d => d.IdDisparador == id, ct);
+
+    public async Task<IEnumerable<DisparadorEvento>> GetAllAsync(CancellationToken ct = default)
+        => await _context.DisparadoresEvento.AsNoTracking()
+            .Include(d => d.Evento)
+            .OrderBy(d => d.IdDisparador).ToListAsync(ct);
+
+    public async Task<IEnumerable<DisparadorEvento>> GetActivosAsync(CancellationToken ct = default)
+        => await _context.DisparadoresEvento.AsNoTracking()
+            .Include(d => d.Evento)
+            .Where(d => d.Activo)
+            .OrderBy(d => d.IdDisparador).ToListAsync(ct);
+
+    public async Task AddAsync(DisparadorEvento disparador, CancellationToken ct = default)
+        => await _context.DisparadoresEvento.AddAsync(disparador, ct);
+
+    public async Task UpdateAsync(DisparadorEvento disparador, CancellationToken ct = default)
+    {
+        _context.DisparadoresEvento.Update(disparador);
+        await Task.CompletedTask;
+    }
+
+    public async Task DeleteAsync(DisparadorEvento disparador, CancellationToken ct = default)
+    {
+        _context.DisparadoresEvento.Remove(disparador);
+        await Task.CompletedTask;
+    }
+}
+
 public class ReglaEventoRepository : IReglaEventoRepository
 {
     private readonly AsistenteDbContext _context;
@@ -159,7 +196,11 @@ public class ConfiguracionEventoMotorRepository : IConfiguracionEventoMotorRepos
     public async Task UpdateAsync(ConfiguracionEventoMotor config, CancellationToken ct = default)
     {
         config.FechaActualizacion = System.DateTime.UtcNow;
-        _context.ConfiguracionEventoMotor.Update(config);
-        await Task.CompletedTask;
+        var existe = await _context.ConfiguracionEventoMotor.AnyAsync(c => c.IdConfiguracion == config.IdConfiguracion, ct);
+        if (existe)
+            _context.ConfiguracionEventoMotor.Update(config);
+        else
+            await _context.ConfiguracionEventoMotor.AddAsync(config, ct);
+        await _context.SaveChangesAsync(ct);
     }
 }

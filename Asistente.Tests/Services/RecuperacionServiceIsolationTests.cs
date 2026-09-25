@@ -208,7 +208,7 @@ public class RecuperacionServiceIsolationTests
             {
                 new()
                 {
-                    IdFuente = 1, Score = 0.8f, Text = "Contenido relevante",
+                    IdFuente = 1, DocumentoProcesadoId = 100, Score = 0.8f, Text = "Contenido relevante",
                     MetadataDocumentoNombre = "Manual Comercial v3",
                     VersionDocumento = "3.0", PaginaInicial = 10, PaginaFinal = 12
                 }
@@ -222,6 +222,39 @@ public class RecuperacionServiceIsolationTests
         Assert.Equal("3.0", referencias[0].VersionDocumento);
         Assert.Equal(10, referencias[0].PaginaInicial);
         Assert.Equal(12, referencias[0].PaginaFinal);
+    }
+
+    [Fact]
+    public async Task Documento_Desasignado_De_Fuente_No_Genera_Contexto()
+    {
+        // El doc procesado 200 fue desasignado: ya no esta en la lista autorizada {100}.
+        // Su vector huerfano puede seguir en Chroma, pero debe excluirse y no
+        // debe haber fallback sin filtro.
+        var fuentes = new List<FuenteConocimiento>
+        {
+            new() { IdFuente = 1, Nombre = "Fuente Test", Prioridad = 1 }
+        };
+
+        _mockAsistenteFuente
+            .Setup(r => r.GetFuentesActivasPorAsistenteAsync(1))
+            .ReturnsAsync(fuentes);
+
+        _mockDocumentoFuente
+            .Setup(r => r.GetDocumentosProcesadosIdsByFuenteAsync(1))
+            .ReturnsAsync(new List<int> { 100 });
+
+        _mockVectorStore
+            .Setup(v => v.SearchWithFilterAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<VectorSearchFilter>()))
+            .ReturnsAsync(new List<VectorSearchResult>
+            {
+                new() { IdFuente = 1, DocumentoProcesadoId = 200, Score = 0.95f, Text = "Montos autorizados...", MetadataDocumentoNombre = "Viaticos" }
+            });
+
+        var (contexto, referencias) = await _service.RecuperarContextoConFuentesAsync("montos autorizados", 1);
+
+        Assert.Empty(contexto);
+        Assert.Empty(referencias);
+        _mockVectorStore.Verify(v => v.SearchAsync(It.IsAny<string>(), It.IsAny<int>()), Times.Never);
     }
 
     [Fact]

@@ -116,6 +116,52 @@ public class IndexacionService : IIndexacionService
         if (procesado.Estado != EstadoProcesamiento.Procesado)
             throw new InvalidOperationException($"El documento procesado {documentoProcesadoId} no tiene estado Procesado.");
 
+        // Solo documentos Activos se indexan. Archivados, borradores y eliminados
+        // no deben tener vectores (archivar revoca el acceso).
+        if (!await EsDocumentoActivoAsync(procesado.IdVersionDocumento))
+        {
+            _logger.LogInformation("Documento procesado {Id} omitido en indexación: su documento no está Activo.", documentoProcesadoId);
+            return;
+        }
+
+        // Solo la versión vigente es buscable. Si la versión está inactiva, se
+        // garantiza que no queden vectores y se marca Excluido (no Error) para que
+        // el servicio de fondo no lo reintente en cada ciclo (evita resucitar
+        // vectores de versiones viejas).
+        var version = await _versionRepository.GetByIdAsync(procesado.IdVersionDocumento);
+        if (version == null || !version.Activo)
+        {
+            _logger.LogInformation("Documento procesado {Id} omitido en indexación: su versión no está activa.", documentoProcesadoId);
+            try
+            {
+                await _vectorStore.DeleteByDocumentoProcesadoIdAsync(documentoProcesadoId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error al eliminar vectores residuales del procesado {Id}.", documentoProcesadoId);
+            }
+            var idxExistente = await _indexadoRepository.GetByProcesadoIdAsync(documentoProcesadoId);
+            if (idxExistente == null)
+            {
+                await _indexadoRepository.AddAsync(new DocumentoIndexado
+                {
+                    IdDocumentoProcesado = documentoProcesadoId,
+                    FechaIndexacion = DateTime.UtcNow,
+                    Estado = EstadoIndexacion.Excluido,
+                    Observaciones = "Versión no vigente: excluida de la búsqueda."
+                });
+            }
+            else if (idxExistente.Estado != EstadoIndexacion.Excluido)
+            {
+                idxExistente.Estado = EstadoIndexacion.Excluido;
+                idxExistente.FechaIndexacion = DateTime.UtcNow;
+                idxExistente.Observaciones = "Versión no vigente: excluida de la búsqueda.";
+                _indexadoRepository.Update(idxExistente);
+            }
+            await _unitOfWork.SaveChangesAsync();
+            return;
+        }
+
         var indexadoExistente = await _indexadoRepository.GetByProcesadoIdAsync(documentoProcesadoId);
         if (indexadoExistente != null && indexadoExistente.Estado == EstadoIndexacion.Indexado)
         {
@@ -184,12 +230,17 @@ public class IndexacionService : IIndexacionService
                 try
                 {
                     embedding = await _embeddingService.GenerarEmbeddingAsync(chunk.Texto);
+                    if (embedding == null || embedding.Length == 0)
+                    {
+                        _logger.LogWarning("Embedding vacío para chunk {ChunkId}. No se indexará.", chunk.IdChunk);
+                        continue;
+                    }
                     embeddingsGenerados++;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error al generar embedding para chunk {ChunkId} del documento {Id}. Se almacena solo el texto.",
-                        chunk.IdChunk, documentoProcesadoId);
+                    _logger.LogWarning(ex, "Error al generar embedding para chunk {ChunkId}. No se indexará.", chunk.IdChunk);
+                    continue;
                 }
 
                 if (idsFuentes.Any())
@@ -256,6 +307,10 @@ public class IndexacionService : IIndexacionService
             _logger.LogInformation(
                 "Indexación completada para documento procesado {Id}: {Embeddings}/{Chunks} embeddings.",
                 documentoProcesadoId, embeddingsGenerados, chunks.Count);
+
+            // Solo la versión vigente es buscable: eliminar vectores de versiones
+            // anteriores (inactivas) del mismo documento.
+            await LimpiarVectoresVersionesAnterioresAsync(idDocumento, procesado.IdVersionDocumento);
         }
         catch (Exception ex)
         {
@@ -291,6 +346,43 @@ public class IndexacionService : IIndexacionService
         }
 
         await IndexarDocumentoAsync(documentoProcesadoId);
+    }
+
+    /// <summary>
+    /// Reindexa todos los procesados activos de un documento. Debe llamarse tras
+    /// cambiar las fuentes asignadas al documento para que los vectores reflejen
+    /// la asignacion vigente (evita vectores huerfanos con fuentes anteriores).
+    /// </summary>
+    public async Task ReindexarPorDocumentoAsync(int idDocumento)
+    {
+        _logger.LogInformation("Reindexando vectores por cambio de fuentes del documento {IdDocumento}.", idDocumento);
+
+        // Un documento no activo no debe recuperar vectores (p. ej. reasignar
+        // fuentes a un archivado no le devuelve el acceso).
+        var documento = await _documentoRepository.GetByIdAsync(idDocumento);
+        if (documento == null || documento.Estado != EstadoDocumento.Activo)
+        {
+            _logger.LogInformation("Reindexación omitida: documento {IdDocumento} no está Activo.", idDocumento);
+            return;
+        }
+
+        var versiones = await _versionRepository.GetByDocumentoIdAsync(idDocumento) ?? Enumerable.Empty<DocumentoVersion>();
+        foreach (var version in versiones.Where(v => v.Activo))
+        {
+            var procesado = await _procesamientoRepository.GetByVersionIdAsync(version.IdVersion);
+            if (procesado == null || procesado.Estado != EstadoProcesamiento.Procesado)
+                continue;
+
+            try
+            {
+                await ReindexarDocumentoAsync(procesado.IdDocumentoProcesado);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al reindexar documento procesado {Id} tras cambio de fuentes del documento {IdDocumento}.",
+                    procesado.IdDocumentoProcesado, idDocumento);
+            }
+        }
     }
 
     public async Task ReindexarCategoriaAsync(int categoriaId)
@@ -337,12 +429,40 @@ public class IndexacionService : IIndexacionService
         {
             try
             {
+                // No resucitar vectores de documentos no activos.
+                if (!await EsDocumentoActivoAsync(procesado.IdVersionDocumento))
+                {
+                    _logger.LogInformation("Reindexación total omite procesado {Id}: documento no Activo.", procesado.IdDocumentoProcesado);
+                    continue;
+                }
+
                 await ReindexarDocumentoAsync(procesado.IdDocumentoProcesado);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al reindexar documento procesado {Id}.", procesado.IdDocumentoProcesado);
             }
+        }
+    }
+
+    private async Task<bool> EsDocumentoActivoAsync(int versionId)
+    {
+        var version = await _versionRepository.GetByIdAsync(versionId);
+        if (version == null) return false;
+        var documento = await _documentoRepository.GetByIdAsync(version.IdDocumento);
+        return documento != null && documento.Estado == EstadoDocumento.Activo;
+    }
+
+    private async Task LimpiarVectoresVersionesAnterioresAsync(int? idDocumento, int versionActualId)
+    {
+        if (!idDocumento.HasValue) return;
+        var versiones = await _versionRepository.GetByDocumentoIdAsync(idDocumento.Value) ?? Enumerable.Empty<DocumentoVersion>();
+        foreach (var v in versiones.Where(v => v.IdVersion != versionActualId && !v.Activo))
+        {
+            var proc = await _procesamientoRepository.GetByVersionIdAsync(v.IdVersion);
+            if (proc == null) continue;
+            _logger.LogInformation("Eliminando vectores de versión anterior (procesado {Id}).", proc.IdDocumentoProcesado);
+            await EliminarIndiceAsync(proc.IdDocumentoProcesado);
         }
     }
 

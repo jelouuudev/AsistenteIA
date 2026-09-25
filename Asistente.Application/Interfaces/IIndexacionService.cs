@@ -14,6 +14,7 @@ public interface IIndexacionService
     Task<DashboardIndexacionDto> ObtenerDashboardAsync();
     Task IndexarDocumentoAsync(int documentoProcesadoId);
     Task ReindexarDocumentoAsync(int documentoProcesadoId);
+    Task ReindexarPorDocumentoAsync(int idDocumento);
     Task ReindexarCategoriaAsync(int categoriaId);
     Task ReindexarTodosAsync();
     Task EliminarIndiceAsync(int documentoProcesadoId);

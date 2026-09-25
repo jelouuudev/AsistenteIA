@@ -1,51 +1,173 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Domain.Interfaces;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace Asistente.Application.Services.Herramientas;
 
 /// <summary>
-/// Herramienta que genera un reporte estructurado en Markdown a partir de datos previamente
-/// obtenidos de otras herramientas. Parámetro 'titulo' y 'datos' (texto o JSON).
+/// Herramienta que genera un reporte estructurado en PDF a partir de datos previamente obtenidos.
+/// Genera el archivo PDF en el sistema de archivos y devuelve la ruta + contenido markdown.
 /// </summary>
 public class ReportTool : ITool
 {
     public string Name => "ReportTool";
-    public string Description =>
-        "Genera un reporte estructurado en Markdown a partir de datos previamente obtenidos. " +
-        "Parámetros: 'titulo' y 'datos' (texto o tabla). Úsala para presentar resultados de otras herramientas de forma ordenada.";
+    public string Description => "Genera un reporte estructurado en PDF a partir de datos previamente obtenidos.";
     public string Categoria => "Reporte";
 
-    public Task<ToolExecutionResult> ExecuteAsync(ToolExecutionRequest request, CancellationToken cancellationToken = default)
+    private readonly IFileStorageService _fileStorage;
+
+    public ReportTool(IFileStorageService fileStorage)
+    {
+        _fileStorage = fileStorage;
+    }
+
+    public async Task<ToolExecutionResult> ExecuteAsync(ToolExecutionRequest request, CancellationToken cancellationToken = default)
     {
         var titulo = ObtenerString(request.Parametros, "titulo", "Reporte generado");
         var datos = ObtenerString(request.Parametros, "datos",
             request.Parametros.TryGetValue("contenido", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty);
 
         if (string.IsNullOrWhiteSpace(datos))
-            return Task.FromResult(new ToolExecutionResult { Exitoso = false, Error = "No se proporcionaron datos para el reporte." });
+            return new ToolExecutionResult { Exitoso = false, Error = "No se proporcionaron datos para el reporte." };
 
-        // ETAPA 19.1: generar resumen ejecutivo con métricas agrupadas (conteos, totales, conclusión).
-        var resumen = GenerarResumenEjecutivo(datos, titulo);
+        // No generar un PDF "exitoso" cuando el paso previo no trajo información real.
+        // DocumentSearchTool devuelve Exitoso=true con un texto marcador cuando RAG viene
+        // vacío (el documento recién procesado aún no está indexado en Chroma), y SqlQueryTool
+        // devuelve un marcador cuando la tabla no tiene filas. En ambos casos generar el PDF
+        // solo produce un reporte basura ("Reporte: X / No se encontró...").
+        if (EsMarcadorSinDatos(datos))
+            return new ToolExecutionResult { Exitoso = false, Error = "Sin datos para el reporte: el paso previo no devolvió información (búsqueda documental sin resultados o consulta SQL sin filas). No se generó PDF." };
 
-        return Task.FromResult(new ToolExecutionResult
+        try
         {
-            Exitoso = true,
-            Contenido = resumen,
-            Metadatos = new() { ["titulo"] = titulo, ["lineas"] = datos.Split('\n').Length }
-        });
+            // Generar contenido markdown
+            var markdownContent = GenerarResumenEjecutivo(datos, titulo);
+
+            // Generar PDF real con QuestPDF
+            var pdfBytes = GenerarPdfDesdeMarkdown(markdownContent, titulo);
+
+            // Guardar PDF en el sistema de archivos
+            var sufijo = Guid.NewGuid().ToString("N")[..8];
+            var nombreArchivo = $"reporte_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{sufijo}.pdf";
+            using var pdfStream = new MemoryStream(pdfBytes);
+            var pdfPath = await _fileStorage.SaveFileAsync(pdfStream, nombreArchivo, "reportes");
+
+            return new ToolExecutionResult
+            {
+                Exitoso = true,
+                Contenido = markdownContent,
+                Metadatos = new()
+                {
+                    ["titulo"] = titulo,
+                    ["lineas"] = datos.Split('\n').Length,
+                    ["pdfGenerado"] = true,
+                    ["tamanoPdf"] = pdfBytes.Length,
+                    ["rutaPdf"] = pdfPath,
+                    ["nombreArchivo"] = nombreArchivo
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            return new ToolExecutionResult { Exitoso = false, Error = $"Error al generar PDF: {ex.Message}" };
+        }
     }
 
-    /// <summary>
-    /// ETAPA 19.2: genera un resumen ejecutivo con métricas agrupadas a partir de datos en formato
-    /// "Campo: Valor | Campo2: Valor2". Detecta campos repetidos (ej. Estado), suma los valores
-    /// numéricos (Cantidad/ValorTotal) y produce una conclusión con porcentajes reales.
-    /// </summary>
-    private static string GenerarResumenEjecutivo(string datos, string titulo)
+    private byte[] GenerarPdfDesdeMarkdown(string markdown, string titulo)
     {
+        var document = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(2, Unit.Centimetre);
+                page.PageColor(Colors.White);
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Arial"));
+
+                page.Header()
+                    .AlignRight()
+                    .Text($"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}")
+                    .FontSize(8).FontColor(Colors.Grey.Medium);
+
+                page.Content()
+                    .Column(column =>
+                    {
+                        foreach (var linea in markdown.Split('\n'))
+                        {
+                            var trimmed = linea.Trim();
+
+                            if (trimmed.StartsWith("# "))
+                            {
+                                column.Item().Text(trimmed[2..]).FontSize(20).Bold().FontColor(Colors.Blue.Darken2);
+                            }
+                            else if (trimmed.StartsWith("## "))
+                            {
+                                column.Item().PaddingTop(8).Text(trimmed[3..]).FontSize(16).Bold();
+                            }
+                            else if (trimmed.StartsWith("| "))
+                            {
+                                var celdas = trimmed.Split('|').Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToList();
+                                if (celdas.Count > 0 && !celdas.All(c => c.Replace("-", "").Trim().Length == 0))
+                                {
+                                    column.Item().PaddingTop(4).Row(row =>
+                                    {
+                                        foreach (var celda in celdas)
+                                        {
+                                            row.RelativeItem().Border(1).Padding(5).Text(celda).FontSize(10);
+                                        }
+                                    });
+                                }
+                            }
+                            else if (trimmed.StartsWith("- "))
+                            {
+                                column.Item().PaddingTop(2).Row(row =>
+                                {
+                                    row.AutoItem().Text("• ");
+                                    row.RelativeItem().Text(trimmed[2..]);
+                                });
+                            }
+                            else if (trimmed.StartsWith("**") && trimmed.EndsWith("**"))
+                            {
+                                column.Item().PaddingTop(4).Text(trimmed.TrimStart('*').TrimEnd('*')).Bold();
+                            }
+                            else if (!string.IsNullOrEmpty(trimmed))
+                            {
+                                column.Item().PaddingTop(2).Text(trimmed);
+                            }
+                        }
+                    });
+
+                page.Footer()
+                    .AlignCenter()
+                    .Text(x =>
+                    {
+                        x.Span("Página ").FontSize(8);
+                        x.CurrentPageNumber().FontSize(8);
+                        x.Span(" de ").FontSize(8);
+                        x.TotalPages().FontSize(8);
+                    });
+            });
+        });
+
+        using var stream = new MemoryStream();
+        document.GeneratePdf(stream);
+        return stream.ToArray();
+    }
+
+    internal static string GenerarResumenEjecutivo(string datos, string titulo)
+    {
+        // Contenido documental (prosa de RAG): NO es tabla. Renderizarlo como extracto
+        // con sus fuentes. Antes caía al parser SQL y fabricaba "Total de registros" + celdas.
+        if (EsContenidoDocumental(datos))
+            return FormatearResumenDocumental(datos, titulo);
+
         var lineas = datos.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(l => l.Trim())
             .Where(l => !l.StartsWith("Datos obtenidos") && !l.StartsWith("==") && l.Contains(':'))
@@ -53,16 +175,15 @@ public class ReportTool : ITool
 
         if (lineas.Count == 0)
         {
-            var sbSimple = new System.Text.StringBuilder();
-            sbSimple.AppendLine($"# {titulo}");
-            sbSimple.AppendLine();
-            sbSimple.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
-            sbSimple.AppendLine();
-            sbSimple.AppendLine(datos);
-            return sbSimple.ToString();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# {titulo}");
+            sb.AppendLine();
+            sb.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
+            sb.AppendLine();
+            sb.AppendLine(datos);
+            return sb.ToString();
         }
 
-        // Parsear filas en diccionarios.
         var filas = new List<Dictionary<string, string>>();
         foreach (var linea in lineas)
         {
@@ -79,26 +200,25 @@ public class ReportTool : ITool
 
         if (filas.Count == 0)
         {
-            var sbSimple = new System.Text.StringBuilder();
-            sbSimple.AppendLine($"# {titulo}");
-            sbSimple.AppendLine();
-            sbSimple.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
-            sbSimple.AppendLine();
-            sbSimple.AppendLine(datos);
-            return sbSimple.ToString();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# {titulo}");
+            sb.AppendLine();
+            sb.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
+            sb.AppendLine();
+            sb.AppendLine(datos);
+            return sb.ToString();
         }
 
-        // Detectar campo de agrupación (Estado/Tipo/Categoría).
         var campoAgrupacion = filas[0].Keys.FirstOrDefault(k =>
             k.Equals("Estado", StringComparison.OrdinalIgnoreCase) ||
             k.Equals("Tipo", StringComparison.OrdinalIgnoreCase) ||
             k.Equals("Categoria", StringComparison.OrdinalIgnoreCase) ||
             k.Equals("Categoría", StringComparison.OrdinalIgnoreCase));
 
-        // Detectar campo numérico para sumar (Cantidad/ValorTotal/Precio/Monto).
         var campoCantidad = filas[0].Keys.FirstOrDefault(k =>
             k.Equals("Cantidad", StringComparison.OrdinalIgnoreCase) ||
             k.Equals("Total", StringComparison.OrdinalIgnoreCase));
+
         var campoValor = filas[0].Keys.FirstOrDefault(k =>
             k.Equals("ValorTotal", StringComparison.OrdinalIgnoreCase) ||
             k.Equals("Precio", StringComparison.OrdinalIgnoreCase) ||
@@ -111,7 +231,6 @@ public class ReportTool : ITool
         reporte.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
         reporte.AppendLine();
 
-        // Calcular totales reales sumando los campos numéricos.
         double totalGeneral = 0;
         double totalValor = 0;
         foreach (var fila in filas)
@@ -122,7 +241,6 @@ public class ReportTool : ITool
                 totalValor += vVal;
         }
 
-        // Si no hay campo numérico, contar filas.
         if (totalGeneral == 0) totalGeneral = filas.Count;
 
         reporte.AppendLine($"**Total de registros:** {totalGeneral:F0}");
@@ -130,17 +248,16 @@ public class ReportTool : ITool
             reporte.AppendLine($"**Valor total:** {totalValor:N2}");
         reporte.AppendLine();
 
-        // Tabla de detalle.
-        reporte.AppendLine("| Campo | Valor |");
-        reporte.AppendLine("| --- | --- |");
+        // Tabla de detalle genérica: columnas reales de las filas (sirve para
+        // cualquier tabla), una fila por registro. Antes emparejaba Estado->ID.
+        var columnas = filas.SelectMany(f => f.Keys).Distinct().ToList();
+        reporte.AppendLine("| " + string.Join(" | ", columnas) + " |");
+        reporte.AppendLine("| " + string.Join(" | ", columnas.Select(_ => "---")) + " |");
         foreach (var fila in filas)
         {
-            var campo = campoAgrupacion != null && fila.TryGetValue(campoAgrupacion, out var g) ? g : fila.Keys.First();
-            var valor = campoCantidad != null && fila.TryGetValue(campoCantidad, out var c) ? c : fila.Values.First().ToString();
-            reporte.AppendLine($"| {campo} | {valor} |");
+            reporte.AppendLine("| " + string.Join(" | ", columnas.Select(c => fila.TryGetValue(c, out var v) ? v : "")) + " |");
         }
 
-        // Conclusión con porcentajes reales.
         if (campoAgrupacion != null)
         {
             var grupos = filas.GroupBy(f => campoAgrupacion != null && f.TryGetValue(campoAgrupacion, out var g) ? g : "");
@@ -155,7 +272,7 @@ public class ReportTool : ITool
                     if (campoCantidad != null && f.TryGetValue(campoCantidad, out var cStr) && double.TryParse(cStr.Replace(",", ""), out var cVal))
                         cantidadGrupo += cVal;
                     else
-                        cantidadGrupo += 1; // fallback: contar fila
+                        cantidadGrupo += 1;
                 }
                 var porcentaje = totalGeneral > 0 ? (cantidadGrupo * 100.0 / totalGeneral) : 0;
                 reporte.AppendLine($"- {grupo.Key}: {cantidadGrupo:F0} ({porcentaje:F0}%)");
@@ -170,5 +287,58 @@ public class ReportTool : ITool
         if (parametros.TryGetValue(clave, out var valor) && valor != null)
             return valor.ToString() ?? fallback;
         return fallback;
+    }
+
+    /// <summary>
+    /// Detecta prosa documental de RAG (fragmentos con [Fuente:] o formato de contexto).
+    /// No debe pasar por el parser tabular de SQL.
+    /// </summary>
+    private static bool EsContenidoDocumental(string datos)
+        => datos.Contains("[Fuente:")
+            || datos.Contains("CONTEXTO DOCUMENTAL")
+            || datos.Contains("Según **");
+
+    /// <summary>
+    /// Formatea fragmentos documentales como extracto legible: título, fecha, conteo de
+    /// fuentes y el contenido en prosa. Limpia marcadores internos de RAG (===, INSTRUCCIÓN).
+    /// </summary>
+    private static string FormatearResumenDocumental(string datos, string titulo)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"# {titulo}");
+        sb.AppendLine();
+        sb.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
+        sb.AppendLine();
+
+        var nFuentes = System.Text.RegularExpressions.Regex.Matches(datos, @"\[Fuente:").Count;
+        if (nFuentes > 0)
+            sb.AppendLine($"**Fuentes consultadas:** {nFuentes}");
+        sb.AppendLine();
+
+        foreach (var raw in datos.Split('\n'))
+        {
+            var linea = raw.TrimEnd();
+            var t = linea.Trim();
+            if (t.StartsWith("===") || t.StartsWith("INSTRUCCIÓN:")
+                || t.StartsWith("- Copia") || t.StartsWith("- NO")
+                || t.StartsWith("- Cita") || t.StartsWith("- Mantén")
+                || t.StartsWith("Sección detectada:")) continue;
+            if (t == "---") { sb.AppendLine(); continue; }
+            sb.AppendLine(linea);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Detecta los textos marcadores que las herramientas de consulta devuelven cuando no
+    /// hay información real. Comparación insensible a mayúsculas y espacios para no dejar
+    /// pasar variantes con saltos de línea o prefijos del workflow.
+    /// </summary>
+    private static bool EsMarcadorSinDatos(string datos)
+    {        var normalizado = datos.Trim().ToLowerInvariant();
+        return normalizado.Contains("no se encontró información documental relevante para la consulta")
+            || normalizado.Contains("la consulta no devolvió registros")
+            || normalizado.Contains("la consulta se ejecutó correctamente pero no devolvió registros");
     }
 }

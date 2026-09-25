@@ -58,6 +58,7 @@ public class ConfiguracionOrchestratorDto
     public int TiempoMaximoEjecucionMs { get; set; }
     public int MaxEjecucionesSimultaneas { get; set; }
     public bool RequiereAutorizacion { get; set; }
+    public int MaxTiempoTotalMs { get; set; } = 120000;
 }
 
 public class HerramientaUsoChatDto

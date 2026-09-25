@@ -72,6 +72,11 @@ public class AsignarDocumentoAFuenteRequest
     public int IdFuente { get; set; }
 }
 
+public class AsignarFuentesDocumentoApiRequest
+{
+    public List<int> Fuentes { get; set; } = new();
+}
+
 public class DashboardFuentesDto
 {
     public int TotalFuentes { get; set; }

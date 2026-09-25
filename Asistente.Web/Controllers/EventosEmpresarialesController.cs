@@ -77,11 +77,15 @@ public class EventosEmpresarialesController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Disparar(string codigo)
+    public async Task<IActionResult> Disparar(string codigo, string? contextoJson)
     {
         try
         {
-            await _apiService.DispararEventoAsync(new DispararEventoRequest { CodigoEvento = codigo }, GetCurrentUserId(), GetIp());
+            await _apiService.DispararEventoAsync(new DispararEventoRequest
+            {
+                CodigoEvento = codigo,
+                ContextoJson = string.IsNullOrWhiteSpace(contextoJson) ? null : contextoJson.Trim()
+            }, GetCurrentUserId(), GetIp());
             TempData["SuccessMessage"] = $"Evento '{codigo}' disparado. Revise el monitoreo de eventos.";
         }
         catch (Exception ex) { TempData["ErrorMessage"] = ex.Message; }

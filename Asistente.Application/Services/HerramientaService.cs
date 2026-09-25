@@ -210,7 +210,8 @@ public class HerramientaService : IHerramientaService
             Prioridad = config?.Prioridad ?? 100,
             TiempoMaximoEjecucionMs = config?.TiempoMaximoEjecucionMs ?? 30000,
             MaxEjecucionesSimultaneas = config?.MaxEjecucionesSimultaneas ?? 4,
-            RequiereAutorizacion = config?.RequiereAutorizacion ?? true
+            RequiereAutorizacion = config?.RequiereAutorizacion ?? true,
+            MaxTiempoTotalMs = config?.MaxTiempoTotalMs ?? 120000
         };
     }
 
@@ -222,7 +223,8 @@ public class HerramientaService : IHerramientaService
             Prioridad = config.Prioridad,
             TiempoMaximoEjecucionMs = config.TiempoMaximoEjecucionMs,
             MaxEjecucionesSimultaneas = config.MaxEjecucionesSimultaneas,
-            RequiereAutorizacion = config.RequiereAutorizacion
+            RequiereAutorizacion = config.RequiereAutorizacion,
+            MaxTiempoTotalMs = config.MaxTiempoTotalMs > 0 ? config.MaxTiempoTotalMs : 120000
         });
         await _unitOfWork.SaveChangesAsync();
     }

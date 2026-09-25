@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -66,4 +67,17 @@ public interface IEventoMotorService
 public interface IMonitoreoEventosService
 {
     Task<MonitoreoEventosDto> ObtenerPanelAsync(CancellationToken ct = default);
+}
+
+public interface IDisparadorEventoService
+{
+    Task<IEnumerable<DisparadorEventoDto>> ObtenerTodosAsync(CancellationToken ct = default);
+    Task<DisparadorEventoDto?> ObtenerPorIdAsync(int id, CancellationToken ct = default);
+    Task<IEnumerable<DisparadorEventoDto>> ObtenerActivosAsync(CancellationToken ct = default);
+    Task<DisparadorEventoDto> CrearAsync(CrearDisparadorEventoRequest request, CancellationToken ct = default);
+    Task ActualizarAsync(int id, ActualizarDisparadorEventoRequest request, CancellationToken ct = default);
+    Task CambiarEstadoAsync(int id, bool activo, CancellationToken ct = default);
+    Task EliminarAsync(int id, CancellationToken ct = default);
+    Task MarcarEjecucionAsync(int id, DateTime? proxima, CancellationToken ct = default);
+    Task<IEnumerable<DisparadorEventoDto>> ObtenerDisparadoresDocumentoAsync(int? idCategoria, string? codigoDocumento, CancellationToken ct = default);
 }

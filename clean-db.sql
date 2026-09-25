@@ -1,0 +1,18 @@
+DELETE FROM [AgentExecutionTrace];
+DELETE FROM [AgentExecutionStep];
+DELETE FROM [AgentExecution];
+DELETE FROM [PlanExecutionLog];
+DELETE FROM [PlanStep];
+DELETE FROM [ApprovalDecision];
+DELETE FROM [ApprovalAssignee];
+DELETE FROM [ApprovalRequest];
+DELETE FROM [Plan];
+DBCC CHECKIDENT ([Plan], RESEED, 0);
+DBCC CHECKIDENT ([PlanStep], RESEED, 0);
+DBCC CHECKIDENT ([PlanExecutionLog], RESEED, 0);
+DBCC CHECKIDENT ([ApprovalRequest], RESEED, 0);
+DBCC CHECKIDENT ([ApprovalAssignee], RESEED, 0);
+DBCC CHECKIDENT ([ApprovalDecision], RESEED, 0);
+DBCC CHECKIDENT ([AgentExecution], RESEED, 0);
+DBCC CHECKIDENT ([AgentExecutionStep], RESEED, 0);
+DBCC CHECKIDENT ([AgentExecutionTrace], RESEED, 0);

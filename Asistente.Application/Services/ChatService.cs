@@ -182,10 +182,31 @@ public class ChatService : IChatService
             {
                 var asistentes = (await _asistenteService.ObtenerTodosAsync()).ToList();
                 var asistenteDefecto = asistentes
-                    .FirstOrDefault(a => a.Estado == EstadoAgente.Publicado && a.Activo)
-                    ?? asistentes.FirstOrDefault(a => a.Activo);
+                    .Where(a => a.Estado == EstadoAgente.Activo && a.Activo)
+                    .FirstOrDefault() ?? asistentes.Where(a => a.Activo).FirstOrDefault();
                 if (asistenteDefecto != null)
                     idAsistenteEfectivo = asistenteDefecto.IdAsistente;
+            }
+
+            // Validar que haya un agente activo disponible
+            if (!idAsistenteEfectivo.HasValue)
+            {
+                response.Exitoso = false;
+                response.Respuesta = "No hay agentes activos disponibles. Por favor, activa un asistente para continuar.";
+                response.IdConversacion = conversacion.IdConversacion;
+                return response;
+            }
+
+            // Validar que el agente solicitado esté activo
+            {
+                var asistenteSolicitado = await _asistenteService.ObtenerPorIdAsync(idAsistenteEfectivo.Value);
+                if (asistenteSolicitado != null && !asistenteSolicitado.Activo)
+                {
+                    response.Exitoso = false;
+                    response.Respuesta = "El asistente seleccionado está desactivado. Por favor, activa el asistente o selecciona otro.";
+                    response.IdConversacion = conversacion.IdConversacion;
+                    return response;
+                }
             }
 
             // === ETAPA 16 - Regla 1: validar autorización del agente antes de interactuar ===
@@ -207,6 +228,15 @@ public class ChatService : IChatService
                 asistente = await _asistenteService.ObtenerPorIdAsync(idAsistenteEfectivo.Value);
                 if (asistente != null)
                 {
+                    // Validar que el agente esté activo
+                    if (!asistente.Activo)
+                    {
+                        response.Exitoso = false;
+                        response.Respuesta = "El asistente seleccionado está desactivado. Por favor, activa el asistente o selecciona otro.";
+                        response.IdConversacion = conversacion.IdConversacion;
+                        return response;
+                    }
+
                     var restriccion = VerificarRestricciones(asistente.Restricciones, request.Mensaje);
                     if (restriccion != null)
                     {
@@ -236,10 +266,18 @@ public class ChatService : IChatService
 
             if (idAsistenteEfectivo.HasValue)
             {
-                var herramientasDisp = await _toolOrchestrator.ObtenerHerramientasParaAsistenteAsync(idAsistenteEfectivo.Value, cancellationToken);
+                // Sin autorización requerida, el asistente puede usar cualquier herramienta activa.
+                var requiereAuthHerramientas = await _toolOrchestrator.RequiereAutorizacionAsync(cancellationToken);
+                var herramientasDisp = requiereAuthHerramientas
+                    ? await _toolOrchestrator.ObtenerHerramientasParaAsistenteAsync(idAsistenteEfectivo.Value, cancellationToken)
+                    : await _toolOrchestrator.DescubrirHerramientasAsync(cancellationToken);
                 // ETAPA 16 (Opción B): el RAG solo se activa si el agente tiene 'DocumentSearchTool'.
                 // Así desactivar la herramienta en la UI corta realmente el acceso a la base de conocimiento.
-                tieneBusquedaDocumental = herramientasDisp.Any(h => h.Codigo.Equals("DocumentSearchTool", StringComparison.OrdinalIgnoreCase));
+                // Además respeta el motor global: con el motor deshabilitado no hay recuperación documental.
+                // Alcance "datos" (nodo SQL orquestado): omite RAG aunque tenga la herramienta.
+                var motorHabilitado = await _toolOrchestrator.MotorHabilitadoAsync(cancellationToken);
+                var soloDatos = string.Equals(request.Alcance, "datos", StringComparison.OrdinalIgnoreCase);
+                tieneBusquedaDocumental = !soloDatos && motorHabilitado && herramientasDisp.Any(h => h.Codigo.Equals("DocumentSearchTool", StringComparison.OrdinalIgnoreCase));
                 if (herramientasDisp.Any())
                 {
                     usoOrquestador = true;
@@ -248,9 +286,13 @@ public class ChatService : IChatService
                     // Si el mensaje es claramente una consulta de datos (activos, clientes,
                     // registros, lista, total, cuántos, etc.) y existe SqlQueryTool disponible,
                     // forzar su ejecución contra la BD para garantizar datos REALES.
-                    var decision = DecidirConsultaDatosDeterminista(request.Mensaje, herramientasDisp)
-                        ?? await _decisionHerramientaService.DecidirAsync(request.Mensaje, herramientasDisp, cancellationToken);
-                    if (decision.RequiereHerramienta && !string.IsNullOrEmpty(decision.CodigoHerramienta))
+                    // Disparadores deterministas de utilidades (calculadora, fecha/hora).
+                    // Van ANTES del de SQL porque "cuánto es 2+2" contiene "cuanto".
+                    DecisionHerramienta? decision = DecidirHerramientaUtilitaria(request.Mensaje, herramientasDisp);
+                    // Alcance "documental" (nodo RAG orquestado): no disparar SQL determinista.
+                    if (!string.Equals(request.Alcance, "documental", StringComparison.OrdinalIgnoreCase))
+                        decision ??= DecidirConsultaDatosDeterminista(request.Mensaje, herramientasDisp);
+                    if (decision?.RequiereHerramienta == true && !string.IsNullOrEmpty(decision.CodigoHerramienta))
                     {
                         var resultado = await _toolOrchestrator.EjecutarAsync(new ToolExecutionRequest
                         {
@@ -285,23 +327,67 @@ public class ChatService : IChatService
                     {
                     // ¿El usuario está confirmando un flujo pendiente?
                     var confirmando = EsMensajeConfirmacion(request.Mensaje);
+                    var cancelando = EsMensajeCancelacion(request.Mensaje);
                     WorkflowExecutionResult? ejecucionWorkflow = null;
 
                     if (confirmando)
                     {
                         ejecucionWorkflow = await _workflowEngine.ReanudarPendienteConfirmacionAsync(request.UsuarioPropietario, idAsistenteEfectivo, cancellationToken);
                     }
+                    else if (cancelando)
+                    {
+                        // Cancelar flujo pendiente y NO pasar el mensaje al LLM
+                        var cancelResult = await _workflowEngine.CancelarPendienteConfirmacionAsync(request.UsuarioPropietario, cancellationToken);
+                        if (cancelResult != null)
+                        {
+                            response.Exitoso = true;
+                            response.IdConversacion = conversacion.IdConversacion;
+                            response.Respuesta = "✋ Flujo de trabajo cancelado.";
+                            response.WorkflowsUsados = new List<WorkflowUsoChatDto>
+                            {
+                                new WorkflowUsoChatDto
+                                {
+                                    IdWorkflow = cancelResult.IdEjecucion,
+                                    Nombre = "Cancelado",
+                                    Estado = "Cancelado",
+                                    TiempoMs = 0,
+                                    Mensaje = "Cancelado por el usuario"
+                                }
+                            };
+                            return response;
+                        }
+                        // Si no había flujo pendiente, continuar normalmente
+                    }
                     else
                     {
-                    // La decisión de workflow es determinista (keywords) y usa el DbContext.
-                    // Se ejecuta en un scope AISLADO para no competir por el DbContext compartido
-                    // del ChatService con las consultas RAG/SQL que corren a continuación
-                    // (evita "A second operation was started on this context instance").
-                    var decisionWf = await DecidirWorkflowAisladoAsync(request.Mensaje, cancellationToken);
-                    if (decisionWf.RequiereWorkflow && decisionWf.IdWorkflow.HasValue)
-                    {
-                        ejecucionWorkflow = await _workflowEngine.EjecutarAsync(decisionWf.IdWorkflow.Value, request.UsuarioPropietario, idAsistenteEfectivo, confirmado: false, cancellationToken: cancellationToken);
-                    }
+                        // Disparo determinista por frases (sin LLM: evita los timeouts que
+                        // motivaron desactivar la decisión anterior). Si falla, se sigue
+                        // con el flujo normal del chat.
+                        try
+                        {
+                            var flujo = await _workflowEngine.BuscarPorDisparadorAsync(request.Mensaje, cancellationToken);
+                            if (flujo != null)
+                            {
+                                // El workflow debe estar asignado al asistente; si no, se ignora
+                                // el disparo y se sigue con el chat normal (mundo cerrado).
+                                var authWf = await _autorizacionService.VerificarWorkflowAsistenteAsync(
+                                    idAsistenteEfectivo.Value, flujo.IdWorkflow, cancellationToken);
+                                if (!authWf.Permitido)
+                                {
+                                    _logger.LogInformation("Workflow '{Nombre}' no autorizado para asistente {Asistente}; se omite disparo.", flujo.Nombre, idAsistenteEfectivo.Value);
+                                }
+                                else
+                                {
+                                    ejecucionWorkflow = await _workflowEngine.EjecutarAsync(
+                                        flujo.IdWorkflow, request.UsuarioPropietario, idAsistenteEfectivo,
+                                        confirmado: false, cancellationToken: cancellationToken);
+                                }
+                            }
+                        }
+                        catch (Exception exWf)
+                        {
+                            _logger.LogWarning(exWf, "Disparo de workflow por frase falló; se continúa con el chat normal.");
+                        }
                     }
 
                     if (ejecucionWorkflow != null)
@@ -402,7 +488,8 @@ public class ChatService : IChatService
                         "- Si el resultado tiene varias filas, resume la información en una tabla o lista clara.\n" +
                         "- Sé preciso y no inventes datos que no estén en el resultado.";
 
-                    temperature = 0.3;
+                    // La temperatura del asistente manda; 0.3 solo si no esta configurada.
+                    temperature ??= 0.3;
                 }
             }
         }
@@ -422,16 +509,20 @@ public class ChatService : IChatService
                 "- Si no encuentras información directamente relacionada, responde con lo que tengas disponible en el contexto.\n" +
                 "- Sé claro, conciso y profesional en tu respuesta.";
 
-            temperature = 0.3;
+            // La temperatura del asistente manda; 0.3 solo si no esta configurada.
+            temperature ??= 0.3;
         }
         else if (contextoHerramientas == null)
         {
             _logger.LogInformation("Sin contexto documental para la pregunta: {Pregunta}", request.Mensaje);
 
             systemPrompt = systemPrompt.TrimEnd() + "\n\n" +
-                "No hay documentos procesados que contengan información relevante para esta pregunta.\n" +
-                "Puedes responder con tu conocimiento general si es apropiado, o indicar que no tienes información específica sobre el tema.";
-            temperature = 0.7;
+                "No se encontraron documentos en las fuentes de conocimiento asignadas a este asistente que contengan información relevante para esta pregunta.\n" +
+                "Debes indicar al usuario que no tienes información sobre este tema en tus fuentes de conocimiento asignadas.\n" +
+                "NO respondas con conocimiento general ni inventes información.\n" +
+                "Si el usuario necesita información sobre este tema, sugierele consultar con un asistente que tenga acceso a las fuentes correspondientes.";
+            // La temperatura del asistente manda; 0.7 solo si no esta configurada.
+            temperature ??= 0.7;
         }
 
         if (contextoHerramientas != null)
@@ -454,7 +545,8 @@ public class ChatService : IChatService
                 "- Prohibido inventar estados. Si el resultado dice 'ACTIVO', tu respuesta debe decir 'ACTIVO'.\n" +
                 "- No digas que la información no está disponible; el resultado ya la contiene.\n" +
                 "- Si la herramienta no encontró información, díselo claramente citando el resultado.";
-            temperature = 0.0;
+            // La temperatura del asistente manda (transcripcion literal con 0.0 solo si no esta configurada).
+            temperature ??= 0.0;
 
             // SHORT-CIRCUIT ANTI-ALUCINACIÓN: si la herramienta devolvió datos y NO hay un flujo
             // pendiente de confirmación, presentamos el dato REAL directamente desde el código.
@@ -513,7 +605,8 @@ public class ChatService : IChatService
                 "- Si te piden un valor total, busca 'ValorTotal' o suma los valores del contexto.\n" +
                 "- Copia los valores EXACTAMENTE como aparecen (ej. si dice '15000.00', escribe '15000.00', no '61500.00').\n" +
                 "- Prohibido inventar. Si un dato no está en el contexto, indícalo.";
-            temperature = 0.1;
+            // La temperatura del asistente manda; 0.1 solo si no esta configurada.
+            temperature ??= 0.1;
         }
 
         var historialOllama = PrepararHistorialOllama(contexto);
@@ -533,7 +626,11 @@ public class ChatService : IChatService
             }
 
             var inicio = DateTime.UtcNow;
-            using var ollamaCts = new CancellationTokenSource(TimeSpan.FromSeconds(3600));
+            // El timeout del asistente manda (por defecto 3600s si no esta configurado o es invalido).
+            var timeoutSegundos = asistente?.TimeoutSegundos is > 0 ? asistente.TimeoutSegundos.Value : 3600;
+            _logger.LogInformation("Parametros LLM: temp={Temp}, maxTokens={MaxTokens}, timeout={Timeout}s, modelo={Modelo}.",
+                temperature, maxTokens, timeoutSegundos, modelOverride ?? "(defecto)");
+            using var ollamaCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSegundos));
             var respuestaIa = await _ollamaService.SendMessageAsync(historialOllama, modelOverride, systemPrompt, temperature, maxTokens, ollamaCts.Token);
 
             if (string.IsNullOrEmpty(respuestaIa))
@@ -642,7 +739,9 @@ public class ChatService : IChatService
         {
             _logger.LogError(ex, "Timeout al procesar mensaje.");
             response.Exitoso = false;
-            response.Error = ex.Message;
+            // Mensaje con el corte real: el texto original traía los segundos globales
+            // de Ollama, pero quien gobernó fue el timeout del asistente (ver log "Parametros LLM").
+            response.Error = "El servicio no respondió dentro del tiempo configurado para este asistente (Timeout). Aumenta su Timeout o intenta con una pregunta más corta.";
         }
         catch (InvalidOperationException ex)
         {
@@ -893,6 +992,15 @@ public class ChatService : IChatService
                || m.Contains("confirmar") || m.Contains("acepto");
     }
 
+    private static bool EsMensajeCancelacion(string mensaje)
+    {
+        if (string.IsNullOrWhiteSpace(mensaje)) return false;
+        var m = mensaje.ToLowerInvariant().Trim();
+        return m == "cancelar" || m == "cancela" || m == "cancelo" || m == "detener" || m == "deten"
+               || m == "para" || m == "parar" || m == "no" || m == "abortar" || m == "aborto"
+               || m.Contains("cancelar") || m.Contains("detener");
+    }
+
     private static List<Mensaje> PrepararHistorialOllama(ContextoConstruido contexto)
     {
         var historial = new List<Mensaje>();
@@ -944,6 +1052,74 @@ public class ChatService : IChatService
             CodigoHerramienta = "SqlQueryTool",
             Parametros = new Dictionary<string, object> { { "pregunta", mensaje } }
         };
+    }
+
+    /// <summary>
+    /// Disparador determinista para herramientas de utilidad (CalculatorTool, DateTimeTool).
+    /// Solo se activa si el asistente tiene la herramienta asignada. La calculadora exige
+    /// una expresión puramente matemática (evita robar consultas SQL como "total de pedidos").
+    /// </summary>
+    private static DecisionHerramienta? DecidirHerramientaUtilitaria(
+        string mensaje, IEnumerable<Herramienta> herramientasDisponibles)
+    {
+        if (string.IsNullOrWhiteSpace(mensaje)) return null;
+        var m = mensaje.Trim().ToLowerInvariant();
+
+        if (herramientasDisponibles.Any(h => h.Codigo.Equals("DateTimeTool", StringComparison.OrdinalIgnoreCase)))
+        {
+            var patronesHora = new[]
+            {
+                "qué hora es", "que hora es", "hora actual", "dame la hora", "dime la hora",
+                "qué fecha es", "que fecha es", "fecha de hoy", "fecha actual",
+                "qué día es", "que dia es", "día de hoy", "dia de hoy",
+                "qué día somos", "que dia somos", "qué hora tienes", "que hora tienes"
+            };
+            var limpio = m.Trim('?', '¿', ' ', '.', '!');
+            if (patronesHora.Any(p => m.Contains(p)) || limpio is "hora" or "fecha" or "fecha y hora")
+                return new DecisionHerramienta { RequiereHerramienta = true, CodigoHerramienta = "DateTimeTool", Parametros = new() };
+        }
+
+        if (herramientasDisponibles.Any(h => h.Codigo.Equals("CalculatorTool", StringComparison.OrdinalIgnoreCase)))
+        {
+            var expr = ExtraerExpresionMatematica(mensaje);
+            if (!string.IsNullOrEmpty(expr))
+                return new DecisionHerramienta
+                {
+                    RequiereHerramienta = true,
+                    CodigoHerramienta = "CalculatorTool",
+                    Parametros = new Dictionary<string, object?> { ["expresion"] = expr }
+                };
+        }
+
+        return null;
+    }
+
+    private static string? ExtraerExpresionMatematica(string mensaje)
+    {
+        var texto = mensaje.Trim().TrimEnd('?', '¿', ' ', '.', '!', '=').Trim();
+        var lower = texto.ToLowerInvariant();
+
+        // "cuánto es <expr>", "calcula <expr>", etc.
+        var prefijos = new[] { "cuánto es", "cuanto es", "calcula", "calcular", "resuelve", "resolver", "multiplica", "divide", "suma", "resta" };
+        foreach (var p in prefijos)
+        {
+            if (lower.StartsWith(p))
+            {
+                var resto = texto[p.Length..].Trim().TrimStart(':', ' ', '-', '=').TrimEnd('?', ' ', '.', '!', '=').Trim();
+                return EsExpresionMatematica(resto) ? resto : null;
+            }
+        }
+
+        return EsExpresionMatematica(texto) ? texto : null;
+    }
+
+    private static bool EsExpresionMatematica(string texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return false;
+        var t = texto.Trim();
+        if (!t.Any(char.IsDigit)) return false;
+        if (!t.Any(c => c is '+' or '-' or '*' or '/' or '(' or ')')) return false;
+        return t.All(c => char.IsDigit(c) || char.IsWhiteSpace(c) || "+-*/%()., ".Contains(c));
     }
 
 }

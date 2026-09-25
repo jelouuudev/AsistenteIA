@@ -1,12 +1,14 @@
 @model Asistente.Shared.CrearReglaEventoRequest
 @{
     ViewData["Title"] = "Nueva Regla de Automatización";
-    var eventos = (List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>)ViewBag.Eventos;
-    var workflows = (List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>)ViewBag.Workflows;
+    var eventos = (List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>)(ViewBag.Eventos ?? new List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>());
+    var workflows = (List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>)(ViewBag.Workflows ?? new List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>());
+    var eventoFijo = Model.IdEvento != 0;
+    var nombreEventoFijo = (string?)ViewBag.NombreEventoFijo;
 }
 
 <div class="mb-4">
-    <a asp-action="Index" class="text-secondary text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver a reglas</a>
+    <a asp-action="Index" asp-route-idEvento="@(Model.IdEvento != 0 ? Model.IdEvento : null)" class="text-secondary text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver a reglas</a>
 </div>
 
 <h4 class="text-white fw-bold mb-1"><i class="bi bi-link-45deg me-2" style="color:#818cf8;"></i>Configurar Regla de Automatización</h4>
@@ -18,9 +20,22 @@
             @Html.AntiForgeryToken()
             <div class="mb-3">
                 <label class="form-label text-white-50 small">Evento origen *</label>
-                <select asp-for="IdEvento" class="form-select bg-dark text-light border-secondary" asp-items="@eventos">
-                    <option value="0">Seleccione un evento...</option>
-                </select>
+                @if (eventoFijo)
+                {
+                    <input type="hidden" asp-for="IdEvento" />
+                    <input type="hidden" name="idEventoFijo" value="@Model.IdEvento" />
+                    <div class="form-control bg-dark border-secondary" style="border-radius:8px;">
+                        <i class="bi bi-lightning-charge-fill me-1" style="color:#818cf8;"></i><span class="text-white">@(nombreEventoFijo ?? $"Evento {Model.IdEvento}")</span>
+                        <span class="badge ms-2" style="background:rgba(129,140,248,0.15);color:#a5b4fc;border-radius:20px;">fijo</span>
+                    </div>
+                    <div class="form-text text-secondary">Viene del evento seleccionado: la regla quedará asociada a él.</div>
+                }
+                else
+                {
+                    <select asp-for="IdEvento" class="form-select bg-dark text-light border-secondary" asp-items="@eventos">
+                        <option value="0">Seleccione un evento...</option>
+                    </select>
+                }
                 <span asp-validation-for="IdEvento" class="text-danger small"></span>
             </div>
             <div class="mb-3">
@@ -46,7 +61,7 @@
             </div>
             <div class="d-flex gap-2">
                 <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Guardar Regla</button>
-                <a asp-action="Index" class="btn btn-outline-light">Cancelar</a>
+                <a asp-action="Index" asp-route-idEvento="@(Model.IdEvento != 0 ? Model.IdEvento : null)" class="btn btn-outline-light">Cancelar</a>
             </div>
         </form>
     </div>

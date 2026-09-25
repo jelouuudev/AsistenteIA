@@ -86,14 +86,9 @@
                             <div class="form-text text-secondary" style="font-size:0.7rem;">Cantidad maxima de fuentes a consultar simultaneamente.</div>
                         </div>
                         <div class="mb-3">
-                            <div class="form-check form-switch mt-2">
-                                <input class="form-check-input" type="checkbox" name="UsarDocumentosHistoricos" value="true" id="chkHistoricos"
-                                       @(Model.UsarDocumentosHistoricos ? "checked" : "") />
-                                <label class="form-check-label text-secondary small" for="chkHistoricos">
-                                    Incluir documentos historicos/obsoletos
-                                </label>
-                                <div class="form-text text-secondary" style="font-size:0.7rem;">Si esta activo, se consideraran versiones antiguas de documentos.</div>
-                            </div>
+                            @* Switch de historicos oculto: el sistema elimina vectores de versiones
+                               anteriores al reversionar, no hay historicos que incluir. *@
+                            <input type="hidden" name="UsarDocumentosHistoricos" value="false" />
                         </div>
                     </div>
                 </div>

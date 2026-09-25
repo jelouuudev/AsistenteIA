@@ -74,6 +74,9 @@ public class RecuperacionService : IRecuperacionService
         var maxChunks = config?.MaxChunks ?? MaxChunksDefault;
         var maxCaracteres = config?.MaxCaracteresContexto ?? MaxCaracteresContextoDefault;
         var minScore = (float)(config?.MinScore ?? MinScoreDefault);
+        // Tope de fragmentos al modelo (antes no se leia: parametro muerto).
+        var maxChunksAlModeloSinFuentes = Math.Max(1, config?.MaxChunksAlModelo ?? 10);
+        maxChunks = Math.Min(maxChunks, maxChunksAlModeloSinFuentes);
 
         try
         {
@@ -386,6 +389,11 @@ public class RecuperacionService : IRecuperacionService
         var maxChunks = config?.MaxChunks ?? MaxChunksDefault;
         var maxCaracteres = config?.MaxCaracteresContexto ?? MaxCaracteresContextoDefault;
         var minScore = (float)(config?.MinScore ?? MinScoreDefault);
+        // Parametros de contexto: antes se guardaban pero ningun servicio los leia.
+        var maxChunksAlModelo = Math.Max(1, config?.MaxChunksAlModelo ?? 10);
+        var maxReferencias = Math.Max(1, config?.MaxReferencias ?? 10);
+        _logger.LogInformation("Config RAG contexto: MaxChunks={MaxChunks}, MaxChunksAlModelo={MaxChunksAlModelo}, MaxReferencias={MaxReferencias}, MaxCaracteres={MaxCaracteres}.",
+            maxChunks, maxChunksAlModelo, maxReferencias, maxCaracteres);
 
         VectorSearchFilter? filtro = null;
         Dictionary<int, string>? nombresFuentes = null;
@@ -401,9 +409,23 @@ public class RecuperacionService : IRecuperacionService
                 return (string.Empty, new List<ReferenciaDocumentalDto>());
             }
 
-            var idsFuentes = fuentesAutorizadas.Select(f => f.IdFuente).ToList();
-            nombresFuentes = fuentesAutorizadas.ToDictionary(f => f.IdFuente, f => f.Nombre);
-            prioridadesFuentes = fuentesAutorizadas.ToDictionary(f => f.IdFuente, f => f.Prioridad);
+            // Tope de fuentes simultaneas (antes no se leia: parametro muerto).
+            // Se consultan las de mayor Prioridad primero.
+            var maxFuentes = Math.Max(1, config?.MaxFuentesConsultadas ?? 5);
+            var fuentesAConsultar = fuentesAutorizadas
+                .OrderByDescending(f => f.Prioridad)
+                .Take(maxFuentes)
+                .ToList();
+            if (fuentesAConsultar.Count < fuentesAutorizadas.Count())
+                _logger.LogInformation("Fuentes recortadas: {Total} -> {Tope} (MaxFuentesConsultadas), por prioridad.",
+                    fuentesAutorizadas.Count(), fuentesAConsultar.Count);
+
+            // Documentos historicos/obsoletos segun configuracion (antes hardcoded false).
+            var incluirHistoricos = config?.UsarDocumentosHistoricos ?? false;
+
+            var idsFuentes = fuentesAConsultar.Select(f => f.IdFuente).ToList();
+            nombresFuentes = fuentesAConsultar.ToDictionary(f => f.IdFuente, f => f.Nombre);
+            prioridadesFuentes = fuentesAConsultar.ToDictionary(f => f.IdFuente, f => f.Prioridad);
 
             foreach (var idFuente in idsFuentes)
             {
@@ -414,11 +436,11 @@ public class RecuperacionService : IRecuperacionService
             filtro = new VectorSearchFilter
             {
                 IdsFuentes = idsFuentes,
-                IncluirHistoricos = false
+                IncluirHistoricos = incluirHistoricos
             };
 
-            _logger.LogInformation("Asistente {IdAsistente}: {CountFuentes} fuentes autorizadas, {CountDocs} documentos procesados disponibles.",
-                idAsistente.Value, idsFuentes.Count, documentosProcesadosIds.Count);
+            _logger.LogInformation("Asistente {IdAsistente}: {CountFuentes} fuentes autorizadas, {CountDocs} documentos procesados disponibles. IncluirHistoricos={IncluirHistoricos}.",
+                idAsistente.Value, idsFuentes.Count, documentosProcesadosIds.Count, incluirHistoricos);
         }
 
         try
@@ -460,10 +482,33 @@ public class RecuperacionService : IRecuperacionService
                     resultadosSemanticos = await _vectorStore.SearchWithFilterAsync(pregunta, maxChunks * 3, filtro);
                 }
                 
+                // SEGURIDAD (fix desasignacion): si el filtro por fuentes no devolvio
+                // resultados, NO se hace fallback sin filtro. El fallback exponia
+                // documentos de fuentes no asignadas al asistente.
                 if (!resultadosSemanticos.Any())
                 {
-                    _logger.LogWarning("Filtro por fuentes no devolvio resultados. Intentando busqueda sin filtro.");
-                    resultadosSemanticos = await _vectorStore.SearchAsync(pregunta, maxChunks * 2);
+                    _logger.LogWarning("Filtro por fuentes no devolvio resultados para la pregunta. Sin fallback sin filtro por seguridad.");
+                    resultadosSemanticos = Enumerable.Empty<VectorSearchResult>();
+                }
+                else if (documentosProcesadosIds.Count > 0)
+                {
+                    // SEGURIDAD: solo documentos asignados a las fuentes del asistente.
+                    // Los vectores en Chroma pueden conservar metadata de una fuente
+                    // anterior (huerfanos tras desasignar); la lista autorizada desde
+                    // SQL es la que manda.
+                    var autorizados = new HashSet<int>(documentosProcesadosIds.Distinct());
+                    var totalAntes = resultadosSemanticos.Count();
+                    resultadosSemanticos = resultadosSemanticos
+                        .Where(r => autorizados.Contains(r.DocumentoProcesadoId))
+                        .ToList();
+                    var totalDespues = resultadosSemanticos.Count();
+                    if (totalDespues < totalAntes)
+                        _logger.LogInformation("Filtro de asignacion documento-fuente excluyo {Excluidos} resultado(s) no autorizado(s).", totalAntes - totalDespues);
+                }
+                else
+                {
+                    // El asistente tiene fuentes pero ningun documento asignado a ellas.
+                    resultadosSemanticos = Enumerable.Empty<VectorSearchResult>();
                 }
             }
             else
@@ -516,6 +561,13 @@ public class RecuperacionService : IRecuperacionService
                             if (filtrados.Count >= maxChunks * 2)
                                 break;
 
+                            // FIX MinScore: el relleno lexico tambien debe respetar el umbral.
+                            // Escala comparable a la semantica: almacenado 0-1, mostrado (x+1)/2.
+                            var scoreAlmacenado = (float)Math.Min(1.0, score / 20.0);
+                            var scoreNormalizadoLex = Math.Clamp((scoreAlmacenado + 1f) / 2f, 0f, 1f);
+                            if (scoreNormalizadoLex < minScore)
+                                continue;
+
                             var clave = (chunk.IdDocumentoProcesado, chunk.Orden);
                             if (usados.Contains(clave))
                             {
@@ -523,9 +575,8 @@ public class RecuperacionService : IRecuperacionService
                                     r.DocumentoProcesadoId == clave.Item1 && r.Orden == clave.Item2);
                                 if (existente != null)
                                 {
-                                    var scoreNorm = (float)Math.Min(1.0, score / 20.0);
-                                    if (scoreNorm > existente.Score)
-                                        existente.Score = scoreNorm;
+                                    if (scoreAlmacenado > existente.Score)
+                                        existente.Score = scoreAlmacenado;
                                 }
                                 continue;
                             }
@@ -537,7 +588,7 @@ public class RecuperacionService : IRecuperacionService
                                 DocumentoProcesadoId = chunk.IdDocumentoProcesado,
                                 ChunkId = chunk.IdChunk,
                                 Text = chunk.Texto,
-                                Score = (float)Math.Min(1.0, score / 20.0),
+                                Score = scoreAlmacenado,
                                 Orden = chunk.Orden,
                                 PaginaInicial = chunk.PaginaInicial,
                                 PaginaFinal = chunk.PaginaFinal,
@@ -593,9 +644,15 @@ public class RecuperacionService : IRecuperacionService
 
                 if (filtrados.Count > 0)
                 {
+                    // Seguridad: ningun chunk (semantico, lexico o vecino expandido)
+                    // puede quedar por debajo del MinScore configurado.
+                    // Tope de fragmentos al modelo (MaxChunksAlModelo).
                     filtrados = filtrados
+                        .Where(r => Math.Clamp((r.Score + 1f) / 2f, 0f, 1f) >= minScore)
                         .OrderByDescending(r => r.Score)
+                        .Take(maxChunksAlModelo)
                         .ToList();
+                    _logger.LogInformation("Contexto al modelo: {Count} chunks (tope MaxChunksAlModelo={Tope}).", filtrados.Count, maxChunksAlModelo);
 
                     var sb = new StringBuilder();
                     var caracteres = 0;
@@ -640,6 +697,13 @@ public class RecuperacionService : IRecuperacionService
                         _logger.LogInformation("Chunk recuperado (Score: {Score:0.00}): {Texto}",
                             resultado.Score,
                             texto.Length > 200 ? texto.Substring(0, 200) + "..." : texto);
+                    }
+
+                    // Tope de referencias mostradas al usuario (MaxReferencias).
+                    if (referencias.Count > maxReferencias)
+                    {
+                        _logger.LogInformation("Referencias recortadas: {Total} -> {Tope} (MaxReferencias).", referencias.Count, maxReferencias);
+                        referencias = referencias.Take(maxReferencias).ToList();
                     }
 
                     return (sb.ToString().Trim(), referencias);

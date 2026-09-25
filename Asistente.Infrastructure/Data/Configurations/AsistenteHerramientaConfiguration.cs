@@ -12,7 +12,7 @@ public class AsistenteHerramientaConfiguration : IEntityTypeConfiguration<Asiste
         builder.HasKey(ah => new { ah.IdAsistente, ah.IdHerramienta });
 
         builder.HasOne(ah => ah.Asistente)
-            .WithMany()
+            .WithMany(a => a.AsistentesHerramientas)
             .HasForeignKey(ah => ah.IdAsistente)
             .OnDelete(DeleteBehavior.Cascade);
 

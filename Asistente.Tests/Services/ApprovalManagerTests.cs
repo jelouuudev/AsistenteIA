@@ -123,7 +123,9 @@ public class ApprovalManagerTests
         var mgr = Manager();
         var res = await mgr.DecidirAsync(13, 1, "Aprobar", "ok", CancellationToken.None);
 
-        Assert.Equal(EstadoAprobacion.EnRevision, res.Estado);
+        // Con aprobadores pendientes, la cadena secuencial queda en Delegado
+        // (ApprovalManager.DecidirAsync: si hay pendientes, no evalúa unanimidad aún).
+        Assert.Equal(EstadoAprobacion.Delegado, res.Estado);
     }
 
     [Fact]
@@ -146,6 +148,23 @@ public class ApprovalManagerTests
         Assert.Equal(EstadoAprobacion.Delegado, res.Estado);
         Assert.Contains(res.Asignados, a => a.IdUsuario == 9 && a.Estado == "Pendiente");
         Assert.All(res.Asignados.Where(a => a.IdUsuario == 1), a => Assert.Equal("Delegado", a.Estado));
+    }
+
+    [Fact]
+    public async Task Delegar_SinUsuarioDestino_Rechaza_YNoModifica()
+    {
+        var sol = new ApprovalRequest { IdApproval = 16, IdPlan = 106, Solicitante = 5, Estado = EstadoAprobacion.Pendiente };
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 16, IdUsuario = 1, Estado = "Pendiente", EsPrincipal = true });
+        _req.Setup(x => x.GetByIdAsync(16, It.IsAny<CancellationToken>())).ReturnsAsync(sol);
+
+        var mgr = Manager();
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => mgr.DelegarAsync(16, 1, 0, "sin destino", CancellationToken.None));
+
+        // No se marca como delegado ni se agrega asignado fantasma.
+        Assert.Equal(EstadoAprobacion.Pendiente, sol.Estado);
+        Assert.All(sol.Asignados, a => Assert.Equal("Pendiente", a.Estado));
+        _asg.Verify(x => x.AddAsync(It.IsAny<ApprovalAssignee>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

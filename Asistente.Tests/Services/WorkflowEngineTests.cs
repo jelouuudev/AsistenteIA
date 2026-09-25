@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Asistente.Application.Interfaces;
 using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
+using Asistente.Shared;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -50,9 +52,13 @@ public class WorkflowEngineTests
         _pasoEjecRepo.Setup(r => r.GetByEjecucionAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<WorkflowPasoEjecucion>());
 
+        var authMock = new Mock<IAutorizacionService>();
+        authMock.Setup(a => a.VerificarWorkflowAsistenteAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResultadoAutorizacion { Permitido = true });
+
         return new WorkflowEngine(_workflowRepo.Object, _ejecRepo.Object,
             _pasoEjecRepo.Object, _configRepo.Object, _orchestrator.Object,
-            _uow.Object, new Mock<ILogger<WorkflowEngine>>().Object);
+            _uow.Object, authMock.Object, new Mock<ILogger<WorkflowEngine>>().Object);
     }
 
     private Workflow ConstruirWorkflow(List<WorkflowPaso> pasos)
@@ -196,5 +202,30 @@ public class WorkflowEngineTests
 
         Assert.True(res.RequiereConfirmacion);
         Assert.False(pasoSensibleEjecutado);
+    }
+
+    [Fact]
+    public async Task ContextoInicial_SustituyePlaceholdersDeEventoEnParametros()
+    {
+        var pasos = new List<WorkflowPaso>
+        {
+            Paso(1, "DocumentSearchTool", parametros: "{\"consulta\": \"{{Nombre}}\"}")
+        };
+        ConstruirWorkflow(pasos);
+        Dictionary<string, object?>? capturados = null;
+        _orchestrator.Setup(o => o.EjecutarAsync(It.IsAny<ToolExecutionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ToolExecutionRequest r, CancellationToken _) =>
+            {
+                capturados = r.Parametros;
+                return new ToolExecutionResult { Exitoso = true, Contenido = "ok" };
+            });
+
+        var engine = CrearEngine();
+        var ctx = new Dictionary<string, string> { ["Nombre"] = "Manual de Producto", ["Codigo"] = "MAN-001" };
+        var res = await engine.EjecutarAsync(1, 1, null, true, null, CancellationToken.None, contextoInicial: ctx);
+
+        Assert.True(res.Exitoso);
+        Assert.NotNull(capturados);
+        Assert.Equal("Manual de Producto", capturados!["consulta"]?.ToString());
     }
 }

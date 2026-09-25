@@ -47,22 +47,16 @@ public class AsistentesController : Controller
         {
             var asistentes = (await _apiService.GetAsistentesAsync(GetCurrentUserId(), GetIpAddress())).ToList();
 
+            var activos = asistentes.Count(a => a.Estado == Asistente.Domain.Entities.EstadoAgente.Activo);
+            var inactivos = asistentes.Count(a => a.Estado == Asistente.Domain.Entities.EstadoAgente.Inactivo);
             var total = asistentes.Count;
-            var publicados = asistentes.Count(a => a.Estado == Asistente.Domain.Entities.EstadoAgente.Publicado);
-            var enPrueba = asistentes.Count(a => a.Estado == Asistente.Domain.Entities.EstadoAgente.Prueba);
-            var borradores = asistentes.Count(a => a.Estado == Asistente.Domain.Entities.EstadoAgente.Borrador);
-            var deshabilitados = asistentes.Count(a => a.Estado == Asistente.Domain.Entities.EstadoAgente.Deshabilitado);
-            var activos = asistentes.Count(a => a.Activo);
             var totalVersiones = asistentes.Sum(a => a.Version);
 
             ViewBag.Estadisticas = new
             {
                 Total = total,
-                Publicados = publicados,
-                EnPrueba = enPrueba,
-                Borradores = borradores,
-                Deshabilitados = deshabilitados,
                 Activos = activos,
+                Inactivos = inactivos,
                 TotalVersiones = totalVersiones
             };
 
@@ -303,6 +297,22 @@ public class AsistentesController : Controller
         {
             await _apiService.CrearVersionAgenteAsync(id, GetCurrentUserId(), GetIpAddress());
             TempData["SuccessMessage"] = "Nueva versión del agente creada.";
+        }
+        catch (Exception ex)
+        {
+            TempData["ErrorMessage"] = $"Error: {ex.Message}";
+        }
+        return RedirectToAction(nameof(Versiones), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RestaurarVersion(int id, int idVersion)
+    {
+        try
+        {
+            await _apiService.RestaurarVersionAgenteAsync(id, idVersion, GetCurrentUserId(), GetIpAddress());
+            TempData["SuccessMessage"] = $"Versión restaurada exitosamente.";
         }
         catch (Exception ex)
         {

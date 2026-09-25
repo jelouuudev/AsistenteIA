@@ -20,13 +20,13 @@ public class AsistenteService
     }
 
     // ---- Consulta ----
-    public async Task<AsistenteDto?> ObtenerPorIdAsync(int id)
+    public virtual async Task<AsistenteDto?> ObtenerPorIdAsync(int id)
     {
         var a = await _asistenteRepository.GetByIdAsync(id);
         return a == null ? null : MapToDto(a);
     }
 
-    public async Task<IEnumerable<AsistenteDto>> ObtenerTodosAsync()
+    public virtual async Task<IEnumerable<AsistenteDto>> ObtenerTodosAsync()
         => (await _asistenteRepository.GetAllAsync()).Select(MapToDto);
 
     public async Task<IEnumerable<AsistenteDto>> ObtenerAutorizadosParaUsuarioAsync(int idUsuario, IEnumerable<int> roles)
@@ -52,7 +52,7 @@ public class AsistenteService
             FormatoRespuesta = r.FormatoRespuesta,
             Restricciones = r.Restricciones,
             MensajeBienvenida = r.MensajeBienvenida,
-            Estado = EstadoAgente.Borrador,
+            Estado = EstadoAgente.Activo,
             Version = 1,
             Activo = true,
             FechaCreacion = DateTime.UtcNow
@@ -73,7 +73,7 @@ public class AsistenteService
             ModeloIA = a.ModeloIA,
             Temperatura = a.Temperatura,
             MaxTokens = a.MaxTokens,
-            Estado = EstadoAgente.Borrador,
+            Estado = EstadoAgente.Activo,
             FechaCreacion = DateTime.UtcNow,
             Configuracion = SerializarConfig(a)
         });
@@ -151,16 +151,17 @@ public class AsistenteService
         var a = (Domain.Entities.Asistente?)(await _asistenteRepository.GetByIdAsync(id))
             ?? throw new KeyNotFoundException("Agente no encontrado.");
         a.Estado = estado;
+        a.Activo = (estado == EstadoAgente.Activo);
         a.FechaModificacion = DateTime.UtcNow;
         _asistenteRepository.Update(a);
         await _unitOfWork.SaveChangesAsync();
     }
 
-    public async Task PublicarAsync(int id, string? usuario = null)
-        => await CambiarEstadoAsync(id, EstadoAgente.Publicado, usuario);
+    public async Task ActivarAsync(int id, string? usuario = null)
+        => await CambiarEstadoAsync(id, EstadoAgente.Activo, usuario);
 
-    public async Task EnviarAPruebaAsync(int id, string? usuario = null)
-        => await CambiarEstadoAsync(id, EstadoAgente.Prueba, usuario);
+    public async Task DesactivarAsync(int id, string? usuario = null)
+        => await CambiarEstadoAsync(id, EstadoAgente.Inactivo, usuario);
 
     // ---- Versionamiento (Actividad 8/17) ----
     public async Task<AgenteVersionDto> CrearVersionAsync(int id, string? usuario = null)
@@ -188,10 +189,55 @@ public class AsistenteService
             IdAgenteVersion = v.IdAgenteVersion,
             IdAsistente = a.IdAsistente,
             Version = v.Version,
+            PromptSistema = v.PromptSistema,
             ModeloIA = v.ModeloIA,
             Estado = v.Estado,
             FechaCreacion = v.FechaCreacion,
             UsuarioCreacion = v.UsuarioCreacion
+        };
+    }
+
+    public async Task<AgenteVersionDto> RestaurarVersionAsync(int idAgente, int idVersion, string? usuario = null)
+    {
+        var a = (Domain.Entities.Asistente?)(await _asistenteRepository.GetByIdAsync(idAgente))
+            ?? throw new KeyNotFoundException("Agente no encontrado.");
+        var version = a.Versiones.FirstOrDefault(v => v.IdAgenteVersion == idVersion)
+            ?? throw new KeyNotFoundException("Versión no encontrada.");
+
+        a.PromptSistema = version.PromptSistema;
+        a.ModeloIA = version.ModeloIA;
+        a.Temperatura = version.Temperatura;
+        a.MaxTokens = version.MaxTokens;
+        a.Estado = version.Estado;
+        a.Version += 1;
+        a.FechaModificacion = DateTime.UtcNow;
+
+        var nuevaVersion = new AgenteVersion
+        {
+            Version = a.Version,
+            PromptSistema = a.PromptSistema,
+            ModeloIA = a.ModeloIA,
+            Temperatura = a.Temperatura,
+            MaxTokens = a.MaxTokens,
+            Estado = a.Estado,
+            FechaCreacion = DateTime.UtcNow,
+            UsuarioCreacion = usuario,
+            Configuracion = version.Configuracion
+        };
+        a.Versiones.Add(nuevaVersion);
+        _asistenteRepository.Update(a);
+        await _unitOfWork.SaveChangesAsync();
+
+        return new AgenteVersionDto
+        {
+            IdAgenteVersion = nuevaVersion.IdAgenteVersion,
+            IdAsistente = a.IdAsistente,
+            Version = nuevaVersion.Version,
+            PromptSistema = nuevaVersion.PromptSistema,
+            ModeloIA = nuevaVersion.ModeloIA,
+            Estado = nuevaVersion.Estado,
+            FechaCreacion = nuevaVersion.FechaCreacion,
+            UsuarioCreacion = nuevaVersion.UsuarioCreacion
         };
     }
 
@@ -233,7 +279,7 @@ public class AsistenteService
             FormatoRespuesta = orig.FormatoRespuesta,
             Restricciones = orig.Restricciones,
             MensajeBienvenida = orig.MensajeBienvenida,
-            Estado = EstadoAgente.Borrador,
+            Estado = EstadoAgente.Activo,
             Version = 1,
             Activo = true,
             FechaCreacion = DateTime.UtcNow

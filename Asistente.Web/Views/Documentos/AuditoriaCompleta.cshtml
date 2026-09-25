@@ -30,7 +30,7 @@
                     @foreach (var aud in Model)
                     {
                         <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);transition:background-color 0.2s;">
-                            <td class="py-3 px-4 text-secondary small" style="background:transparent;">@aud.FechaAccion.ToLocalTime().ToString("g")</td>
+                            <td class="py-3 px-4 text-secondary small" style="background:transparent;">@aud.FechaAccion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                             <td class="py-3" style="background:transparent;">
                                 <div class="fw-bold text-white">@aud.DocumentoNombre</div>
                                 <span class="text-secondary small">Doc ID: @aud.IdDocumento</span>

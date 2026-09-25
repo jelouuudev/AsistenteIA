@@ -27,7 +27,7 @@ public class PromptSistemaService
         return MapToDto(prompt);
     }
 
-    public async Task<PromptSistemaDto?> ObtenerActivoPorAsistenteIdAsync(int asistenteId)
+    public virtual async Task<PromptSistemaDto?> ObtenerActivoPorAsistenteIdAsync(int asistenteId)
     {
         var prompt = await _promptRepository.GetActiveByAsistenteIdAsync(asistenteId);
         if (prompt == null) return null;
@@ -48,14 +48,13 @@ public class PromptSistemaService
 
     public async Task<PromptSistemaDto> CrearPromptAsync(CrearPromptRequest request)
     {
-        var nextVersion = await _promptRepository.GetNextVersionAsync(request.IdAsistente);
-
+        // Cada prompt nuevo empieza en versión 1 (independiente de otros prompts)
         var prompt = new PromptSistema
         {
             IdAsistente = request.IdAsistente,
             Nombre = request.Nombre,
             Contenido = request.Contenido,
-            Version = nextVersion,
+            Version = 1,
             Activo = true,
             FechaCreacion = DateTime.UtcNow,
             UsuarioCreacion = request.UsuarioCreacion
@@ -87,8 +86,18 @@ public class PromptSistemaService
         if (prompt == null)
             throw new KeyNotFoundException("Prompt no encontrado.");
 
-        // Guardar versión anterior en historial
-        var historial = new HistorialPrompt
+        // Incrementar versión (basado en el historial de ESTE prompt)
+        var maxVersionHistorial = await _historialRepository.GetMaxVersionAsync(prompt.IdPrompt);
+        prompt.Version = maxVersionHistorial + 1;
+        prompt.Nombre = request.Nombre;
+        prompt.Contenido = request.Contenido;
+        prompt.Activo = request.Activo;
+
+        _promptRepository.Update(prompt);
+        await _unitOfWork.SaveChangesAsync();
+
+        // Guardar nueva versión en historial (solo una entrada)
+        var nuevoHistorial = new HistorialPrompt
         {
             IdPrompt = prompt.IdPrompt,
             Version = prompt.Version,
@@ -98,18 +107,32 @@ public class PromptSistemaService
             MotivoCambio = request.MotivoCambio ?? "Modificación"
         };
 
-        await _historialRepository.AddAsync(historial);
+        await _historialRepository.AddAsync(nuevoHistorial);
+        await _unitOfWork.SaveChangesAsync();
 
-        // Actualizar prompt con nueva versión
-        prompt.Nombre = request.Nombre;
-        prompt.Contenido = request.Contenido;
-        prompt.Activo = request.Activo;
-        prompt.Version = await _promptRepository.GetNextVersionAsync(prompt.IdAsistente);
+        return MapToDto(prompt);
+    }
+
+    public async Task<PromptSistemaDto> RestaurarDesdeHistorialAsync(int promptId, int historialId, string usuarioModificacion)
+    {
+        var prompt = await _promptRepository.GetByIdAsync(promptId);
+        if (prompt == null)
+            throw new KeyNotFoundException("Prompt no encontrado.");
+
+        var historial = await _historialRepository.GetByIdAsync(historialId);
+        if (historial == null || historial.IdPrompt != promptId)
+            throw new KeyNotFoundException("Registro de historial no encontrado.");
+
+        // Incrementar versión
+        var maxVersionHistorial = await _historialRepository.GetMaxVersionAsync(prompt.IdPrompt);
+        prompt.Version = maxVersionHistorial + 1;
+        prompt.Contenido = historial.Contenido;
+        prompt.Nombre = historial.Prompt?.Nombre ?? prompt.Nombre;
 
         _promptRepository.Update(prompt);
         await _unitOfWork.SaveChangesAsync();
 
-        // Guardar nueva versión en historial
+        // Guardar restauración en historial
         var nuevoHistorial = new HistorialPrompt
         {
             IdPrompt = prompt.IdPrompt,
@@ -117,7 +140,7 @@ public class PromptSistemaService
             Contenido = prompt.Contenido,
             FechaModificacion = DateTime.UtcNow,
             UsuarioModificacion = usuarioModificacion,
-            MotivoCambio = request.MotivoCambio ?? "Nueva versión"
+            MotivoCambio = $"Restauración de v{historial.Version}"
         };
 
         await _historialRepository.AddAsync(nuevoHistorial);

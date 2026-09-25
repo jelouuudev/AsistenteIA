@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IRecuperacionService, RecuperacionService>();
         services.AddScoped<IRagService, RagService>();
         services.AddScoped<IIndexacionService, IndexacionService>();
+        services.AddScoped<IEmbeddingConfiguracionService, EmbeddingConfiguracionService>();
         services.AddScoped<EmbeddingService>();
         services.AddScoped<IFuenteConocimientoService, FuenteConocimientoService>();
         services.AddScoped<IConfiguracionRAGService, ConfiguracionRAGService>();
@@ -85,6 +86,7 @@ public static class DependencyInjection
         services.AddScoped<ITareaProgramadaService, TareaProgramadaService>();
         services.AddScoped<IConfiguracionEventoMotorService, ConfiguracionEventoMotorService>();
         services.AddScoped<IEventoMotorService, EventoMotorService>();
+        services.AddScoped<IDisparadorEventoService, DisparadorEventoService>();
         services.AddScoped<IMonitoreoEventosService, MonitoreoEventosService>();
 
         // Seguridad, Gobierno, Auditoría y Observabilidad (ETAPA 14)

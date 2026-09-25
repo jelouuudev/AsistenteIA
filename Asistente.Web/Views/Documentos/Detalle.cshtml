@@ -92,7 +92,7 @@
                 </div>
                 <div class="mb-3">
                     <span class="text-secondary small d-block">Fecha de Registro</span>
-                    <span class="text-light fw-medium">@Model.FechaRegistro.ToLocalTime().ToString("g")</span>
+                    <span class="text-light fw-medium">@Model.FechaRegistro.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
                 </div>
                 <div class="mb-3">
                     <span class="text-secondary small d-block">Procesamiento de IA</span>
@@ -151,7 +151,7 @@
                                         <div class="text-secondary font-monospace" style="font-size:0.68rem;" title="SHA-256 Hash">SHA256: @ver.HashArchivo</div>
                                     </td>
                                     <td class="py-3 text-secondary small" style="background:transparent;">@ver.TamanoFormateado</td>
-                                    <td class="py-3 text-secondary small" style="background:transparent;">@ver.FechaCarga.ToLocalTime().ToString("g")</td>
+                                    <td class="py-3 text-secondary small" style="background:transparent;">@ver.FechaCarga.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                                     <td class="py-3 text-end" style="background:transparent;">
                                         <a asp-action="Descargar" asp-route-id="@Model.IdDocumento" asp-route-versionId="@ver.IdVersion"
                                            class="btn btn-sm btn-icon" style="background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
@@ -195,7 +195,7 @@
                             @foreach (var aud in auditorias)
                             {
                                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);font-size:0.8rem;">
-                                    <td class="py-2 text-secondary" style="background:transparent;">@aud.FechaAccion.ToLocalTime().ToString("g")</td>
+                                    <td class="py-2 text-secondary" style="background:transparent;">@aud.FechaAccion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                                     <td class="py-2" style="background:transparent;">
                                         <span class="badge text-uppercase" style="background:rgba(99,102,241,0.12);color:#a5b4fc;font-size:0.65rem;border:1px solid rgba(99,102,241,0.2);">
                                             @aud.Accion

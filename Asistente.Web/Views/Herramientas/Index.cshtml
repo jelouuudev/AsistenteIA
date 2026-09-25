@@ -8,10 +8,7 @@
         <h4 class="text-white fw-bold mb-0"><i class="bi bi-tools me-2" style="color:#818cf8;"></i>Motor de Herramientas (Tool Orchestrator)</h4>
         <p class="text-secondary small mb-0">Registro, activación y monitoreo de herramientas empresariales desacopladas</p>
     </div>
-    <a asp-action="Crear" class="btn btn-sm px-4 py-2 fw-semibold"
-       style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;color:white;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.3);">
-        <i class="bi bi-plus-lg me-1"></i> Nueva Herramienta
-    </a>
+    <span class="text-secondary small fst-italic" title="El registro de herramientas es técnico: requiere implementar ITool en código (ETAPA 11).">El registro es técnico (código + DI + BD)</span>
 </div>
 
 @if (TempData["SuccessMessage"] != null)
