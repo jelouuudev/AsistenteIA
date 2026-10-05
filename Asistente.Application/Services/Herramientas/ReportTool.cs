@@ -654,6 +654,10 @@ public class ReportTool : ITool
 
         var hayTotales = EscribirTotales(sb, datos);
 
+        // Filas de SQL: en el resumen mixto se perdían y el informe quedaba sin los
+        // datos que el resto del plan debe analizar (#1012/#1013).
+        EscribirTablaDatos(sb, datos);
+
         // Desglose por grupo: líneas "- Col = Grupo: ..." ya calculadas en SQL.
         var desglose = datos.Split('\n')
             .Select(l => l.Trim())
@@ -717,6 +721,48 @@ public class ReportTool : ITool
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Escribe las filas tabulares de SQL como tabla Markdown. Se usa en el resumen
+    /// MIXTO (SQL + RAG): ese camino escribía totales y prosa documental pero se
+    /// comía las filas, así que en el caso de aceptación el PDF salía sin los datos
+    /// que luego debía analizar el paso de riesgos (plan #1012/#1013: el clasificador
+    /// receives solo totales y respondió "sin riesgos" con riesgos presentes).
+    /// Sin vocabulario de dominio: se apoya en el formato tabular '| campo: valor |'
+    /// que emite SqlQueryTool.
+    /// </summary>
+    internal static void EscribirTablaDatos(System.Text.StringBuilder sb, string datos, int maxFilas = 12)
+    {
+        var filas = new List<Dictionary<string, string>>();
+        foreach (var linea in datos.Split('\n'))
+        {
+            if (!linea.Contains('|') || !linea.Contains(':')) continue;
+            var fila = new Dictionary<string, string>();
+            foreach (var parte in linea.Split('|', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = parte.Split(':', 2);
+                if (kv.Length == 2) fila[kv[0].Trim()] = kv[1].Trim();
+            }
+            if (fila.Count >= 2) filas.Add(fila);
+        }
+        if (filas.Count == 0) return;
+
+        // La fila agregada ({Total, ValorTotal} todo numérico) no es un registro.
+        var detalle = filas.Where(EsFilaDetalle).ToList();
+        if (detalle.Count > 0) filas = detalle;
+        if (filas.Count == 0) return;
+
+        sb.AppendLine("## Datos obtenidos");
+        sb.AppendLine();
+        var columnas = filas.SelectMany(f => f.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        sb.AppendLine("| " + string.Join(" | ", columnas) + " |");
+        sb.AppendLine("| " + string.Join(" | ", columnas.Select(_ => "---")) + " |");
+        foreach (var fila in filas.Take(maxFilas))
+            sb.AppendLine("| " + string.Join(" | ", columnas.Select(c => fila.TryGetValue(c, out var v) ? v : string.Empty)) + " |");
+        if (filas.Count > maxFilas)
+            sb.AppendLine($"… ({filas.Count - maxFilas} fila(s) más…)");
+        sb.AppendLine();
     }
 
     /// <summary>

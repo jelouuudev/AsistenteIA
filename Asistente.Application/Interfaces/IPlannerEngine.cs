@@ -50,6 +50,13 @@ public class SimulacionPlan
     public List<string> Participantes { get; set; } = new();
     public List<string> Herramientas { get; set; } = new();
     public int TiempoEstimadoSegundos { get; set; }
+
+    /// <summary>
+    /// ExecutionGraph tal y como lo devuelve ExecutionGraphBuilder sobre ESTE plan:
+    /// nodos, dependencias y capas. Antes solo se mostraba la lista de pasos, así que
+    /// no había forma de ver el DAG que se iba a ejecutar.
+    /// </summary>
+    public Orchestrator.ExecutionGraph? Grafo { get; set; }
 }
 
 /// <summary>Resultado de la validación de un plan por el Plan Validator.</summary>

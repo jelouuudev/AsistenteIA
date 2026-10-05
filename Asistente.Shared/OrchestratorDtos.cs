@@ -107,6 +107,17 @@ public class ResultadoValidacionPlanDto
     public List<string> Riesgos { get; set; } = new();
 }
 
+/// <summary>Un nodo del ExecutionGraph tal como se muestra en la simulación:
+/// qué paso es, de qué depende y en qué capa (profundidad) está.</summary>
+public class NodoGrafoDto
+{
+    public int IdNodo { get; set; }
+    public string Accion { get; set; } = string.Empty;
+    public List<int> DependeDe { get; set; } = new();
+    public int Capa { get; set; }
+    public bool EsAprobacion { get; set; }
+}
+
 /// <summary>Resultado de la simulación en seco (Actividad 5): valida sin ejecutar
 /// y predice participantes, herramientas y riesgos del plan.</summary>
 public class SimulacionPlanDto
@@ -116,4 +127,16 @@ public class SimulacionPlanDto
     public List<string> Participantes { get; set; } = new();
     public List<string> Herramientas { get; set; } = new();
     public int TiempoEstimadoSegundos { get; set; }
+
+    /// <summary>DAG que se ejecutaría: nodos con sus dependencias y capa. Los nodos
+    /// de una misma capa corren en paralelo.</summary>
+    public List<NodoGrafoDto> Nodos { get; set; } = new();
+
+    /// <summary>Número de capas (profundidad) del DAG.</summary>
+    public int Capas { get; set; }
+
+    /// <summary>Huella determinista del grafo. Se registra también en el log de
+    /// ejecución (GrafoEjecutado): si coinciden, el grafo validado y el ejecutado
+    /// son el mismo.</summary>
+    public string HuellaGrafo { get; set; } = string.Empty;
 }

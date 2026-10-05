@@ -43,6 +43,12 @@ public class PlannerEngine : IPlannerEngine
     private readonly SemaphoreSlim _sem = new(1, 1);
     // Registry de CancellationTokenSource por ejecución activa (para cancelación real).
     private static readonly ConcurrentDictionary<int, CancellationTokenSource> _activeExecutions = new();
+
+    // Huella del grafo que se está ejecutando. Viaja hasta el Orchestrator para que
+    // cada nodo se ejecute como unidad del DAG validado y quede registrada su
+    // procedencia (misma huella que devuelve /api/planner/simular y que se
+    // persistió en GrafoValidado).
+    private string _huellaGrafoEjecucion = string.Empty;
     // Resultados en memoria de esta ejecución (Orden → Resultado), para que los
     // pasos de abajo (reporte/entrega) no dependan de releer filas que puedan
     // haberse degradado en BD. Una instancia por ejecución (scoped).
@@ -131,6 +137,17 @@ public class PlannerEngine : IPlannerEngine
         await _planRepo.UpdateAsync(plan, ct);
         await RegistrarLogAsync(plan.IdPlan, null, "PlanValidado",
             resultado.Valido ? "Plan válido." : $"Plan inválido: {string.Join("; ", resultado.Errores)}", ct);
+
+        // Solo si es válido se construye y registra el grafo: es el que después se
+        // ejecutará. La huella se coteja contra la del log GrafoEjecutado.
+        if (resultado.Valido)
+        {
+            var grafoValido = ConstruirGrafo(plan);
+            var capasValidas = grafoValido.ObtenerCapas();
+            await RegistrarLogAsync(plan.IdPlan, null, "GrafoValidado",
+                $"DAG validado: {grafoValido.Nodos.Count} nodos en {capasValidas.Count} capas. " +
+                $"Huella {grafoValido.CalcularHuella()}.", ct);
+        }
         return resultado;
     }
 
@@ -423,6 +440,17 @@ public class PlannerEngine : IPlannerEngine
         var grafo = _graphBuilder.Construir(plan);
         var capas = grafo.ObtenerCapas();
 
+        // Prueba de que el DAG ejecutado es el validado: se registra la huella del
+        // grafo que se va a ejecutar. /api/planner/simular devuelve la huella del
+        // MISMO grafo (mismo builder, mismo plan). Si coinciden, no hayGraph rebuild
+        // ni re-selección entre validar y ejecutar.
+        var huellaGrafo = grafo.CalcularHuella();
+        _huellaGrafoEjecucion = huellaGrafo;
+        _logger.LogInformation("Planner: ejecutando plan {IdPlan} con el grafo {Huella} ({Nodos} nodos, {Capas} capas).",
+            plan.IdPlan, huellaGrafo, grafo.Nodos.Count, capas.Count);
+        await RegistrarLogAsync(plan.IdPlan, null, "GrafoEjecutado",
+            $"Grafo validado: {grafo.Nodos.Count} nodos en {capas.Count} capas. Huella {huellaGrafo}.", ct);
+
         // B-03 (carrera validación-vs-cancel): la validación previa tarda 20+s en
         // CPU y el usuario puede cancelar en ese ventana, ANTES de que exista el
         // CTS. Si al llegar aquí el plan ya está Cancelado, no se lanza nada y
@@ -566,7 +594,13 @@ public class PlannerEngine : IPlannerEngine
                     await using var scopeErr = _scopeFactory.CreateAsyncScope();
                     var planRepoErr = scopeErr.ServiceProvider.GetRequiredService<IPlanRepository>();
                     var planErr = await planRepoErr.GetByIdAsync(idPlanLocal, CancellationToken.None);
-                    if (planErr != null) { await planRepoErr.UpdateEstadoAsync(idPlanLocal, "Fallido", DateTime.UtcNow, CancellationToken.None); }
+                    // Un Cancelado NUNCA se convierte en Fallido: si el usuario canceló
+                    // y luego el nodo lanza una excepción no-OCE (consulta SQL abortada,
+                    // ObjectDisposedException...), el estado final sigue siendo Cancelado.
+                    // Antes cualquier excepción posterior pisaba el Cancelado y la
+                    // cancelación aparecía como fallo (plan #1011).
+                    if (planErr != null && planErr.Estado != "Cancelado")
+                        await planRepoErr.UpdateEstadoAsync(idPlanLocal, "Fallido", DateTime.UtcNow, CancellationToken.None);
                 } catch { }
             }
             finally
@@ -740,8 +774,8 @@ public class PlannerEngine : IPlannerEngine
             await _sem.WaitAsync(ct);
             try
             {
-                var resApr = await _agentOrchestrator.EjecutarPasoValidadoAsync(
-                    plan, paso, null, null, plan.IdUsuario, ct);
+                var resApr = await _agentOrchestrator.EjecutarNodoValidadoAsync(
+                    plan, paso, nodo, _huellaGrafoEjecucion, null, null, plan.IdUsuario, ct);
                 if (resApr.Omitido)
                 {
                     await PersistirPasoAsync(stepRepo, paso, "Omitido", paso.Resultado, ct);
@@ -761,8 +795,8 @@ public class PlannerEngine : IPlannerEngine
             await _sem.WaitAsync(ct);
             try
             {
-                var resWf = await _agentOrchestrator.EjecutarPasoValidadoAsync(
-                    plan, paso, null, null, plan.IdUsuario, ct);
+                var resWf = await _agentOrchestrator.EjecutarNodoValidadoAsync(
+                    plan, paso, nodo, _huellaGrafoEjecucion, null, null, plan.IdUsuario, ct);
 
                 if (resWf.Exito)
                 {
@@ -813,18 +847,26 @@ public class PlannerEngine : IPlannerEngine
                 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, cts.Token);
 
-                // Ejecución vía Orchestrator (fuente de verdad del DAG).
-                var resAg = await _agentOrchestrator.EjecutarPasoValidadoAsync(
-                    plan, paso, contextoPrevio, null, plan.IdUsuario, linkedCts.Token);
+                // Ejecución vía Orchestrator sobre el NODO del DAG validado.
+                var resAg = await _agentOrchestrator.EjecutarNodoValidadoAsync(
+                    plan, paso, nodo, _huellaGrafoEjecucion, contextoPrevio, null, plan.IdUsuario, linkedCts.Token);
 
                 if (resAg.Exito)
                 {
                     await PersistirPasoAsync(stepRepo, paso, "Completado", resAg.Resultado, ct);
+                    // Auditoría del paso Agent: sin este evento el paso no dejaba
+                    // rastro (solo se auditaban Coordination y Tool/RAG), y en una
+                    // aceptación no se podía evidenciar que el análisis, la
+                    // clasificación de riesgos o la entrega se ejecutaron de verdad.
+                    await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoAgentEjecutado",
+                        $"'{paso.Nombre}' completado en {resAg.TiempoMs} ms.", ct);
                 }
                 else
                 {
                     await PersistirPasoAsync(stepRepo, paso, "Error",
                         resAg.Error ?? "Sin respuesta del agente", ct);
+                    await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoAgentError",
+                        $"'{paso.Nombre}' falló: {resAg.Error ?? "Sin respuesta del agente"}", ct);
                 }
             }
             catch (OperationCanceledException)
@@ -832,12 +874,16 @@ public class PlannerEngine : IPlannerEngine
                 try {
                     await PersistirPasoAsync(stepRepo, paso, "Cancelado", "Ejecución cancelada o timeout", ct);
                 } catch { }
+                await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoAgentCancelado",
+                    $"'{paso.Nombre}' cancelado o excedió el tiempo.", CancellationToken.None);
             }
             catch (Exception ex)
             {
                 try {
                     await PersistirPasoAsync(stepRepo, paso, "Error", $"Error: {ex.Message}", ct);
                 } catch { }
+                await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoAgentError",
+                    $"'{paso.Nombre}' falló: {ex.Message}", CancellationToken.None);
             }
             finally
             {
@@ -878,7 +924,11 @@ public class PlannerEngine : IPlannerEngine
             Validacion = validacion,
             Participantes = participantes,
             Herramientas = herramientas,
-            TiempoEstimadoSegundos = tiempoEstimado
+            TiempoEstimadoSegundos = tiempoEstimado,
+            // El MISMO grafo que ejecuta LanzarEjecucionGrafo, construido con el mismo
+            // ExecutionGraphBuilder sobre este plan. Se expone con su huella para que el
+            // auditor compare la simulación contra el log de ejecución.
+            Grafo = ConstruirGrafo(plan)
         };
     }
 
@@ -917,13 +967,36 @@ public class PlannerEngine : IPlannerEngine
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Registra un evento de auditoría del plan.
+    ///
+    /// Usa un SCOPE PROPIO porque la ejecución corre en background (fire-and-forget):
+    /// el endpoint devuelve el IdPlan de inmediato y el scope del request —del que
+    /// viene el _logRepo del constructor— se dispone a los pocos milisegundos. Con
+    /// ese repo, todo evento emitido tarde (pasos Agent, que tardan 80-150 s, o el
+    /// retry) moría con ObjectDisposedException, y esa excepción al caer en el catch
+    /// genérico convertía una cancelación limpia en plan "Fallido" (plan #1011).
+    /// Además, la auditoría quedaba incompleta justo en los pasos largos.
+    /// </summary>
     public async Task RegistrarLogAsync(int idPlan, int? idStep, string evento, string? detalle, CancellationToken ct = default)
-        => await _logRepo.AddAsync(new PlanExecutionLog
+    {
+        try
         {
-            IdPlan = idPlan,
-            IdStep = idStep,
-            Evento = evento,
-            Detalle = detalle,
-            Fecha = DateTime.UtcNow
-        }, ct);
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var logRepo = scope.ServiceProvider.GetRequiredService<IPlanExecutionLogRepository>();
+            await logRepo.AddAsync(new PlanExecutionLog
+            {
+                IdPlan = idPlan,
+                IdStep = idStep,
+                Evento = evento,
+                Detalle = detalle,
+                Fecha = DateTime.UtcNow
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            // La auditoría nunca debe tumbar la ejecución del plan.
+            _logger.LogWarning(ex, "Planner: no se pudo registrar el evento '{Evento}' del plan {IdPlan}.", evento, idPlan);
+        }
+    }
 }

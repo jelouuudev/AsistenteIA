@@ -74,6 +74,12 @@ public class PlannerController : ControllerBase
 
         // Simulación en seco: valida SIN ejecutar (Regla 3) y predice participantes/herramientas.
         var simulacion = await _planner.SimularAsync(id, ct);
+        var capas = simulacion.Grafo?.ObtenerCapas() ?? new List<List<Asistente.Application.Orchestrator.ExecutionNode>>();
+        var capaDeNodo = new Dictionary<int, int>();
+        for (var i = 0; i < capas.Count; i++)
+            foreach (var n in capas[i])
+                capaDeNodo[n.IdNodo] = i;
+
         var dto = new SimulacionPlanDto
         {
             Plan = ToDto(simulacion.Plan),
@@ -86,7 +92,20 @@ public class PlannerController : ControllerBase
             },
             Participantes = simulacion.Participantes,
             Herramientas = simulacion.Herramientas,
-            TiempoEstimadoSegundos = simulacion.TiempoEstimadoSegundos
+            TiempoEstimadoSegundos = simulacion.TiempoEstimadoSegundos,
+            // El DAG completo: nodos, dependencias y capa. Los nodos de una misma capa
+            // se ejecutan en paralelo. La huella permite cotejar este grafo con el que
+            // queda registrado al ejecutar.
+            Nodos = (simulacion.Grafo?.Nodos ?? new()).Select(n => new NodoGrafoDto
+            {
+                IdNodo = n.IdNodo,
+                Accion = n.Accion,
+                DependeDe = n.DependeDe,
+                Capa = capaDeNodo.TryGetValue(n.IdNodo, out var c) ? c : 0,
+                EsAprobacion = n.EsAprobacion
+            }).ToList(),
+            Capas = capas.Count,
+            HuellaGrafo = simulacion.Grafo?.CalcularHuella() ?? string.Empty
         };
         return Ok(dto);
     }

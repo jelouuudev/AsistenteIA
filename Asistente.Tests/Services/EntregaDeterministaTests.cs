@@ -320,6 +320,40 @@ public class GroundajeRiesgoTests
     }
 
     [Fact]
+    public void AceptaNivelSinViñetaYConEnfasis()
+    {
+        // El modelo 7B no siempre escribe "- [ALTO]": en el caso #1012 devolvió otra
+        // forma y el filtro descartó el 100%. Estas variantes deben aceptarse.
+        var r = AgentOrchestrator.ValidarGroundajeRiesgo(
+            "**[ALTO]** Queso Andino 8 < 10: bajo mínimo", Contexto);
+
+        Assert.Contains("- [ALTO]", r);
+        Assert.Contains("Queso Andino", r);
+    }
+
+    [Fact]
+    public void AceptaNivelSinViñetaNiComilla()
+    {
+        var r = AgentOrchestrator.ValidarGroundajeRiesgo(
+            "[MEDIO] Aji Amarillo 15 < 20: por debajo del mínimo", Contexto);
+
+        Assert.Contains("- [MEDIO]", r);
+    }
+
+    [Fact]
+    public void IgnoraLineasDeEncabezadoYResumen()
+    {
+        // Encabezados markdown y texto sin nivel no son riesgos: no deben colarse.
+        var r = AgentOrchestrator.ValidarGroundajeRiesgo(
+            "## Clasificación de riesgos\n\nEste inventario no tiene problemas graves.\n"
+            + "- [ALTO] Queso Andino 8 < 10: bajo mínimo", Contexto);
+
+        var lineas = r.Split('\n').Where(l => l.Contains("inventario") || l.Contains("##")).ToList();
+        Assert.Empty(lineas);
+        Assert.Contains("[ALTO]", r);
+    }
+
+    [Fact]
     public void NormalizaMilesAlCompararCifras()
     {
         var ctx = "| Total | 2,723.50 |";

@@ -784,6 +784,85 @@ public class PlannerTests
     }
 
     [Fact]
+    public void HuellaGrafo_EsEstable_EntreConstruccionesDelMismoPlan()
+    {
+        // Base de la condición "el mismo grafo que se muestra y valida es el que
+        // ejecuta": si la huella fuera distinta en cada construcción, compararla no
+        // probaría nada. Dos construcciones del mismo plan deben coincidir.
+        var builder = new ExecutionGraphBuilder();
+
+        var h1 = builder.Construir(PlanDeAceptacion()).CalcularHuella();
+        var h2 = builder.Construir(PlanDeAceptacion()).CalcularHuella();
+
+        Assert.Equal(h1, h2);
+        Assert.Equal(16, h1.Length);
+    }
+
+    [Fact]
+    public void HuellaGrafo_Cambia_SiCambiaLaEstructuraDelPlan()
+    {
+        var builder = new ExecutionGraphBuilder();
+        var original = builder.Construir(PlanDeAceptacion()).CalcularHuella();
+
+        // Se agrega una dependencia: el DAG ya no es el mismo, la huella debe cambiar.
+        var otro = PlanDeAceptacion();
+        otro.Dependencias.Add(new PlanDependency { StepOrigen = 2, StepDestino = 5 });
+        var modificada = builder.Construir(otro).CalcularHuella();
+
+        Assert.NotEqual(original, modificada);
+    }
+
+    [Fact]
+    public void HuellaGrafo_RepresentaElParalelismoReal()
+    {
+        // El plan de aceptación tiene SQL (1), RAG (2) y análisis (3) en la misma
+        // capa: el grafo debe reflejarlo y la huella debe cambiar si ese paralelismo
+        // se serializa (si 3 pasara a depender de 1 y 2).
+        var builder = new ExecutionGraphBuilder();
+        var grafo = builder.Construir(PlanDeAceptacion());
+        var capas = grafo.ObtenerCapas();
+
+        var capaParalela = capas.First(c => c.Any(n => n.IdNodo == 1) && c.Any(n => n.IdNodo == 2));
+        Assert.True(capaParalela.Count >= 2, "SQL y RAG deben compartir capa");
+
+        var serializado = PlanDeAceptacion();
+        serializado.Dependencias.Add(new PlanDependency { StepOrigen = 1, StepDestino = 3 });
+        serializado.Dependencias.Add(new PlanDependency { StepOrigen = 2, StepDestino = 3 });
+        Assert.NotEqual(grafo.CalcularHuella(), builder.Construir(serializado).CalcularHuella());
+    }
+
+    /// <summary>Plan de aceptación: Coordination → (SQL ‖ RAG) → análisis → PDF → riesgo → entrega.</summary>
+    private static Plan PlanDeAceptacion()
+    {
+        var plan = new Plan
+        {
+            IdPlan = 99,
+            Pasos = new List<PlanStep>
+            {
+                new() { Orden = 0, Tipo = "Coordination", Nombre = "Coordinar", IdAsistente = 1 },
+                new() { Orden = 1, Tipo = "Tool", Nombre = "Consultar Insumos", IdAsistente = 1, CodigoHerramienta = "SqlQueryTool" },
+                new() { Orden = 2, Tipo = "RAG", Nombre = "Consultar documentacion", IdAsistente = 1, CodigoHerramienta = "DocumentSearchTool" },
+                new() { Orden = 3, Tipo = "Tool", Nombre = "Analizar resultados", IdAsistente = 1, CodigoHerramienta = "SqlQueryTool" },
+                new() { Orden = 4, Tipo = "Tool", Nombre = "Generar informe", IdAsistente = 1, CodigoHerramienta = "ReportTool" },
+                new() { Orden = 5, Tipo = "Agent", Nombre = "Clasificar por nivel de riesgo", IdAsistente = 1 },
+                new() { Orden = 6, Tipo = "Agent", Nombre = "Entregar resultado final", IdAsistente = 1 }
+            }
+        };
+        plan.Dependencias = new List<PlanDependency>
+        {
+            new() { StepOrigen = 0, StepDestino = 1 },
+            new() { StepOrigen = 0, StepDestino = 2 },
+            new() { StepOrigen = 1, StepDestino = 3 },
+            new() { StepOrigen = 2, StepDestino = 4 },
+            new() { StepOrigen = 3, StepDestino = 4 },
+            new() { StepOrigen = 4, StepDestino = 5 },
+            new() { StepOrigen = 1, StepDestino = 5 },
+            new() { StepOrigen = 2, StepDestino = 6 }
+        };
+        return plan;
+    }
+
+    [Fact]
     public void ExecutionGraph_RamasIndependientes_CompartenCapaParalela()
     {
         // SQL y RAG sin dependencias entre sí deben quedar en la misma capa (paralelo),

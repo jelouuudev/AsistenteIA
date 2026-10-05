@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -232,5 +232,44 @@ public class ReportToolTotalesPorTablaTests
         var cuerpo = recorte!["[contexto recortado: se conserva lo más reciente]\n".Length..];
         Assert.StartsWith("linea ", cuerpo);
         Assert.Contains("linea 200 de contexto", cuerpo);
+    }
+
+    /// <summary>
+    /// El resumen MIXTO (SQL + RAG) debe incluir las filas de SQL. No lo hacIa:
+    /// escribia totales y prosa documental y se comia la tabla, asi que el PDF de
+    /// aceptacion salia sin los datos que el paso de riesgos debia analizar
+    /// (#1012: el clasificador vio solo totales y respondio "sin riesgos").
+    /// </summary>
+    [Fact]
+    public void ResumenMixto_IncluyeLasFilasDeSql()
+    {
+        // Formato real de SqlQueryTool: "campo: valor | campo: valor" (sin pipes
+        // en los extremos). No es markdown; el informe lo convierte a tabla.
+        var datos = string.Join("\n", new[]
+        {
+            "Datos obtenidos de la tabla 'insumos'. Total: 3",
+            "Id: 1 | Nombre: Arroz | Stock: 120 | StockMinimo: 50",
+            "Id: 2 | Nombre: Aji | Stock: 15 | StockMinimo: 20",
+            "Id: 3 | Nombre: Queso | Stock: 8 | StockMinimo: 10",
+            "CONTEXTO DOCUMENTAL",
+            "Un documento PDF puede contener elementos interactivos. [Fuente: ejemplo]"
+        });
+
+        var r = ReportTool.FormatearResumenMixto(datos, "Informe");
+
+        Assert.Contains("## Datos obtenidos", r);
+        Assert.Contains("Arroz", r);
+        Assert.Contains("Aji", r);
+        Assert.Contains("Queso", r);
+        Assert.Contains("Contexto documental", r);
+    }
+
+    [Fact]
+    public void ResumenMixto_SinFilas_NoInventaTabla()
+    {
+        var datos = "CONTEXTO DOCUMENTAL\nSolo prosa. [Fuente: ejemplo]";
+        var r = ReportTool.FormatearResumenMixto(datos, "Informe");
+
+        Assert.DoesNotContain("## Datos obtenidos", r);
     }
 }

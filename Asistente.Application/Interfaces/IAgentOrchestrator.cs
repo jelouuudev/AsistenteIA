@@ -21,6 +21,18 @@ public interface IAgentOrchestrator
     Task<ResultadoPasoOrquestado> EjecutarPasoValidadoAsync(
         Plan plan, PlanStep paso, string? contextoPrevio, string? datoPrevio,
         int idUsuario, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Igual que <see cref="EjecutarPasoValidadoAsync"/> pero recibiendo además el NODO
+    /// del ExecutionGraph que se validó y se mostró en la simulación. Así el Orchestrator
+    /// ejecuta literalmente una unidad del DAG (con su id de nodo, sus dependencias y su
+    /// capa), y no un paso suelto reconstruido. La huella del grafo viaja en el contexto
+    /// para poder cotejarla con la del log de ejecución.
+    /// </summary>
+    Task<ResultadoPasoOrquestado> EjecutarNodoValidadoAsync(
+        Plan plan, PlanStep paso, ExecutionNode nodo, string huellaGrafo,
+        string? contextoPrevio, string? datoPrevio,
+        int idUsuario, CancellationToken cancellationToken = default);
     /// <summary>
     /// Ejecuta UN nodo del grafo de colaboración con los servicios del scope propio
     /// (aislamiento de DbContext por rama para ejecución paralela, B-02).

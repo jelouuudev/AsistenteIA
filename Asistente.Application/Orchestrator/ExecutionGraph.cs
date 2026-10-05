@@ -90,4 +90,26 @@ public class ExecutionGraph
     }
 
     public int ProfundidadMaxima() => Nodos.Count == 0 ? 0 : Nodos.Max(n => n.Profundidad) + 1;
+
+    /// <summary>
+    /// Huella determinista del grafo: nodos, dependencias y capas. Es la prueba de que
+    /// el grafo que se muestra/valida es el mismo que se ejecuta: si el auditor compara
+    /// la huella de la simulación con la del log de ejecución y coinciden, ambos grafos
+    /// son estructuralmente idénticos. No incluye tiempos ni identidad de objetos, así
+    /// que dos construcciones del mismo plan producen siempre la misma huella.
+    /// </summary>
+    public string CalcularHuella()
+    {
+        var nodos = Nodos
+            .OrderBy(n => n.IdNodo)
+            .Select(n => $"{n.IdNodo}|{n.Accion}|{n.DependeDe.OrderBy(d => d).Aggregate(string.Empty, (a, d) => a + "," + d)}")
+            .Aggregate(string.Empty, (a, s) => a + ";" + s);
+
+        var capas = ObtenerCapas()
+            .Select((capa, i) => $"c{i}=[{string.Join(",", capa.OrderBy(n => n.IdNodo).Select(n => n.IdNodo))}]")
+            .Aggregate(string.Empty, (a, s) => a + s);
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(nodos + capas);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
+    }
 }

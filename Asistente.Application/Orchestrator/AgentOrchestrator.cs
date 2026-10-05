@@ -266,6 +266,36 @@ public class AgentOrchestrator : IAgentOrchestrator
     public async Task<ResultadoPasoOrquestado> EjecutarPasoValidadoAsync(
         Plan plan, PlanStep paso, string? contextoPrevio, string? datoPrevio,
         int idUsuario, CancellationToken cancellationToken = default)
+        => await EjecutarPasoValidadoInternoAsync(
+            plan, paso, nodo: null, huellaGrafo: null, contextoPrevio, datoPrevio, idUsuario, cancellationToken);
+
+    /// <summary>
+    /// Ejecuta el nodo del DAG validado. Delega en el mismo cuerpo que
+    /// EjecutarPasoValidadoAsync; la única diferencia es que llega el nodo del grafo
+    /// (con su IdNodo, dependencias y capa) y la huella del grafo, que se registra en
+    /// el log para demostrar que la unidad ejecutada es la del grafo mostrado.
+    /// </summary>
+    public async Task<ResultadoPasoOrquestado> EjecutarNodoValidadoAsync(
+        Plan plan, PlanStep paso, ExecutionNode nodo, string huellaGrafo,
+        string? contextoPrevio, string? datoPrevio,
+        int idUsuario, CancellationToken cancellationToken = default)
+    {
+        if (nodo.IdNodo != paso.Orden)
+            throw new InvalidOperationException(
+                $"El nodo del grafo ({nodo.IdNodo}) no corresponde al paso {paso.Orden}. " +
+                "El Orchestrator no puede ejecutar una unidad que no está en el DAG validado.");
+        _logger.LogInformation(
+            "Orchestrator: ejecutando nodo {IdNodo} (capa {Capa}, depende de [{Dependencias}]) " +
+            "del grafo {Huella}: {Paso}",
+            nodo.IdNodo, nodo.Profundidad, string.Join(",", nodo.DependeDe), huellaGrafo, paso.Nombre);
+        return await EjecutarPasoValidadoInternoAsync(
+            plan, paso, nodo, huellaGrafo, contextoPrevio, datoPrevio, idUsuario, cancellationToken);
+    }
+
+    private async Task<ResultadoPasoOrquestado> EjecutarPasoValidadoInternoAsync(
+        Plan plan, PlanStep paso, ExecutionNode? nodo, string? huellaGrafo,
+        string? contextoPrevio, string? datoPrevio,
+        int idUsuario, CancellationToken cancellationToken = default)
     {
         var inicio = DateTime.UtcNow;
         long Transcurrido() => (long)(DateTime.UtcNow - inicio).TotalMilliseconds;
@@ -710,9 +740,13 @@ public class AgentOrchestrator : IAgentOrchestrator
             var filtrada = ValidarGroundajeRiesgo(SanearEntrega(resp.Respuesta), contexto);
             if (string.IsNullOrWhiteSpace(filtrada))
             {
+                // Se registra la respuesta cruda (recortada) porque un filtro que
+                // descarta el 100% no se puede depurar a ciegas: así se ve si el
+                // modelo no usó el formato o si''(la regla de cifras) lo descartó.
                 _logger.LogWarning(
-                    "Orchestrator: la clasificación de riesgo del paso '{Paso}' no superó el control de groundaje; se sigue al camino determinista.",
-                    paso.Nombre);
+                    "Orchestrator: la clasificación de riesgo del paso '{Paso}' no superó el control de groundaje; se sigue al camino determinista. Respuesta cruda: {Cruda}",
+                    paso.Nombre,
+                    resp.Respuesta.Length > 900 ? resp.Respuesta[..900] : resp.Respuesta);
                 return null;
             }
             return filtrada;
@@ -728,11 +762,14 @@ public class AgentOrchestrator : IAgentOrchestrator
     /// <summary>
     /// Control de groundaje para la clasificación de riesgo. Es puramente
     /// estructural: no mira el significado de las palabras, solo que cada línea
-    /// (a) tenga el formato '- [NIVEL] ...', (b) NO afirme que un número es menor
-    /// que otro cuando en el contexto ese mismo par aparece con el primero mayor o
+    /// (a) lleve un nivel entre corchetes, (b) NO afirme que un número es menor
+    /// que otro cuando ese par aparece en el contexto con el primero mayor o
     /// igual, y (c) no contenga cifras ausentes del contexto.
     /// Así se corta la comparación invertida que producía el modelo 7B (#1009)
     /// sin introducir reglas de negocio ni vocabulario del dominio.
+    /// El formato se acepta con o sin viñeta y con o sin énfasis (el modelo 7B
+    /// escribe '- [ALTO]', '**[ALTO]**' o '[ALTO]:' según el humor); en el caso
+    /// #1012 exigir '- [NIVEL]' al inicio descartaba el 100% de la respuesta.
     /// Si todo se descarta devuelve cadena vacía para que el llamador use el
     /// camino determinista.
     /// </summary>
@@ -751,8 +788,15 @@ public class AgentOrchestrator : IAgentOrchestrator
         {
             var linea = raw.Trim();
             if (linea.Length == 0) continue;
-            if (!linea.StartsWith("- [", StringComparison.Ordinal)) continue;
-            if (!Regex.IsMatch(linea, @"^-\s*\[(ALTO|MEDIO|BAJO)\]", RegexOptions.IgnoreCase)) continue;
+
+            // (a) nivel entre corchetes en cualquier posición de la línea, con o sin
+            // viñeta y con o sin énfasis. Se normaliza la forma de salida a '- [NIVEL] ...'.
+            var mNivel = Regex.Match(linea, @"\[(ALTO|MEDIO|BAJO)\]", RegexOptions.IgnoreCase);
+            if (!mNivel.Success) continue;
+            var nivel = mNivel.Groups[1].Value.ToUpperInvariant();
+            var resto = linea[(mNivel.Index + mNivel.Length)..].TrimStart(' ', '*', ':', '-', '.', ']', ')');
+            if (resto.Length == 0) continue;
+            linea = $"- [{nivel}] {resto}";
 
             // (c) ninguna cifra inventada
             var cifrasLinea = Regex.Matches(NormalizarCifras(linea), @"\d+(?:\.\d+)?")
