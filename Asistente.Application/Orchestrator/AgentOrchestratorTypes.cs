@@ -70,6 +70,18 @@ public class AgentCandidate
     /// <summary>Rol que jugará en el grafo: "SQL", "RAG", "Reporte", "Principal", etc.</summary>
     public string Rol { get; set; } = "Colaborador";
     public int Prioridad { get; set; } = 100;
+    /// <summary>
+    /// Instrucción de rol, tomada de la descripción de la herramienta que motivó la
+    /// selección (dato de configuración en Herramientas.Descripcion). Antes era una
+    /// plantilla fija en código por tipo de rol; ahora agregar una herramienta o una
+    /// base nueva no requiere escribir una plantilla en C#.
+    /// </summary>
+    public string InstruccionRol { get; set; } = string.Empty;
+    /// <summary>
+    /// Ámbito de recuperación de la capacidad: "documental", "datos" o null. Determinado
+    /// por el tipo de capacidad asignada, no por palabras del texto del usuario.
+    /// </summary>
+    public string? Alcance { get; set; }
     /// <summary>Ids de candidatos de los que depende (ejecución secuencial).</summary>
     public List<int> DependeDe { get; set; } = new();
     public double Puntuacion { get; set; }

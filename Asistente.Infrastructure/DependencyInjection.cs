@@ -173,12 +173,15 @@ public static class DependencyInjection
         });
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 
-        // Background Services desacoplados
+        // Background Services: pipeline documental ACTIVO (SQL disponible).
+        // Procesamiento e indexación son los que convierten lo subido en chunks
+        // y vectores para RAG; con ellos apagados DocumentoIndexado se queda en 0.
         services.AddHostedService<IndexacionBackgroundService>();
         services.AddHostedService<ProcesamientoDocumentalBackgroundService>();
-        services.AddHostedService<ProcesadorEventosBackgroundService>();
-        services.AddHostedService<ProgramadorTareasBackgroundService>();
-        services.AddHostedService<EvaluadorDisparadoresBackgroundService>();
+        // Background Services desacoplados - TEMPORALMENTE DESHABILITADOS PARA PRUEBAS SIN SQL
+        // services.AddHostedService<ProcesadorEventosBackgroundService>();
+        // services.AddHostedService<ProgramadorTareasBackgroundService>();
+        // services.AddHostedService<EvaluadorDisparadoresBackgroundService>();
 
         return services;
     }

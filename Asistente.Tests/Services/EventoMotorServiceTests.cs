@@ -139,7 +139,7 @@ public class EventoMotorServiceTests
 
         Assert.Equal("Error", _procesados[0].Estado);
         _engine.Verify(e => e.EjecutarAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<bool>(), It.IsAny<int?>(), It.IsAny<CancellationToken>(), It.IsAny<Dictionary<string, string>?>()), Times.Never);
-        _auditoriaMock.Verify(a => a.RegistrarActividadAsync(It.IsAny<int>(), "Eventos", "ErrorAutomatico", It.IsAny<string>(), It.IsAny<string?>()), Times.Once);
+        _auditoriaMock.Verify(a => a.RegistrarActividadAsync(It.IsAny<int>(), "Eventos", "ErrorAutomatico", It.IsAny<string>(), It.IsAny<string?>(), "Error"), Times.Once);
     }
 
     [Fact]

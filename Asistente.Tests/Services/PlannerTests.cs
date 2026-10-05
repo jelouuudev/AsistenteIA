@@ -81,11 +81,55 @@ public class PlannerTests
         return repo;
     }
 
+    private static Mock<IConexionBaseDatosRepository> RepoConexionConTablas(params string[] tablas)
+    {
+        var repo = new Mock<IConexionBaseDatosRepository>();
+        var con = new ConexionBaseDatos
+        {
+            IdConexion = 1,
+            Nombre = "Test",
+            BaseDatos = "Test",
+            Activa = true,
+            TablasAutorizadas = tablas.Select(t => new TablaAutorizada { NombreTabla = t }).ToList()
+        };
+        repo.Setup(r => r.GetActivasAsync()).ReturnsAsync(new[] { con });
+        return repo;
+    }
+
     private static Mock<IOllamaService> OllamaStub()
     {
         var mock = new Mock<IOllamaService>();
         mock.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync("respuesta simulada");
+            .ReturnsAsync((IEnumerable<Mensaje> msgs, string? s1, string? s2, double? d, int? i, CancellationToken ct) =>
+            {
+                var full = msgs.FirstOrDefault()?.Contenido ?? "";
+                var idx = full.LastIndexOf("Solicitud:", StringComparison.OrdinalIgnoreCase);
+                var req = (idx >= 0 ? full[(idx + 10)..] : full).Trim().ToLowerInvariant();
+
+                bool apr = req.Contains("eliminar") || req.Contains("borrar") || req.Contains("desactivar");
+                bool wf = req.Contains("flujo") || req.Contains("workflow") || req.Contains("automatizar");
+                bool rag = req.Contains("documento") || req.Contains("procedimiento") || req.Contains("manual") || req.Contains("política") || req.Contains("reglas") || req.Contains("asueto");
+                bool rep = req.Contains("informe") || req.Contains("reporte") || req.Contains("resumen") || req.Contains("pdf");
+                bool rsg = req.Contains("riesgo") || req.Contains("riesgos");
+                bool agr = req.Contains("cuant") || req.Contains("cantid") || req.Contains("cifra") || req.Contains("total") || req.Contains("mobiliario") || req.Contains("ventas");
+
+                var tablas = new List<string>();
+                if (req.Contains("ventas")) tablas.Add("Ventas");
+                if (req.Contains("empleados") || req.Contains("personal")) tablas.Add("Empleados");
+                if (req.Contains("mobiliario") || req.Contains("activos")) tablas.Add("Activos");
+
+                var res = new
+                {
+                    tablas,
+                    rag,
+                    reporte = rep,
+                    riesgo = rsg,
+                    workflow = wf,
+                    agregacion = agr,
+                    aprobacion = apr
+                };
+                return System.Text.Json.JsonSerializer.Serialize(res);
+            });
         mock.Setup(o => o.IsDisponibleAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         return mock;
@@ -145,6 +189,203 @@ public class PlannerTests
         Assert.True(plan.Pasos.Any(p => p.CodigoHerramienta == "DocumentSearchTool"), "Debe incluir DocumentSearchTool");
     }
 
+    private static Mock<IDocumentoRepository> RepoDocumentos(params (string Codigo, string Nombre, bool ActivoD)[] docs)
+    {
+        var repo = new Mock<IDocumentoRepository>();
+        repo.Setup(r => r.GetAllAsync()).ReturnsAsync(docs.Select(d => new Documento
+        {
+            Codigo = d.Codigo,
+            Nombre = d.Nombre,
+            Estado = d.ActivoD ? Asistente.Domain.Enums.EstadoDocumento.Activo : Asistente.Domain.Enums.EstadoDocumento.Eliminado
+        }).ToList());
+        return repo;
+    }
+
+    /// <summary>
+    /// Plan #7055: pregunta mixta que cita un documento por su código ("archivo ejemplo")
+    /// + datos SQL. El clasificador LLM devolvió rag=false; el rescate por catálogo
+    /// vivo debe añadir la rama RAG sin quitar la SQL.
+    /// </summary>
+    [Fact]
+    public async Task PlanBuilder_PreguntaMixtaConCodigoDocumento_RescataRamaRAG()
+    {
+        var agentes = new[]
+        {
+            Agente("COMERCIAL-01", 1008, "SqlQueryTool", "ReportTool"),
+            Agente("SOPORTE-01", 2005, "DocumentSearchTool")
+        };
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaStub().Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexionConTablas("Activos").Object,
+            RepoWorkflow().Object,
+            documentoRepo: RepoDocumentos(("ejemplo", "ejemplo", true)).Object);
+
+        var plan = await builder.ConstruirAsync(
+            "segun el archivo ejemplo, cuales son los Componentes de un archivo PDF, y cuantos activos tienen como responsable a juan perez?",
+            1, CancellationToken.None);
+
+        Assert.Contains(plan.Pasos, p => p.Tipo == "RAG" && p.CodigoHerramienta == "DocumentSearchTool");
+        Assert.Contains(plan.Pasos, p => p.CodigoHerramienta == "SqlQueryTool");
+    }
+
+    /// <summary>
+    /// Control: sin documento registrado coincidente no se inventa rama RAG.
+    /// </summary>
+    [Fact]
+    public async Task PlanBuilder_PreguntaSoloDatos_SinDocumento_NoCreaRAG()
+    {
+        var agentes = new[]
+        {
+            Agente("COMERCIAL-01", 1008, "SqlQueryTool", "ReportTool"),
+            Agente("SOPORTE-01", 2005, "DocumentSearchTool")
+        };
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaStub().Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexionConTablas("Activos").Object,
+            RepoWorkflow().Object,
+            documentoRepo: RepoDocumentos().Object);
+
+        var plan = await builder.ConstruirAsync(
+            "cuantos activos tienen como responsable a juan perez?",
+            1, CancellationToken.None);
+
+        Assert.DoesNotContain(plan.Pasos, p => p.Tipo == "RAG");
+        Assert.Contains(plan.Pasos, p => p.CodigoHerramienta == "SqlQueryTool");
+    }
+
+    private static Mock<IOllamaService> OllamaClasificadorFijo(string json)
+    {
+        var mock = new Mock<IOllamaService>();
+        mock.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(json);
+        mock.Setup(o => o.IsDisponibleAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        return mock;
+    }
+
+    /// <summary>
+    /// Plan #7056: el LLM devolvió tablas=[] (volatilidad del reasoning). El rescate
+    /// por esquema debe crear la rama SQL igual. Simula el JSON vacío del LLM.
+    /// </summary>
+    [Fact]
+    public async Task PlanBuilder_LlmSinTablas_RescateEsquemaCreaSQL()
+    {
+        var agentes = new[]
+        {
+            Agente("COMERCIAL-01", 1008, "SqlQueryTool", "ReportTool"),
+            Agente("SOPORTE-01", 2005, "DocumentSearchTool")
+        };
+        var jsonVacio = "{\"tablas\":[],\"rag\":false,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":false,\"aprobacion\":false,\"subconsultas\":[]}";
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaClasificadorFijo(jsonVacio).Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexionConTablas("Activos").Object,
+            RepoWorkflow().Object);
+
+        var plan = await builder.ConstruirAsync(
+            "cuantos registros hay en Activos?",
+            1, CancellationToken.None);
+
+        Assert.Contains(plan.Pasos, p => p.CodigoHerramienta == "SqlQueryTool" && p.Nombre.Contains("Activos"));
+    }
+
+    /// <summary>
+    /// Plan #9073: el LLM no marcó reporte aunque pedían "repondeme todo en un
+    /// pdf" (typo). El rescate por artefacto debe añadir el paso ReportTool igual.
+    /// </summary>
+    [Fact]
+    public async Task PlanBuilder_LlmSinReporte_PidePdf_RescateArtefactoCreaInforme()
+    {
+        var agentes = new[]
+        {
+            Agente("COMERCIAL-01", 1008, "SqlQueryTool", "ReportTool"),
+            Agente("SOPORTE-01", 2005, "DocumentSearchTool")
+        };
+        var jsonSinReporte = "{\"tablas\":[\"Ventas\"],\"rag\":false,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":true,\"aprobacion\":false,\"subconsultas\":[]}";
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaClasificadorFijo(jsonSinReporte).Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexionConTablas("Ventas").Object,
+            RepoWorkflow().Object);
+
+        var plan = await builder.ConstruirAsync(
+            "dime cuantos productos son de categoria electronica, repondeme todo en un pdf",
+            1, CancellationToken.None);
+
+        Assert.Contains(plan.Pasos, p => p.CodigoHerramienta == "ReportTool");
+    }
+
+    /// <summary>
+    /// Sin mención de PDF no hay rescate: no se inventa paso de informe.
+    /// </summary>
+    [Fact]
+    public async Task PlanBuilder_SinPdf_NoCreaInforme()
+    {
+        var agentes = new[]
+        {
+            Agente("COMERCIAL-01", 1008, "SqlQueryTool", "ReportTool"),
+            Agente("SOPORTE-01", 2005, "DocumentSearchTool")
+        };
+        var jsonSinReporte = "{\"tablas\":[\"Ventas\"],\"rag\":false,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":true,\"aprobacion\":false,\"subconsultas\":[]}";
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaClasificadorFijo(jsonSinReporte).Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexionConTablas("Ventas").Object,
+            RepoWorkflow().Object);
+
+        var plan = await builder.ConstruirAsync(
+            "dime cuantos productos son de categoria electronica",
+            1, CancellationToken.None);
+
+        Assert.DoesNotContain(plan.Pasos, p => p.CodigoHerramienta == "ReportTool");
+    }
+
+    [Theory]
+    [InlineData("repondeme todo en un pdf", true)]
+    [InlineData("respóndeme todo en un PDF", true)]
+    [InlineData("exporta el reporte.pdf por favor", true)]
+    [InlineData("dime cuantos productos hay", false)]
+    [InlineData("analiza el perfil del cliente", false)]
+    public void PideArtefactoPdf_DetectaFormato_NoDominio(string objetivo, bool esperado)
+        => Assert.Equal(esperado, PlanBuilder.PideArtefactoPdf(objetivo));
+
+    /// <summary>
+    /// Carrera del #7056: el Reporte/Entrega deben esperar al RAG para consolidar
+    /// también lo documental.
+    /// </summary>
+    [Fact]
+    public async Task PlanBuilder_MixtaIncluyeDependenciaRagHaciaReporteYEntrega()
+    {
+        var agentes = new[]
+        {
+            Agente("COMERCIAL-01", 1008, "SqlQueryTool", "ReportTool"),
+            Agente("SOPORTE-01", 2005, "DocumentSearchTool")
+        };
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaStub().Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexionConTablas("Activos").Object,
+            RepoWorkflow().Object,
+            documentoRepo: RepoDocumentos(("ejemplo", "ejemplo", true)).Object);
+
+        var plan = await builder.ConstruirAsync(
+            "segun el archivo ejemplo, cuales son los Componentes de un archivo PDF, genera un informe y cuantos activos tienen como responsable a juan perez?",
+            1, CancellationToken.None);
+
+        var rag = Assert.Single(plan.Pasos, p => p.Tipo == "RAG");
+        var reporte = Assert.Single(plan.Pasos, p => p.CodigoHerramienta == "ReportTool");
+        var entrega = Assert.Single(plan.Pasos, p => p.Nombre.Contains("Entregar"));
+        Assert.Contains(plan.Dependencias, d => d.StepOrigen == rag.Orden && d.StepDestino == reporte.Orden);
+        Assert.Contains(plan.Dependencias, d => d.StepOrigen == rag.Orden && d.StepDestino == entrega.Orden);
+    }
+
     [Fact]
     public async Task PlanBuilder_AccionSensible_RequiereAprobacion()
     {
@@ -160,6 +401,83 @@ public class PlannerTests
 
         Assert.True(plan.RequiereAprobacion);
         Assert.Contains(plan.Pasos, p => p.Tipo == "Approval");
+    }
+
+    /// <summary>Embeddings fijos: todo puntúa 1.0 contra todo. Sirve para probar
+    /// la selección por similitud sin depender de frases concretas: con este
+    /// mock, cualquier firma supera cualquier umbral.</summary>
+    private sealed class EmbTodoUno : IEmbeddingProvider
+    {
+        public Task<float[]> GenerateEmbeddingAsync(string text) => Task.FromResult(new[] { 1f, 0f });
+    }
+
+    /// <summary>La firma del workflow apunta al este ([1,0]); la pregunta apunta
+    /// a un ángulo fijo. Así se controla el coseno exacto sin usar palabras:
+    /// a 10° empareja (0.985), a 80° no (0.17).</summary>
+    private sealed class EmbAngulo : IEmbeddingProvider
+    {
+        private readonly double _rad;
+        public EmbAngulo(double grados) => _rad = grados * Math.PI / 180.0;
+        public Task<float[]> GenerateEmbeddingAsync(string text)
+        {
+            if (text.Contains("REP-CLI", StringComparison.OrdinalIgnoreCase))
+                return Task.FromResult(new[] { 1f, 0f });
+            return Task.FromResult(new[] { (float)Math.Cos(_rad), (float)Math.Sin(_rad) });
+        }
+    }
+
+    [Fact]
+    public async Task PlanBuilder_ParafrasisSinPalabrasComunes_ResuelveWorkflow()
+    {
+        // La pregunta NO contiene "reporte", "clientes" ni "generar": solo se
+        // parece por significado. Con matching literal jamás entraría.
+        var agentes = new[] { Agente("COMERCIAL-01", 1008, "SqlQueryTool") };
+        agentes[0].AgentesWorkflows.Add(new AgenteWorkflow { IdAsistente = 1008, IdWorkflow = 7, Activo = true });
+        var wfRepo = RepoWorkflow();
+        wfRepo.Setup(r => r.GetActivosAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Workflow>
+            {
+                new() { IdWorkflow = 7, Codigo = "REP-CLI", Nombre = "Reporte clientes", Disparadores = "reporte de clientes;generar reporte", Estado = EstadoWorkflow.Activo }
+            });
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaStub().Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexion().Object,
+            wfRepo.Object,
+            new EmbAngulo(10));
+
+        var plan = await builder.ConstruirAsync("quiero automatizar el flujo de trabajo", 1, CancellationToken.None);
+
+        var pasoWf = plan.Pasos.FirstOrDefault(p => p.Tipo == "Workflow");
+        Assert.NotNull(pasoWf);
+        Assert.Equal(7, pasoWf!.IdWorkflow);
+    }
+
+    [Fact]
+    public async Task PlanBuilder_PreguntaLejana_NoGeneraWorkflow()
+    {
+        // Misma configuración, pregunta a 80°: no hay emparejamiento y no sale
+        // ningún paso, aunque el workflow esté asignado.
+        var agentes = new[] { Agente("COMERCIAL-01", 1008, "SqlQueryTool") };
+        agentes[0].AgentesWorkflows.Add(new AgenteWorkflow { IdAsistente = 1008, IdWorkflow = 7, Activo = true });
+        var wfRepo = RepoWorkflow();
+        wfRepo.Setup(r => r.GetActivosAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Workflow>
+            {
+                new() { IdWorkflow = 7, Codigo = "REP-CLI", Nombre = "Reporte clientes", Disparadores = "reporte de clientes;generar reporte", Estado = EstadoWorkflow.Activo }
+            });
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaStub().Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexion().Object,
+            wfRepo.Object,
+            new EmbAngulo(80));
+
+        var plan = await builder.ConstruirAsync("quiero automatizar el flujo de trabajo", 1, CancellationToken.None);
+
+        Assert.DoesNotContain(plan.Pasos, p => p.Tipo == "Workflow");
     }
 
     [Fact]
@@ -178,7 +496,8 @@ public class PlannerTests
             OllamaStub().Object,
             Logger<PlanBuilder>().Object,
             RepoConexion().Object,
-            wfRepo.Object);
+            wfRepo.Object,
+            new EmbTodoUno());
 
         var plan = await builder.ConstruirAsync("quiero automatizar el flujo con el reporte de clientes", 1, CancellationToken.None);
 
@@ -202,9 +521,11 @@ public class PlannerTests
             OllamaStub().Object,
             Logger<PlanBuilder>().Object,
             RepoConexion().Object,
-            wfRepo.Object);
+            wfRepo.Object,
+            new EmbTodoUno());
 
-        // Coincide la frase pero el agente NO tiene el workflow asignado.
+        // El workflow empareja por similitud pero el agente NO lo tiene asignado:
+// el gate de asignación (no la falta de coincidencia) es lo que omite el paso.
         var plan = await builder.ConstruirAsync("quiero automatizar el reporte de clientes", 1, CancellationToken.None);
 
         Assert.DoesNotContain(plan.Pasos, p => p.Tipo == "Workflow");
@@ -386,6 +707,83 @@ public class PlannerTests
     }
 
     [Fact]
+    public async Task Reintento_MismoNodo_IdStepEstable_YRecupera()
+    {
+        // Evidencia de reintento por nodo: el supervisor NO crea un paso nuevo ni
+        // cambia el IdStep; el mismo nodo vuelve a Pendiente, se reintenta y en el
+        // segundo intento queda Completado. El log de auditoría debe registrar el
+        // Reintento apuntando al IdStep original.
+        var planRepo = new Mock<IPlanRepository>();
+        var stepRepo = new Mock<IPlanStepRepository>();
+        var logs = new List<PlanExecutionLog>();
+        var logRepo = new LogEnMemoria(logs);
+        var supervisor = new ExecutionSupervisor(planRepo.Object, stepRepo.Object, logRepo, maxReintentos: 2, tiempoEntreIntentosMs: 1);
+
+        var plan = new Plan { IdPlan = 7 };
+        var paso = new PlanStep { IdStep = 42, Orden = 1, Nombre = "Consultar Insumos", Estado = "EnEjecucion" };
+
+        // Intento 1: falla de forma transitoria (p. ej. SQL saturado por el LLM).
+        paso.Resultado = "Error al ejecutar SqlQueryTool: timeout";
+        var reintenta = await supervisor.ManejarFalloPasoAsync(plan, paso, paso.Resultado, CancellationToken.None);
+
+        Assert.True(reintenta);
+        Assert.Equal(1, paso.Intentos);
+        Assert.Equal(42, paso.IdStep);              // el MISMO nodo, no uno nuevo
+        Assert.Equal("Pendiente", paso.Estado);    // vuelve a la cola para el reintento
+
+        var logReintento = logs.Single(l => l.Evento == "Reintento");
+        Assert.Equal(42, logReintento.IdStep);      // auditoría apunta al nodo original
+
+        // Intento 2 (reintento del mismo nodo): la herramienta responde bien y el
+        // engine marca el paso como Completado. El supervisor no interviene porque
+        // no hubo fallo; lo que se verifica es que el nodo es el mismo.
+        paso.Estado = "Completado";
+        paso.Resultado = "ok";
+        await stepRepo.Object.UpdateAsync(paso, CancellationToken.None);
+
+        Assert.Equal(42, paso.IdStep);
+        Assert.Equal(1, paso.Intentos);          // intentos = fallos registrados, no éxitos
+        Assert.Equal("Completado", paso.Estado);
+        Assert.Equal("ok", paso.Resultado);
+        Assert.Single(logs.Where(l => l.IdStep == 42)); // un solo nodo en todo el flujo
+    }
+
+    /// <summary>Doble en memoria que conserva los eventos de auditoría del plan.</summary>
+    private sealed class LogEnMemoria : IPlanExecutionLogRepository
+    {
+        private readonly List<PlanExecutionLog> _logs;
+        public LogEnMemoria(List<PlanExecutionLog> logs) => _logs = logs;
+        public Task<PlanExecutionLog> AddAsync(PlanExecutionLog log, CancellationToken cancellationToken = default)
+        {
+            _logs.Add(log);
+            return Task.FromResult(log);
+        }
+        public Task<List<PlanExecutionLog>> GetByPlanAsync(int idPlan, CancellationToken cancellationToken = default)
+            => Task.FromResult(_logs.Where(l => l.IdPlan == idPlan).ToList());
+    }
+
+    [Fact]
+    public async Task Reintento_NoSeRepite_AlAgotarLaPolitica()
+    {
+        var planRepo = new Mock<IPlanRepository>();
+        var stepRepo = new Mock<IPlanStepRepository>();
+        var logs = new List<PlanExecutionLog>();
+        var logRepo = new LogEnMemoria(logs);
+        var supervisor = new ExecutionSupervisor(planRepo.Object, stepRepo.Object, logRepo, maxReintentos: 2, tiempoEntreIntentosMs: 1);
+
+        var plan = new Plan { IdPlan = 8 };
+        var paso = new PlanStep { IdStep = 43, Orden = 1, Nombre = "Consultar Insumos", Estado = "EnEjecucion" };
+
+        Assert.True(await supervisor.ManejarFalloPasoAsync(plan, paso, "f1", CancellationToken.None));
+        Assert.True(await supervisor.ManejarFalloPasoAsync(plan, paso, "f2", CancellationToken.None));
+        Assert.False(await supervisor.ManejarFalloPasoAsync(plan, paso, "f3", CancellationToken.None));
+
+        Assert.Equal("Error", paso.Estado);
+        Assert.Equal(2, logs.Count(l => l.Evento == "Reintento"));
+        Assert.Single(logs.Where(l => l.Evento == "PasoError"));
+    }
+
+    [Fact]
     public void ExecutionGraph_RamasIndependientes_CompartenCapaParalela()
     {
         // SQL y RAG sin dependencias entre sí deben quedar en la misma capa (paralelo),
@@ -414,6 +812,42 @@ public class PlannerTests
         Assert.Contains(capaRag, n => n.IdNodo == 0); // RAG en paralelo con Coordinación (capa 0)
         var capaEntrega = capas.First(c => c.Any(n => n.IdNodo == 3));
         Assert.DoesNotContain(capaEntrega, n => n.IdNodo == 1 || n.IdNodo == 2); // convergencia posterior
+    }
+
+    /// <summary>
+    /// Regresión del plan colgado: plan.Pasos puede llegar con el mismo Orden repetido
+    /// (fixup de navegaciones de EF al leer + actualizar en el mismo DbContext). El
+    /// builder hacía ToDictionary(p => p.Orden) y moría con "An item with the same key
+    /// has already been added. Key: 0", dejando el plan en IniciandoEjecucion para siempre.
+    /// </summary>
+    [Fact]
+    public void ExecutionGraphBuilder_PasosConOrdenDuplicado_NoRevientaYGeneraCapas()
+    {
+        var builder = new ExecutionGraphBuilder();
+        var plan = new Plan
+        {
+            Pasos = new List<PlanStep>
+            {
+                new() { Orden = 0, Tipo = "Coordination", Nombre = "Coordinar", IdAsistente = 1 },
+                new() { Orden = 0, Tipo = "Coordination", Nombre = "Coordinar (dup)", IdAsistente = 1 },
+                new() { Orden = 1, Tipo = "Tool", Nombre = "Consultar datos", IdAsistente = 1, CodigoHerramienta = "SqlQueryTool" },
+                new() { Orden = 2, Tipo = "Agent", Nombre = "Entregar", IdAsistente = 1 }
+            },
+            Dependencias = new List<PlanDependency>
+            {
+                new() { StepOrigen = 0, StepDestino = 1 },
+                new() { StepOrigen = 1, StepDestino = 2 }
+            }
+        };
+
+        var grafo = builder.Construir(plan);
+
+        Assert.Equal(3, grafo.Nodos.Count); // un nodo por Orden
+        Assert.Equal(grafo.Nodos.Count, grafo.Nodos.Select(n => n.IdNodo).Distinct().Count());
+
+        var capas = grafo.ObtenerCapas();
+        Assert.Equal(3, capas.Count);
+        Assert.Equal(3, capas.Sum(c => c.Count)); // sin nodos repetidos ni bucle infinito
     }
 
     [Fact]
@@ -515,5 +949,121 @@ public class PlannerTests
         // Intención RAG semántica (sin keywords); la tabla la pone el match exacto
         // solo si se nombra, así que aquí se valida la intención.
         Assert.Contains(plan.Pasos, p => p.CodigoHerramienta == "DocumentSearchTool");
+    }
+
+    [Fact]
+    public async Task PlanBuilder_ConsultaDatosSinNombreTabla_CreaPasoSqlQueryTool()
+    {
+        var agentes = new[] { Agente("COMERCIAL-01", 1008, "SqlQueryTool") };
+        var conRepo = RepoConexion();
+        conRepo.Setup(r => r.GetActivasAsync()).ReturnsAsync(new List<ConexionBaseDatos>
+        {
+            new()
+            {
+                IdConexion = 1,
+                Nombre = "ControlActivosTest",
+                Activa = true,
+                TablasAutorizadas = new List<TablaAutorizada> { new() { NombreTabla = "Activos" } }
+            }
+        });
+
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            OllamaStub().Object,
+            Logger<PlanBuilder>().Object,
+            conRepo.Object,
+            RepoWorkflow().Object);
+
+        var plan = await builder.ConstruirAsync("cuantas son de categoria mobiliario ?", 1, CancellationToken.None);
+
+        Assert.NotEmpty(plan.Pasos);
+        Assert.Contains(plan.Pasos, p => p.CodigoHerramienta == "SqlQueryTool");
+    }
+
+    [Fact]
+    public async Task PlanBuilder_Subconsultas_CreaRamasParalelasConEntrada()
+    {
+        var agentes = new[] { Agente("COMERCIAL-01", 1008, "SqlQueryTool") };
+        var conRepo = RepoConexion();
+        conRepo.Setup(r => r.GetActivasAsync()).ReturnsAsync(new List<ConexionBaseDatos>
+        {
+            new() { IdConexion = 1, Nombre = "VentasTest", Activa = true,
+                TablasAutorizadas = new List<TablaAutorizada> { new() { NombreTabla = "Ventas" } } }
+        });
+        var ollama = new Mock<IOllamaService>();
+        ollama.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"tablas\":[\"Ventas\"],\"rag\":false,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":true,\"aprobacion\":false,\"subconsultas\":[\"ventas de categoria ropa\",\"ventas de categoria hogar\"]}");
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            ollama.Object,
+            Logger<PlanBuilder>().Object,
+            conRepo.Object,
+            RepoWorkflow().Object);
+
+        var plan = await builder.ConstruirAsync("ventas de ropa y hogar en paralelo", 1, CancellationToken.None);
+
+        var ramas = plan.Pasos.Where(p => p.CodigoHerramienta == "SqlQueryTool" && p.Nombre.StartsWith("Consultar datos de")).ToList();
+        Assert.Equal(2, ramas.Count);
+        Assert.All(ramas, r => Assert.False(string.IsNullOrWhiteSpace(r.Entrada)));
+        Assert.Contains(ramas, r => r.Entrada!.Contains("ropa"));
+        Assert.Contains(ramas, r => r.Entrada!.Contains("hogar"));
+        // Sin dependencia entre ramas (paralelo real).
+        Assert.DoesNotContain(plan.Dependencias,
+            d => ramas.Any(o => o.Orden == d.StepOrigen) && ramas.Any(o => o.Orden == d.StepDestino));
+        // El análisis espera a TODAS las ramas.
+        var analisis = plan.Pasos.FirstOrDefault(p => p.Tipo == "Tool" && p.Nombre.Contains("Analizar"));
+        Assert.NotNull(analisis);
+        foreach (var rama in ramas)
+            Assert.Contains(plan.Dependencias, d => d.StepOrigen == rama.Orden && d.StepDestino == analisis!.Orden);
+    }
+
+    [Fact]
+    public async Task PlanBuilder_AutoSplit_DetectaRamasSinLLM()
+    {
+        // El LLM NO divide (subconsultas vacías) pero los valores observados sí:
+        // el auto-split determinístico debe crear 2 ramas igualmente.
+        var agentes = new[] { Agente("COMERCIAL-01", 1008, "SqlQueryTool") };
+        var conRepo = RepoConexion();
+        conRepo.Setup(r => r.GetActivasAsync()).ReturnsAsync(new List<ConexionBaseDatos>
+        {
+            new() { IdConexion = 1, Nombre = "VentasTest", Activa = true,
+                CadenaConexionCifrada = "x",
+                TablasAutorizadas = new List<TablaAutorizada> { new() { NombreTabla = "Ventas" } } }
+        });
+        var ollama = new Mock<IOllamaService>();
+        ollama.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"tablas\":[\"Ventas\"],\"rag\":false,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":true,\"aprobacion\":false,\"subconsultas\":[]}");
+        var cifrador = new Mock<IConexionCifrador>();
+        cifrador.Setup(c => c.Descifrar(It.IsAny<string>())).Returns("Server=x");
+        var executor = new Mock<ISqlQueryExecutor>();
+        executor.Setup(e => e.ExecuteReadOnlyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<CancellationToken>(), It.IsAny<int>()))
+            .ReturnsAsync((string cs, string sql, object? prm, int max, CancellationToken ct, int t) =>
+            {
+                if (sql.Contains("DISTINCT", StringComparison.OrdinalIgnoreCase))
+                    return new List<Dictionary<string, object?>>
+                    {
+                        new() { ["V"] = "Ropa" }, new() { ["V"] = "Hogar" }
+                    };
+                return new List<Dictionary<string, object?>>
+                {
+                    new() { ["COLUMN_NAME"] = "Categoria" }
+                };
+            });
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            ollama.Object,
+            Logger<PlanBuilder>().Object,
+            conRepo.Object,
+            RepoWorkflow().Object,
+            null,
+            cifrador.Object,
+            executor.Object);
+
+        var plan = await builder.ConstruirAsync("ventas de ropa y hogar", 1, CancellationToken.None);
+
+        var ramas = plan.Pasos.Where(p => p.CodigoHerramienta == "SqlQueryTool" && p.Nombre.StartsWith("Consultar datos de")).ToList();
+        Assert.Equal(2, ramas.Count);
+        Assert.Contains(ramas, r => r.Entrada != null && r.Entrada.Contains("Ropa"));
+        Assert.Contains(ramas, r => r.Entrada != null && r.Entrada.Contains("Hogar"));
     }
 }

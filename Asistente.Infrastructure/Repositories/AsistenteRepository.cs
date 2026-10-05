@@ -44,26 +44,19 @@ public class AsistenteRepository : IAsistenteRepository
 
     /// <summary>
     /// Agentes que el usuario puede utilizar (Regla 1): asignados por rol o directamente.
+    /// Sin bypass: las asignaciones mandan para todos los roles incluido Administrador.
     /// </summary>
     public async Task<IEnumerable<Domain.Entities.Asistente>> GetAutorizadosParaUsuarioAsync(
         int idUsuario, IEnumerable<int> rolesUsuario)
     {
         var roles = rolesUsuario?.ToList() ?? new List<int>();
-        var esAdmin = roles.Contains(1); // Rol 1 = Administrador: ve todos los agentes activos (cualquier estado de ciclo de vida).
 
-        var query = _context.Asistentes.Where(a => a.Activo);
-
-        if (esAdmin)
-        {
-            // El administrador ve TODOS los agentes activos (sin restricción de asignación ni de estado de ciclo de vida).
-            return await query.ToListAsync();
-        }
-
-        // Usuarios no administradores: agentes activos a los que estén autorizados
-        // (por rol asignado o asignación directa), sin importar el estado de ciclo de vida.
-        // Así pueden usar/probar el agente que se les asignó (Regla 1).
-        query = query.Where(a => a.UsuariosAsistentes.Any(ua => ua.IdUsuario == idUsuario && ua.Activo)
-                                 || a.AgentesRoles.Any(ar => ar.Activo && roles.Contains(ar.IdRol)));
+        // Agentes activos a los que esté autorizado (por rol asignado o asignación
+        // directa), sin importar el estado de ciclo de vida. Así pueden usar/probar
+        // el agente que se les asignó (Regla 1).
+        var query = _context.Asistentes.Where(a => a.Activo)
+            .Where(a => a.UsuariosAsistentes.Any(ua => ua.IdUsuario == idUsuario && ua.Activo)
+                        || a.AgentesRoles.Any(ar => ar.Activo && roles.Contains(ar.IdRol)));
 
         return await query.ToListAsync();
     }

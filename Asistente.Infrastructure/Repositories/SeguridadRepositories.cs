@@ -33,6 +33,12 @@ public class PermisoRepository : IPermisoRepository
     public async Task AddRolPermisoAsync(RolPermiso rp, CancellationToken ct = default)
         => await _context.RolPermisos.AddAsync(rp, ct);
 
+    public async Task DeleteByRolAsync(int idRol, CancellationToken ct = default)
+    {
+        var existentes = await _context.RolPermisos.Where(rp => rp.IdRol == idRol).ToListAsync(ct);
+        _context.RolPermisos.RemoveRange(existentes);
+    }
+
     public async Task<IEnumerable<string>> ObtenerCodigosPorUsuarioAsync(int idUsuario, CancellationToken ct = default)
     {
         return await _context.UsuarioRoles.AsNoTracking()

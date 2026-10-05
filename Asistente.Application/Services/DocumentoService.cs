@@ -248,6 +248,14 @@ public class DocumentoService : IDocumentoService
 
         // SEGURIDAD: eliminar revoca el acceso igual que archivar.
         await EliminarVectoresDeDocumentoAsync(id);
+
+        // El eliminado es definitivo (no se puede reactivar): soltar también las
+        // asignaciones a fuentes para que no quede residuo. Archivar las conserva
+        // porque ese sí puede volver.
+        var enlaces = await _documentoFuenteRepository.GetByDocumentoIdAsync(id);
+        foreach (var e in enlaces.ToList())
+            _documentoFuenteRepository.Delete(e);
+        await _unitOfWork.SaveChangesAsync();
     }
 
     /// <summary>

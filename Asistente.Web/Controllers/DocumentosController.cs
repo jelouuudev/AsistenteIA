@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace Asistente.Web.Controllers;
 
-[Authorize(Roles = "Administrador,Operador,Supervisor")]
+[Authorize(Roles = "Administrador,Operador,Supervisor,Usuario")]
 public class DocumentosController : Controller
 {
     private readonly IApiService _apiService;
@@ -126,6 +126,7 @@ public class DocumentosController : Controller
     }
 
     [HttpGet]
+    [Authorize(Roles = "Administrador,Operador,Supervisor")]
     public async Task<IActionResult> Editar(int id)
     {
         try
@@ -161,6 +162,7 @@ public class DocumentosController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador,Operador,Supervisor")]
     public async Task<IActionResult> Editar(int id, ActualizarDocumentoRequest model)
     {
         var userId = GetCurrentUserId();
@@ -284,6 +286,7 @@ public class DocumentosController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador,Operador,Supervisor")]
     public async Task<IActionResult> Activar(int id)
     {
         try
@@ -300,6 +303,7 @@ public class DocumentosController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador,Operador,Supervisor")]
     public async Task<IActionResult> Archivar(int id)
     {
         try
@@ -316,6 +320,7 @@ public class DocumentosController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador,Operador,Supervisor")]
     public async Task<IActionResult> Eliminar(int id)
     {
         try

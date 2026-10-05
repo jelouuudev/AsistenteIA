@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Entities.Aprobaciones;
+using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -29,6 +30,7 @@ public class ApprovalManager
     private readonly IPlanExecutionLogRepository _logRepo;
     private readonly ILogger<ApprovalManager> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IUsuarioRepository _usuarioRepo;
 
     public ApprovalManager(
         IApprovalRequestRepository reqRepo,
@@ -38,7 +40,8 @@ public class ApprovalManager
         IPlanRepository planRepo,
         IPlanExecutionLogRepository logRepo,
         ILogger<ApprovalManager> logger,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        IUsuarioRepository usuarioRepo)
     {
         _reqRepo = reqRepo;
         _decRepo = decRepo;
@@ -48,6 +51,24 @@ public class ApprovalManager
         _logRepo = logRepo;
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _usuarioRepo = usuarioRepo;
+    }
+
+    /// <summary>
+    /// Roles habilitados para aprobar planes. El rol "Usuario" solo tiene acceso al
+    /// chat y a subir documentos (sin Centro de Aprobaciones), por lo que nunca puede
+    /// ser asignado como aprobador ni decidir solicitudes.
+    /// </summary>
+    private static readonly string[] RolesAprobadores = ["Administrador", "Operador", "Supervisor"];
+
+    private static bool TieneRolAprobador(Usuario usuario) =>
+        usuario.Activo && usuario.UsuarioRoles
+            .Any(ur => ur.Rol != null && RolesAprobadores.Contains(ur.Rol.Nombre));
+
+    private async Task<Usuario?> ObtenerAprobadorValidoAsync(int idUsuario, CancellationToken ct)
+    {
+        var usuario = await _usuarioRepo.GetByIdAsync(idUsuario);
+        return usuario != null && TieneRolAprobador(usuario) ? usuario : null;
     }
 
     /// <summary>
@@ -80,8 +101,23 @@ public class ApprovalManager
         solicitud = await _reqRepo.AddAsync(solicitud, ct);
 
         // Asignar aprobadores (actividad 4 y 5). El primero es el principal.
-        int idx = 0;
+        // Solo Administrador/Operador/Supervisor pueden aprobar: se descartan los
+        // usuarios con rol Usuario (sin acceso al Centro de Aprobaciones).
+        var aprobadoresValidos = new List<int>();
         foreach (var idUsuario in aprobadores.Distinct())
+        {
+            if (await ObtenerAprobadorValidoAsync(idUsuario, ct) != null)
+                aprobadoresValidos.Add(idUsuario);
+            else
+                _logger.LogWarning("Usuario {Id} descartado como aprobador: sin rol aprobador o inactivo.", idUsuario);
+        }
+
+        if (aprobadoresValidos.Count == 0)
+            throw new InvalidOperationException(
+                "Ningún aprobador válido: solo usuarios con rol Administrador, Operador o Supervisor pueden aprobar.");
+
+        int idx = 0;
+        foreach (var idUsuario in aprobadoresValidos)
         {
             await _asgRepo.AddAsync(new ApprovalAssignee
             {
@@ -94,7 +130,7 @@ public class ApprovalManager
         }
 
         await RegistrarAuditoriaAsync(idPlan, solicitud.IdApproval, "SolicitudAprobacion",
-            $"Creada {solicitud.Codigo} ({tipo}) para el plan #{idPlan}. Aprobadores: {aprobadores.Count}.", ct);
+            $"Creada {solicitud.Codigo} ({tipo}) para el plan #{idPlan}. Aprobadores: {aprobadoresValidos.Count}.", ct);
 
         _logger.LogInformation("Solicitud de aprobación {Codigo} creada para plan {Plan}", solicitud.Codigo, idPlan);
         return solicitud;
@@ -146,10 +182,19 @@ public class ApprovalManager
             return req; // ya resuelta
 
         // Regla 7: el usuario debe estar autorizado (asignado y pendiente).
-        var asignado = req.Asignados.FirstOrDefault(a => a.IdUsuario == idUsuario);
-        if (asignado == null || asignado.Estado != "Pendiente")
+        // Se busca la asignación PENDIENTE: un usuario puede tener varias filas
+        // (p.ej. delegó y luego le volvieron a delegar); la primera puede estar
+        // en estado "Delegado" y no debe bloquear la decisión actual.
+        var asignado = req.Asignados.FirstOrDefault(a => a.IdUsuario == idUsuario && a.Estado == "Pendiente");
+        if (asignado == null)
             throw new UnauthorizedAccessException(
                 $"El usuario {idUsuario} no está autorizado para decidir la solicitud {idApproval}.");
+
+        // Solo Administrador/Operador/Supervisor pueden decidir (el rol Usuario
+        // no tiene acceso al Centro de Aprobaciones).
+        if (await ObtenerAprobadorValidoAsync(idUsuario, ct) == null)
+            throw new UnauthorizedAccessException(
+                $"El usuario {idUsuario} no tiene un rol habilitado para aprobar (se requiere Administrador, Operador o Supervisor).");
 
         // Regla 6: la IA / solicitante nunca aprueba sus propias acciones.
         // Rechazar siempre está permitido (cancelar propia solicitud).
@@ -230,6 +275,15 @@ public class ApprovalManager
         if (idUsuarioDestino <= 0)
             throw new InvalidOperationException("Debe indicar un ID de usuario destino para delegar la solicitud.");
 
+        // El destino debe existir, estar activo y tener rol aprobador (si no, la
+        // solicitud quedaría irresoluble: el rol Usuario no accede al Centro de Aprobaciones).
+        var destino = await _usuarioRepo.GetByIdAsync(idUsuarioDestino);
+        if (destino == null || !destino.Activo)
+            throw new InvalidOperationException($"El usuario destino {idUsuarioDestino} no existe o está inactivo.");
+        if (!TieneRolAprobador(destino))
+            throw new InvalidOperationException(
+                $"El usuario destino {idUsuarioDestino} no tiene un rol habilitado para aprobar (se requiere Administrador, Operador o Supervisor).");
+
         if (req.Policy != null && !req.Policy.PermiteDelegacion)
             throw new InvalidOperationException("La política no permite delegación.");
 
@@ -289,7 +343,7 @@ public class ApprovalManager
         if (plan != null)
         {
             plan.Estado = "Cancelado";
-            await _planRepo.UpdateAsync(plan, ct);
+            await _planRepo.UpdateEstadoAsync(req.IdPlan, "Cancelado", DateTime.UtcNow, ct);
             await RegistrarAuditoriaAsync(req.IdPlan, idApproval, "PlanCancelado",
                 "Plan cancelado por aprobación expirada.", ct);
         }
@@ -330,7 +384,7 @@ public class ApprovalManager
         var plan = await _planRepo.GetByIdAsync(req.IdPlan, ct);
         if (plan == null) return;
         plan.Estado = "Cancelado";
-        await _planRepo.UpdateAsync(plan, ct);
+        await _planRepo.UpdateEstadoAsync(req.IdPlan, "Cancelado", DateTime.UtcNow, ct);
         await RegistrarAuditoriaAsync(req.IdPlan, req.IdApproval, "PlanCancelado",
             "Aprobación rechazada. Plan cancelado.", ct);
     }

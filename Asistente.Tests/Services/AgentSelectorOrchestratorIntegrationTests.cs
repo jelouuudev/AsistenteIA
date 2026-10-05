@@ -45,6 +45,28 @@ public class AgentSelectorOrchestratorIntegrationTests
     }
 
     // ===== AgentSelector: selecciona por tipo de solicitud + reglas + permisos =====
+    /// <summary>
+    /// Enrutamiento estructural: el selector compara la pregunta con la DESCRIPCIÓN de
+    /// cada herramienta (dato de la BD), no con palabras clave del texto. El catálogo y
+    /// los embeddings son deterministas para que el test mida la lógica de selección.
+    /// </summary>
+    private static Mock<IHerramientaRepository> EnrutamientoPorDescripciones(out EmbeddingsPorEje emb)
+    {
+        const string DescSql = "Ejecuta consultas SELECT de solo lectura sobre la base de datos empresarial autorizada.";
+        const string DescDoc = "Recupera fragmentos de documentos internos mediante busqueda semantica (Motor RAG).";
+        const string DescRep = "Genera reportes estructurados en Markdown a partir de datos obtenidos.";
+        emb = new EmbeddingsPorEje()
+            .Eje(DescSql, 0)
+            .Eje(DescDoc, 1)
+            .Eje(DescRep, 2)
+            // La pregunta combina datos y documento: media similitud con SQL y RAG.
+            .Vector("Analiza las ventas del mes y compara con el procedimiento del manual",
+                    new[] { 0.55f, 0.60f, 0.10f });
+        return EmbeddingsPorEje.Catalogo(
+            ("SqlQueryTool", DescSql, "ConsultaSQL"),
+            ("DocumentSearchTool", DescDoc, "ConsultaDocumental"),
+            ("ReportTool", DescRep, "Reporte"));
+    }
     [Fact]
     public async Task AgentSelector_SeleccionaColaboradoresSegunIntencionYSoloAutorizados()
     {
@@ -62,12 +84,14 @@ public class AgentSelectorOrchestratorIntegrationTests
         auth.Setup(a => a.VerificarAsistenteAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ResultadoAutorizacion { Permitido = true });
 
-        var selector = new AgentSelector(repo.Object, reglas.Object, auth.Object);
+        var Pregunta = "Analiza las ventas del mes y compara con el procedimiento del manual";
+        var cat = EnrutamientoPorDescripciones(out var emb);
+        var selector = new AgentSelector(repo.Object, reglas.Object, auth.Object, emb, cat.Object);
         var candidatos = (await selector.SelectAgentsAsync(new AgentRequest
         {
             IdUsuario = 1,
             IdAgentePrincipal = 1,
-            Pregunta = "Analiza las ventas del mes y compara con el procedimiento del manual"
+            Pregunta = Pregunta
         })).ToList();
 
         // Comercial (SQL) y Soporte (RAG) permitidos; Reportes bloqueado por regla.
@@ -115,14 +139,18 @@ public class AgentSelectorOrchestratorIntegrationTests
                 .ReturnsAsync((int id, CancellationToken _) => executionCapturada ?? new AgentExecution { IdExecution = id, Pasos = new List<AgentExecutionStep>(), Trazas = new List<AgentExecutionTrace>(), AgentePrincipal = principal });
         execRepo.Setup(r => r.UpdateAsync(It.IsAny<AgentExecution>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
+        var pasosLock = new object();
         var stepRepo = new Mock<IAgentExecutionStepRepository>();
         stepRepo.Setup(r => r.AddAsync(It.IsAny<AgentExecutionStep>(), It.IsAny<CancellationToken>()))
                 .Callback<AgentExecutionStep, CancellationToken>((s, _) =>
                 {
-                    if (executionCapturada != null)
+                    lock (pasosLock)
                     {
-                        s.IdExecution = executionCapturada.IdExecution;
-                        executionCapturada.Pasos.Add(s);
+                        if (executionCapturada != null)
+                        {
+                            s.IdExecution = executionCapturada.IdExecution;
+                            executionCapturada.Pasos.Add(s);
+                        }
                     }
                 })
                 .ReturnsAsync((AgentExecutionStep s, CancellationToken _) => s);
@@ -134,21 +162,35 @@ public class AgentSelectorOrchestratorIntegrationTests
         traceRepo.Setup(r => r.GetByExecutionAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<AgentExecutionTrace>());
 
-        var selector = new AgentSelector(repo.Object, reglas.Object, auth.Object);
+        var Pregunta = "Analiza las ventas del mes y compara con el procedimiento del manual";
+        var cat = EnrutamientoPorDescripciones(out var emb);
+        var selector = new AgentSelector(repo.Object, reglas.Object, auth.Object, emb, cat.Object);
         var aggregator = new ResponseAggregator();
         var contextManager = new ContextManager(reglas.Object);
 
-        var orchestrator = new AgentOrchestrator(
+        // Scopes por nodo (B-02): resuelven el mismo orchestrator (los nodos no
+        // anidan scopes porque EjecutarNodoAisladoAsync no crea más).
+        AgentOrchestrator? orchestrator = null;
+        var scopeFactory = new Mock<IServiceScopeFactory>();
+        scopeFactory.Setup(f => f.CreateScope()).Returns(() =>
+        {
+            var scope = new Mock<IServiceScope>();
+            scope.Setup(s => s.ServiceProvider.GetService(typeof(IAgentOrchestrator)))
+                 .Returns(orchestrator!);
+            return scope.Object;
+        });
+
+        orchestrator = new AgentOrchestrator(
             selector, aggregator, contextManager,
             execRepo.Object, stepRepo.Object, traceRepo.Object, reglas.Object,
             configRepo.Object, repo.Object, chat.Object,
-            OllamaDisponibleMock(), Mock.Of<IServiceScopeFactory>(), new Mock<ILogger<AgentOrchestrator>>().Object);
+            OllamaDisponibleMock(), scopeFactory.Object, new Mock<ILogger<AgentOrchestrator>>().Object);
 
         var result = await orchestrator.ExecuteAsync(new AgentRequest
         {
             IdUsuario = 1,
             IdAgentePrincipal = 1,
-            Pregunta = "Analiza las ventas del mes y compáralo con el procedimiento del manual"
+            Pregunta = Pregunta
         });
 
         Assert.True(result.Exitoso);

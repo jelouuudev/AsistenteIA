@@ -21,6 +21,14 @@ public interface IAgentOrchestrator
     Task<ResultadoPasoOrquestado> EjecutarPasoValidadoAsync(
         Plan plan, PlanStep paso, string? contextoPrevio, string? datoPrevio,
         int idUsuario, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Ejecuta UN nodo del grafo de colaboración con los servicios del scope propio
+    /// (aislamiento de DbContext por rama para ejecución paralela, B-02).
+    /// </summary>
+    Task EjecutarNodoAisladoAsync(
+        AgentExecution execution, ExecutionNode nodo, SharedContext contextoGlobal,
+        string? contextoPrevioPlan, int[] ordenWrap, ConfiguracionOrchestrator? config,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Resultado de ejecutar un paso validado del plan en el Orchestrator.</summary>

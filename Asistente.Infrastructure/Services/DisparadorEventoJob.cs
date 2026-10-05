@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Quartz;
@@ -40,6 +42,22 @@ public class DisparadorEventoJob : IJob
             }
 
             var contexto = ExtraerContexto(d.ConfigJson);
+
+            // Anti-duplicado: si este mismo evento ya fue disparado por el sistema
+            // en los últimos 120s (doble ejecución del job), se omite para no generar
+            // reportes/ejecuciones repetidas. Los disparos manuales llevan IdUsuario
+            // y nunca se filtran aquí.
+            var procesadosRepo = scope.ServiceProvider.GetRequiredService<IEventoProcesadoRepository>();
+            var limite = DateTime.UtcNow.AddSeconds(-120);
+            var duplicado = (await procesadosRepo.GetAllAsync(context.CancellationToken))
+                .Any(p => p.IdEvento == d.IdEvento && p.IdUsuario == null && p.FechaHora >= limite);
+            if (duplicado)
+            {
+                _logger.LogWarning("Quartz: disparador {Id} omitido por disparo duplicado reciente.", idDisparador);
+                await disparadores.MarcarEjecucionAsync(idDisparador, context.NextFireTimeUtc?.UtcDateTime, context.CancellationToken);
+                return;
+            }
+
             var procesado = await motor.DispararEventoAsync(
                 (await scope.ServiceProvider.GetRequiredService<IEventoEmpresarialService>()
                     .ObtenerPorIdAsync(d.IdEvento, context.CancellationToken))?.Codigo

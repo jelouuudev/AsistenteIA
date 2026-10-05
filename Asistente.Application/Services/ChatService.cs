@@ -1,5 +1,6 @@
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator;
+using Asistente.Application.Services.Herramientas;
 using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Enums;
@@ -37,6 +38,7 @@ public class ChatService : IChatService
     private readonly IUsuarioFuenteRepository _usuarioFuenteRepository;
     private readonly Lazy<IAgentOrchestrator> _agentOrchestrator;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISeleccionHerramientaSemantica? _seleccionHerramienta;
 
     public ChatService(
         IConversacionRepository conversacionRepository,
@@ -62,7 +64,8 @@ public class ChatService : IChatService
         IMetricasIARepository metricasIARepository,
         IUsuarioFuenteRepository usuarioFuenteRepository,
         Lazy<IAgentOrchestrator> agentOrchestrator,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        ISeleccionHerramientaSemantica? seleccionHerramienta = null)
     {
         _conversacionRepository = conversacionRepository;
         _mensajeRepository = mensajeRepository;
@@ -88,6 +91,7 @@ public class ChatService : IChatService
         _usuarioFuenteRepository = usuarioFuenteRepository;
         _agentOrchestrator = agentOrchestrator;
         _scopeFactory = scopeFactory;
+        _seleccionHerramienta = seleccionHerramienta;
     }
 
     public async Task<MensajeResponse> ProcesarMensajeAsync(MensajeRequest request, CancellationToken cancellationToken = default)
@@ -237,7 +241,8 @@ public class ChatService : IChatService
                         return response;
                     }
 
-                    var restriccion = VerificarRestricciones(asistente.Restricciones, request.Mensaje);
+                    var restriccion = await VerificarRestriccionesAsync(
+                        asistente.Restricciones, request.Mensaje, cancellationToken);
                     if (restriccion != null)
                     {
                         response.Exitoso = true;
@@ -283,15 +288,14 @@ public class ChatService : IChatService
                     usoOrquestador = true;
 
                     // === Short-circuit determinista: consultas de datos en vivo ===
-                    // Si el mensaje es claramente una consulta de datos (activos, clientes,
-                    // registros, lista, total, cuántos, etc.) y existe SqlQueryTool disponible,
-                    // forzar su ejecución contra la BD para garantizar datos REALES.
-                    // Disparadores deterministas de utilidades (calculadora, fecha/hora).
-                    // Van ANTES del de SQL porque "cuánto es 2+2" contiene "cuanto".
-                    DecisionHerramienta? decision = DecidirHerramientaUtilitaria(request.Mensaje, herramientasDisp);
-                    // Alcance "documental" (nodo RAG orquestado): no disparar SQL determinista.
-                    if (!string.Equals(request.Alcance, "documental", StringComparison.OrdinalIgnoreCase))
-                        decision ??= DecidirConsultaDatosDeterminista(request.Mensaje, herramientasDisp);
+                    // La herramienta se elige por SIMILITUD entre el mensaje y la
+                    // descripción de cada herramienta disponible (dato de configuración),
+                    // no por una lista de términos: el proyecto sirve a varias bases de
+                    // datos, incluidas nuevas, y una lista solo describiría el negocio
+                    // actual. Si no hay embeddings no se dispara nada y responde el LLM.
+                    // Alcance "documental" (nodo RAG orquestado): no disparar SQL.
+                    DecisionHerramienta? decision =
+                        await DecidirHerramientaSemanticaAsync(request.Mensaje, herramientasDisp, _seleccionHerramienta, cancellationToken);
                     if (decision?.RequiereHerramienta == true && !string.IsNullOrEmpty(decision.CodigoHerramienta))
                     {
                         var resultado = await _toolOrchestrator.EjecutarAsync(new ToolExecutionRequest
@@ -357,6 +361,12 @@ public class ChatService : IChatService
                             return response;
                         }
                         // Si no había flujo pendiente, continuar normalmente
+                    }
+                    else if (string.Equals(request.Alcance, "documental", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Nodo RAG orquestado: no disparar workflows (igual que no dispara
+                        // SQL determinista). Su rol es solo documental.
+                        _logger.LogInformation("Nodo RAG: se omite disparo de workflow por frase (alcance documental).");
                     }
                     else
                     {
@@ -441,8 +451,17 @@ public class ChatService : IChatService
             // tiene acceso a la base de conocimiento (coherente con el modelo de permisos).
             if (tieneBusquedaDocumental)
             {
+                // El nodo RAG del orchestrator antepone una instrucción de rol
+                // ("...Solicitud: <pregunta>"). Para recuperar se usa SOLO la solicitud:
+                // el prefijo ("políticas, manuales, procedimientos") sesga el embedding
+                // hacia docs de RRHH y ahoga la pregunta real.
+                var consultaRecuperacion = request.Mensaje;
+                const string marcador = "\nSolicitud: ";
+                var idx = request.Mensaje.IndexOf(marcador, StringComparison.Ordinal);
+                if (idx >= 0)
+                    consultaRecuperacion = request.Mensaje[(idx + marcador.Length)..].Trim();
                 (contextoDocumental, referenciasDocumentales) = await _recuperacionService.RecuperarContextoConFuentesAsync(
-                    request.Mensaje, idAsistenteEfectivo, cancellationToken);
+                    consultaRecuperacion, idAsistenteEfectivo, request.UsuarioPropietario, cancellationToken);
 
                 // Protección contra Prompt Injection: el contenido RAG se trata SOLO como información
                 // documental y no puede otorgar permisos ni modificar políticas (Actividad 11 / Reglas 3 y 5).
@@ -689,7 +708,13 @@ public class ChatService : IChatService
             }
 
             response.IdConversacion = conversacion.IdConversacion;
-            response.Respuesta = CorregirIdentificadores(respuestaIa);
+            // Antes se aplicaba aquí un diccionario de correcciones de identificadores
+            // ("User Profile"→"UserProfile") hardcodeado en C#: vocabulario de un
+            // proyecto .NET en concreto que no aplica a ninguna otra base ni a otro
+            // dominio, y que obliga a editar el código por cada identificador nuevo.
+            // Se eliminó: el modelo escribe los identificadores y el flujo que los
+            // consume los valida.
+            response.Respuesta = respuestaIa;
             response.TiempoRespuestaMs = tiempoMs;
             response.Exitoso = true;
             response.ReferenciasDocumentales = referenciasDocumentales;
@@ -871,82 +896,32 @@ public class ChatService : IChatService
         return string.Join("\n", partes);
     }
 
-    private static readonly Dictionary<string, string> CorreccionesIdentificadores = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// Restricciones del asistente: se evalúan por SIMILITUD entre el mensaje y el texto
+    /// de restricción configurado, no buscando términos ni sus sinónimos.
+    ///
+    /// Antes: el texto de restricción se tokenizaba, se expandía con un diccionario de
+    /// términos relacionados (política/religión/sexo) y se buscaba por substring. Eso es
+    /// vocabulario fijo: con otra configuración de restricciones había que editar el
+    /// diccionario, y "no hablar de X" se activaba por cualquier palabra parecida.
+    /// Ahora el significado lo decide el embedding de la restricción completa.
+    /// </summary>
+    private async Task<string?> VerificarRestriccionesAsync(string? restricciones, string mensaje, CancellationToken ct)
     {
-        ["User Profile"] = "UserProfile",
-        ["Order Service"] = "OrderService",
-        ["Notification Handler"] = "NotificationHandler",
-        ["calculate Total"] = "calculateTotal",
-        ["_database Connection"] = "_databaseConnection",
-        ["User Service.cs"] = "UserService.cs",
-        ["Payment Service.cs"] = "PaymentService.cs",
-        ["User Repository.cs"] = "UserRepository.cs",
-        ["Auth Controller.cs"] = "AuthController.cs",
-        [". NET"] = ".NET"
-    };
+        if (string.IsNullOrWhiteSpace(restricciones) || string.IsNullOrWhiteSpace(mensaje)) return null;
 
-    private static string CorregirIdentificadores(string texto)
-    {
-        if (string.IsNullOrWhiteSpace(texto))
-            return texto;
+        // Un embedding por texto de restricción, cacheado.
+        var similitud = await _seleccionHerramienta!.SimilitudAsync(mensaje, restricciones, ct);
+        if (similitud < UmbralSimilitudRestriccion) return null;
 
-        foreach (var correccion in CorreccionesIdentificadores)
-            texto = texto.Replace(correccion.Key, correccion.Value, StringComparison.OrdinalIgnoreCase);
-
-        return texto;
+        return $"Lo siento, no puedo hablar sobre ese tema. Tengo restricciones configuradas que me impiden tratar: {restricciones}. ¿Hay algo más en lo que pueda ayudarte?";
     }
 
-    private static readonly Dictionary<string, string[]> MapaTerminosRelacionados = new()
-    {
-        ["politica"] = ["politica", "politico", "presidente", "presidencial", "gobierno", "gobernante",
-            "elecciones", "votar", "voto", "congreso", "senado", "diputado", "ministro",
-            "partido", "alcalde", "candidato", "democracia", "dictadura", "constitucion",
-            "parlamento", "nacion", "nacional", "estado", "presidencia", "presidencial"],
-        ["religion"] = ["religion", "religioso", "dios", "iglesia", "cristiano", "catolico",
-            "evangelico", "musulman", "budista", "fe", "creencia", "culto", "secta"],
-        ["sexo"] = ["sexo", "sexual", "pornografia", "xxx", "desnudo", "erotico", "intimo",
-            "cama", "pareja", "relacion", "adulto", "contenido", "prohibido"]
-    };
-
-    private static string[] PalabrasVacias =
-    [
-        "de", "la", "el", "en", "y", "a", "los", "las", "un", "una", "del", "al", "con",
-        "por", "para", "que", "es", "no", "su", "le", "lo", "se", "hablar", "sobre",
-        "tema", "temas", "conversar", "mencionar", "tratar", "referente"
-    ];
-
-    private static string? VerificarRestricciones(string? restricciones, string mensaje)
-    {
-        if (string.IsNullOrWhiteSpace(restricciones)) return null;
-
-        var palabrasProhibidas = new HashSet<string>();
-
-        var palabrasClave = restricciones
-            .Split([' ', ',', ';', '.', ':'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(p => p.Trim().ToLowerInvariant())
-            .Where(p => p.Length > 2 && !PalabrasVacias.Contains(p))
-            .Distinct();
-
-        foreach (var palabra in palabrasClave)
-        {
-            palabrasProhibidas.Add(palabra);
-
-            if (MapaTerminosRelacionados.TryGetValue(palabra, out var relacionados))
-            {
-                foreach (var r in relacionados)
-                    palabrasProhibidas.Add(r);
-            }
-        }
-
-        var mensajeLower = mensaje.ToLowerInvariant();
-
-        if (palabrasProhibidas.Any(p => mensajeLower.Contains(p)))
-        {
-            return $"Lo siento, no puedo hablar sobre ese tema. Tengo restricciones configuradas que me impiden tratar: {restricciones}. ¿Hay algo más en lo que pueda ayudarte?";
-        }
-
-        return null;
-    }
+    /// <summary>
+    /// Umbral para considerar que un mensaje infringe la restricción. Alto: preferimos
+    /// responder de más que vetar por parecido.
+    /// </summary>
+    private const double UmbralSimilitudRestriccion = 0.75;
 
     private async Task<Conversacion> ObtenerOcrearConversacionAsync(int? idConversacion, int usuarioPropietario)
     {
@@ -983,22 +958,57 @@ public class ChatService : IChatService
         return nueva;
     }
 
-    private static bool EsMensajeConfirmacion(string mensaje)
+    /// <summary>
+    /// Confirmación / cancelación del flujo de aprobaciones.
+    ///
+    /// Antes comparaba por SUBSTRING: `m.Contains("cancelar")` hacía que
+    /// "no quiero cancelar nada" CANCELARA la operación, y `m.Contains("confirmar")`
+    /// bastaba para confirmar cualquier frase.
+    ///
+    /// Ahora el mensaje normalizado debe ser EXACTAMENTE un token de acción:
+    /// coincidencia de mensaje completo, no de fragmento. Un texto largo nunca dispara
+    /// el flujo.
+    ///
+    /// Estos tokens son el PROTOCOLO de la UI (lo que el chat interpreta como "sí/no"),
+    /// no vocabulario de negocio: no dependen de la base de datos ni del dominio, así que
+    /// no rompen al agregar bases. Quitarlos del servidor exige que la UI envíe la
+    /// acción explícita en el payload; hasta entonces son parte del contrato.
+    /// </summary>
+    internal static bool EsMensajeConfirmacion(string mensaje)
+        => EsTokenDeAccion(mensaje, AccionesConfirmacion);
+
+    internal static bool EsMensajeCancelacion(string mensaje)
+        => EsTokenDeAccion(mensaje, AccionesCancelacion);
+
+    private static readonly string[] AccionesConfirmacion = NormalizarTokens(
+        "si", "confirmar", "confirmo", "acepto", "continuar", "continua",
+        "dale", "ok", "okay", "va", "adelante", "prosigo", "de acuerdo", "correcto", "si,");
+
+    private static readonly string[] AccionesCancelacion = NormalizarTokens(
+        "no", "cancelar", "cancela", "cancelo", "detener", "deten", "detiene",
+        "para", "parar", "abortar", "aborto", "rechazar", "rechazo", "nada");
+
+    private static string[] NormalizarTokens(params string[] tokens)
+        => tokens.Select(NormalizarParaComparacion).ToArray();
+
+    /// <summary>Minúsculas, sin acentos ni puntuación de borde.</summary>
+    private static string NormalizarParaComparacion(string texto)
     {
-        if (string.IsNullOrWhiteSpace(mensaje)) return false;
-        var m = mensaje.ToLowerInvariant().Trim();
-        return m == "si" || m == "sí" || m == "confirmar" || m == "confirmo" || m == "acepto"
-               || m == "continuar" || m == "continua" || m.StartsWith("si,") || m.StartsWith("sí,")
-               || m.Contains("confirmar") || m.Contains("acepto");
+        var norm = texto.Normalize(System.Text.NormalizationForm.FormD);
+        var sinAcentos = new string(norm.Where(c =>
+            System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+                != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray());
+        return sinAcentos.ToLowerInvariant().Trim(' ', '.', ',', ';', ':', '!', '?');
     }
 
-    private static bool EsMensajeCancelacion(string mensaje)
+    private static bool EsTokenDeAccion(string mensaje, string[] tokens)
     {
         if (string.IsNullOrWhiteSpace(mensaje)) return false;
-        var m = mensaje.ToLowerInvariant().Trim();
-        return m == "cancelar" || m == "cancela" || m == "cancelo" || m == "detener" || m == "deten"
-               || m == "para" || m == "parar" || m == "no" || m == "abortar" || m == "aborto"
-               || m.Contains("cancelar") || m.Contains("detener");
+        var normalizado = NormalizarParaComparacion(mensaje);
+        // Un mensaje largo no es una acción: evita que "no quiero cancelar nada"
+        // se interprete como cancelación.
+        if (normalizado.Length > 30) return false;
+        return tokens.Contains(normalizado);
     }
 
     private static List<Mensaje> PrepararHistorialOllama(ContextoConstruido contexto)
@@ -1021,65 +1031,24 @@ public class ChatService : IChatService
     }
 
     /// <summary>
-    /// Short-circuit determinista: si el mensaje es una consulta de datos en vivo y el
-    /// asistente tiene SqlQueryTool disponible, fuerza su ejecución para garantizar datos REALES
-    /// (evita que el LLM de decisión elija ReportTool/RAG y omita la BD).
+    /// Decide la herramienta por SIMILITUD entre el mensaje y la descripción de cada
+    /// herramienta disponible (dato de configuración en la BD), no por listas de
+    /// términos. Con varias bases de datos una lista solo describiría el negocio
+    /// actual; la descripción de la herramienta describe la CAPACIDAD, que es lo mismo
+    /// en cualquier base.
+    ///
+    /// CalculatorTool tiene además una vía puramente estructural: si el mensaje
+    /// contiene una expresión numérica, se usa sin importar la similitud.
     /// </summary>
-    private static DecisionHerramienta? DecidirConsultaDatosDeterminista(
-        string mensaje, IEnumerable<Herramienta> herramientasDisponibles)
-    {
-        var sqlTool = herramientasDisponibles
-            .FirstOrDefault(h => h.Codigo.Equals("SqlQueryTool", StringComparison.OrdinalIgnoreCase));
-        if (sqlTool == null) return null;
-
-        if (string.IsNullOrWhiteSpace(mensaje)) return null;
-        var m = mensaje.ToLowerInvariant();
-
-        // Patrones de consulta de datos (activos, clientes, registros, listados, totales, conteos)
-        var patrones = new[]
-        {
-            "activo", "activos", "cliente", "clientes", "registro", "registros",
-            "lista", "listar", "mostrar", "muestra", "muestrame", "cuánto", "cuanto",
-            "total", "totales", "cuantos", "cantidad", "empleado", "empleados",
-            "producto", "productos", "pedido", "pedidos", "consulta", "tabla"
-        };
-        var esConsultaDatos = patrones.Any(p => m.Contains(p));
-        if (!esConsultaDatos) return null;
-
-        return new DecisionHerramienta
-        {
-            RequiereHerramienta = true,
-            CodigoHerramienta = "SqlQueryTool",
-            Parametros = new Dictionary<string, object> { { "pregunta", mensaje } }
-        };
-    }
-
-    /// <summary>
-    /// Disparador determinista para herramientas de utilidad (CalculatorTool, DateTimeTool).
-    /// Solo se activa si el asistente tiene la herramienta asignada. La calculadora exige
-    /// una expresión puramente matemática (evita robar consultas SQL como "total de pedidos").
-    /// </summary>
-    private static DecisionHerramienta? DecidirHerramientaUtilitaria(
-        string mensaje, IEnumerable<Herramienta> herramientasDisponibles)
+    internal static async Task<DecisionHerramienta?> DecidirHerramientaSemanticaAsync(
+        string mensaje, IEnumerable<Herramienta> herramientasDisponibles,
+        ISeleccionHerramientaSemantica? _seleccionHerramienta, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(mensaje)) return null;
-        var m = mensaje.Trim().ToLowerInvariant();
+        var disponibles = herramientasDisponibles as IList<Herramienta> ?? herramientasDisponibles.ToList();
 
-        if (herramientasDisponibles.Any(h => h.Codigo.Equals("DateTimeTool", StringComparison.OrdinalIgnoreCase)))
-        {
-            var patronesHora = new[]
-            {
-                "qué hora es", "que hora es", "hora actual", "dame la hora", "dime la hora",
-                "qué fecha es", "que fecha es", "fecha de hoy", "fecha actual",
-                "qué día es", "que dia es", "día de hoy", "dia de hoy",
-                "qué día somos", "que dia somos", "qué hora tienes", "que hora tienes"
-            };
-            var limpio = m.Trim('?', '¿', ' ', '.', '!');
-            if (patronesHora.Any(p => m.Contains(p)) || limpio is "hora" or "fecha" or "fecha y hora")
-                return new DecisionHerramienta { RequiereHerramienta = true, CodigoHerramienta = "DateTimeTool", Parametros = new() };
-        }
-
-        if (herramientasDisponibles.Any(h => h.Codigo.Equals("CalculatorTool", StringComparison.OrdinalIgnoreCase)))
+        // 1) Estructural: expresión matemática pura. No necesita vocabulario.
+        if (disponibles.Any(h => h.Codigo.Equals("CalculatorTool", StringComparison.OrdinalIgnoreCase)))
         {
             var expr = ExtraerExpresionMatematica(mensaje);
             if (!string.IsNullOrEmpty(expr))
@@ -1091,35 +1060,68 @@ public class ChatService : IChatService
                 };
         }
 
-        return null;
-    }
+        if (_seleccionHerramienta is null) return null;
 
-    private static string? ExtraerExpresionMatematica(string mensaje)
-    {
-        var texto = mensaje.Trim().TrimEnd('?', '¿', ' ', '.', '!', '=').Trim();
-        var lower = texto.ToLowerInvariant();
+        // 2) Semántico: la herramienta cuya descripción se parece más al mensaje.
+        var elegida = await _seleccionHerramienta.SeleccionarAsync(
+            mensaje, disponibles, UmbralSimilitudHerramienta, ct);
+        if (elegida is null) return null;
 
-        // "cuánto es <expr>", "calcula <expr>", etc.
-        var prefijos = new[] { "cuánto es", "cuanto es", "calcula", "calcular", "resuelve", "resolver", "multiplica", "divide", "suma", "resta" };
-        foreach (var p in prefijos)
+        var parametros = elegida.Codigo.Equals("CalculatorTool", StringComparison.OrdinalIgnoreCase)
+            ? new Dictionary<string, object?> { ["expresion"] = ExtraerExpresionMatematica(mensaje) ?? mensaje }
+            : elegida.Codigo.Equals("SqlQueryTool", StringComparison.OrdinalIgnoreCase)
+                ? new Dictionary<string, object?> { ["pregunta"] = mensaje }
+                : new Dictionary<string, object?>();
+
+        return new DecisionHerramienta
         {
-            if (lower.StartsWith(p))
-            {
-                var resto = texto[p.Length..].Trim().TrimStart(':', ' ', '-', '=').TrimEnd('?', ' ', '.', '!', '=').Trim();
-                return EsExpresionMatematica(resto) ? resto : null;
-            }
-        }
+            RequiereHerramienta = true,
+            CodigoHerramienta = elegida.Codigo,
+            Parametros = parametros
+        };
+    }
+    /// <summary>
+    /// Umbral de similitud para disparar una herramienta sin consultar al LLM. Alto a
+    /// propósito: preferimos que el LLM responda antes que ejecutar una consulta
+    /// equivocada.
+    /// </summary>
+    private const double UmbralSimilitudHerramienta = 0.62;
 
-        return EsExpresionMatematica(texto) ? texto : null;
+    /// <summary>
+    /// Extrae una expresión matemática del mensaje por FORMA, no por prefijos: se toman
+    /// los tramos máximos compuestos solo por dígitos y operadores, y se exige que alguno
+    /// tenga al menos un dígito y un operador. Así "cuánto es 2+2", "calcula 5*3" y "3 + 4"
+    /// funcionan sin enumerar ninguna palabra.
+    /// </summary>
+    internal static string? ExtraerExpresionMatematica(string mensaje)
+    {
+        if (string.IsNullOrWhiteSpace(mensaje)) return null;
+        const string permitidos = "+-*/%().,0123456789 \t";
+
+        string? mejor = null;
+        var actual = new System.Text.StringBuilder();
+        foreach (var c in mensaje)
+        {
+            if (permitidos.Contains(c)) { actual.Append(c); continue; }
+            if (EsExpresionMatematica(actual.ToString())
+                && (mejor is null || actual.Length > mejor.Length))
+                mejor = actual.ToString().Trim();
+            actual.Clear();
+        }
+        if (EsExpresionMatematica(actual.ToString())
+            && (mejor is null || actual.Length > mejor.Length))
+            mejor = actual.ToString().Trim();
+
+        return mejor;
     }
 
-    private static bool EsExpresionMatematica(string texto)
+    private static bool EsExpresionMatematica(string? texto)
     {
         if (string.IsNullOrWhiteSpace(texto)) return false;
         var t = texto.Trim();
+        if (t.Length == 0) return false;
         if (!t.Any(char.IsDigit)) return false;
         if (!t.Any(c => c is '+' or '-' or '*' or '/' or '(' or ')')) return false;
         return t.All(c => char.IsDigit(c) || char.IsWhiteSpace(c) || "+-*/%()., ".Contains(c));
     }
-
 }

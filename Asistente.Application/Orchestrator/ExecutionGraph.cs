@@ -28,6 +28,14 @@ public class ExecutionNode
     public string Estado { get; set; } = "Pendiente"; // Pendiente|EnEjecucion|Completado|Error|Omitido
     public string? Error { get; set; }
     public long TiempoMs { get; set; }
+
+    /// <summary>
+    /// Ámbito de recuperación del nodo ("documental" | "datos" | null), decidido por la
+    /// capacidad asignada. Antes se deducía parseando el texto de Accion
+    /// (`Accion.Contains("(RAG)")`), lo que rompía en cuanto el rol cambiaba de nombre.
+    /// Ahora viaja como dato desde el Agent Candidate.
+    /// </summary>
+    public string? Alcance { get; set; }
 }
 
 /// <summary>
@@ -46,11 +54,21 @@ public class ExecutionGraph
     {
         var capas = new List<List<ExecutionNode>>();
         var resueltos = new HashSet<int>();
-        var nodosRestantes = Nodos.ToDictionary(n => n.IdNodo);
-
-        while (resueltos.Count < Nodos.Count)
+        // Índice por IdNodo tolerante a duplicados: el bucle de capas avanza por
+        // resueltos (HashSet) mientras Nodos.Count los cuenta, así que un IdNodo
+        // repetido dejaría el while sin salida. Se conserva el primer nodo.
+        var nodosRestantes = new Dictionary<int, ExecutionNode>();
+        foreach (var n in Nodos)
         {
-            var capa = Nodos
+            if (!nodosRestantes.ContainsKey(n.IdNodo))
+                nodosRestantes[n.IdNodo] = n;
+        }
+
+        // Se itera sobre el índice deduplicado: con Nodos duplicados por IdNodo,
+        // resueltos.Count nunca alcanzaría Nodos.Count (bucle infinito).
+        while (resueltos.Count < nodosRestantes.Count)
+        {
+            var capa = nodosRestantes.Values
                 .Where(n => !resueltos.Contains(n.IdNodo)
                             && n.DependeDe.All(d => resueltos.Contains(d)))
                 .ToList();

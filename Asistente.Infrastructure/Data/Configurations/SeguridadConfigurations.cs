@@ -35,7 +35,9 @@ public class UsuarioAsistenteConfiguration : IEntityTypeConfiguration<UsuarioAsi
         builder.ToTable("UsuarioAsistentes");
         builder.HasKey(ua => new { ua.IdUsuario, ua.IdAsistente });
         builder.HasOne(ua => ua.Usuario).WithMany().HasForeignKey(ua => ua.IdUsuario).OnDelete(DeleteBehavior.Cascade);
-        builder.HasOne(ua => ua.Asistente).WithMany().HasForeignKey(ua => ua.IdAsistente).OnDelete(DeleteBehavior.Cascade);
+        // Misma pareja que AsistenteConfiguration: evita la relación duplicada con FK sombra
+        // (AsistenteIdAsistente) que dejaba la asignación directa sin efecto en el listado.
+        builder.HasOne(ua => ua.Asistente).WithMany(a => a.UsuariosAsistentes).HasForeignKey(ua => ua.IdAsistente).OnDelete(DeleteBehavior.Cascade);
     }
 }
 

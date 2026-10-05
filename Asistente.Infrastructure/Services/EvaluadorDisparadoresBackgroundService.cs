@@ -28,6 +28,11 @@ public class EvaluadorDisparadoresBackgroundService : BackgroundService
     private const string GrupoQuartz = "DisparadoresEvento";
     private static readonly TimeSpan IntervaloSondeo = TimeSpan.FromSeconds(60);
 
+    // Cron ya aplicado por disparador: evita borrar+recrear los jobs Quartz en cada
+    // ciclo (esa recreación constante puede provocar disparos duplicados). Solo se
+    // reprograma si cambia la expresión o si el job no existe.
+    private readonly Dictionary<int, string> _cronAplicado = new();
+
     private readonly IServiceProvider _serviceProvider;
     private readonly ISchedulerFactory _schedulerFactory;
     private readonly ILogger<EvaluadorDisparadoresBackgroundService> _logger;
@@ -106,9 +111,15 @@ public class EvaluadorDisparadoresBackgroundService : BackgroundService
 
             var nombre = $"disparador-{d.IdDisparador}";
             esperados.Add(nombre);
+            var jobKey = new JobKey(nombre, GrupoQuartz);
+
+            // Sin cambios desde el ciclo anterior: no tocar el job.
+            if (_cronAplicado.TryGetValue(d.IdDisparador, out var aplicado) && aplicado == cron
+                && await scheduler.CheckExists(jobKey, ct))
+                continue;
+
             try
             {
-                var jobKey = new JobKey(nombre, GrupoQuartz);
                 if (await scheduler.CheckExists(jobKey, ct))
                     await scheduler.DeleteJob(jobKey, ct);
 
@@ -121,6 +132,7 @@ public class EvaluadorDisparadoresBackgroundService : BackgroundService
                     .WithCronSchedule(cron)
                     .Build();
                 await scheduler.ScheduleJob(job, trigger, ct);
+                _cronAplicado[d.IdDisparador] = cron;
             }
             catch (Exception ex)
             {
@@ -138,6 +150,12 @@ public class EvaluadorDisparadoresBackgroundService : BackgroundService
                 _logger.LogInformation("Job Quartz huérfano {Job} eliminado.", jobKey.Name);
             }
         }
+
+        // Purgar memoria de crons ya inexistentes.
+        foreach (var id in _cronAplicado.Keys
+                     .Where(id => !esperados.Contains($"disparador-{id}"))
+                     .ToList())
+            _cronAplicado.Remove(id);
     }
 
     private async Task EvaluarSondeosAsync(CancellationToken ct)

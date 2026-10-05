@@ -13,7 +13,7 @@ namespace Asistente.API.Controllers;
 
 [ApiController]
 [Route("api/orchestrator")]
-[Authorize]
+[Authorize(Roles = "Administrador,Operador,Supervisor")]
 public class OrchestratorController : ControllerBase
 {
     private readonly IAgentOrchestrator _orchestrator;

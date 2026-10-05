@@ -45,10 +45,28 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
+    environment:
+      # Modelo siempre en memoria: evita la recarga en frío (minutos en CPU)
+      # en cada plan. Cero pérdida: mismo modelo, misma respuesta.
+      - OLLAMA_KEEP_ALIVE=24h
+      # Atención optimizada: más rápido con idéntica calidad.
+      - OLLAMA_FLASH_ATTENTION=1
+      # En CPU 1 petición a la vez: en paralelo se estorban y todo tarda más.
+      - OLLAMA_NUM_PARALLEL=1
     restart: "always"
     # Temporal para demo punto 7: 'restart: always' reiniciaba Ollama solo tras docker stop,
     # impidiendo demostrar reintentos del Planner (el plan corria con Ollama arriba). Restaurar a 'always'.
-    # Nota: en Windows con GPU NVIDIA usar: deploy.resources.reservations.devices
+    # --- GPU NVIDIA (Windows: Docker Desktop + backend WSL2 + driver NVIDIA) ---
+    # Descomentar el bloque deploy para usar GPU: 96s en CPU -> 5-10s en GPU,
+    # mismo modelo, cero pérdida. En máquinas sin GPU se deja comentado
+    # (si el driver nvidia no existe, el contenedor no arranca).
+    #deploy:
+    #  resources:
+    #    reservations:
+    #      devices:
+    #        - driver: nvidia
+    #          count: all
+    #          capabilities: [gpu]
     # Para producción sin GPU, el modelo corre en CPU (más lento).
 
   api:

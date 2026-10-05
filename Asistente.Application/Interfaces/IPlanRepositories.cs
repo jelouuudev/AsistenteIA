@@ -8,6 +8,11 @@ public interface IPlanRepository
 {
     Task<Plan> AddAsync(Plan plan, CancellationToken cancellationToken = default);
     Task UpdateAsync(Plan plan, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Actualiza SOLO escalares del plan (Estado/FechaFin) vía UPDATE directo, sin
+    /// cargar ni tocar el grafo de pasos. Inmune a entidades stale en paralelo.
+    /// </summary>
+    Task UpdateEstadoAsync(int idPlan, string estado, DateTime? fechaFin, CancellationToken cancellationToken = default);
     Task<Plan?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<List<Plan>> GetRecentAsync(int cantidad = 50, CancellationToken cancellationToken = default);
     Task<List<Plan>> GetByEstadoAsync(string estado, CancellationToken cancellationToken = default);

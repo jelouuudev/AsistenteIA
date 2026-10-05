@@ -30,6 +30,17 @@ public class AprobacionesController : Controller
         var (userId, ip) = GetUserInfo();
         try { ViewBag.Bandeja = await _apiService.GetBandejaAprobacionesAsync(userId, ip); }
         catch (Exception ex) { ViewBag.Error = ex.Message; }
+        try
+        {
+            var usuarios = await _apiService.GetUsuariosAsync(userId, ip);
+            // Solo usuarios con rol aprobador pueden recibir delegaciones
+            // (el rol Usuario no accede al Centro de Aprobaciones).
+            ViewBag.Usuarios = usuarios
+                .Where(u => u.Activo && u.IdUsuario != userId
+                    && u.Roles.Any(r => r == "Administrador" || r == "Operador" || r == "Supervisor"))
+                .ToList();
+        }
+        catch { ViewBag.Usuarios = new List<Asistente.Shared.UsuarioDto>(); }
         return View();
     }
 

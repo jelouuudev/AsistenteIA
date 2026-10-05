@@ -34,6 +34,7 @@ public interface IWorkflowPasoRepository
 
 public interface IWorkflowEjecucionRepository
 {
+    Task<long> CountAsync(CancellationToken cancellationToken = default);
     Task<WorkflowEjecucion?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<IEnumerable<WorkflowEjecucion>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<IEnumerable<WorkflowEjecucion>> GetByWorkflowAsync(int idWorkflow, CancellationToken cancellationToken = default);

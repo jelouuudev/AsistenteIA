@@ -270,6 +270,8 @@ public interface IApiService
     Task<List<FuenteAutorizadaDto>> GetFuentesDeUsuarioAsync(int idUsuario, int currentUserId, string ip);
     Task AsignarAsistentesUsuarioAsync(int idUsuario, AsignarAsistentesUsuarioRequest request, int currentUserId, string ip);
     Task AsignarFuentesUsuarioAsync(int idUsuario, AsignarFuentesUsuarioRequest request, int currentUserId, string ip);
+    Task<List<PermisoAsignadoDto>> GetPermisosDeRolAsync(int idRol, int currentUserId, string ip);
+    Task AsignarPermisosRolAsync(int idRol, AsignarPermisosRolRequest request, int currentUserId, string ip);
 
     // Planner Engine (ETAPA 18)
     Task<PlanDto> GenerarPlanAsync(string objetivo, int currentUserId, string ip);

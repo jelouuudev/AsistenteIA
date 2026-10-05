@@ -12,6 +12,7 @@ public interface IPermisoRepository
     Task<IEnumerable<Permiso>> GetByRolAsync(int idRol, CancellationToken ct = default);
     Task AddAsync(Permiso permiso, CancellationToken ct = default);
     Task AddRolPermisoAsync(RolPermiso rp, CancellationToken ct = default);
+    Task DeleteByRolAsync(int idRol, CancellationToken ct = default);
     Task<IEnumerable<string>> ObtenerCodigosPorUsuarioAsync(int idUsuario, CancellationToken ct = default);
 }
 

@@ -359,26 +359,16 @@ public static class DbInitializer
         var rolUsuario = await context.Roles.FirstAsync(r => r.Nombre == "Usuario");
         var rolOperador = await context.Roles.FirstAsync(r => r.Nombre == "Operador");
 
-        // 2) Permisos por módulo (Actividad 3)
+        // 2) Permisos por módulo (Actividad 3).
+        // Solo los que el código exige con VerificarPermisoAsync/TienePermisoAsync o el
+        // mapeo herramienta→permiso. Los demás nunca se verificaban y se eliminaron.
         var permisosDefinidos = new (string Codigo, string Nombre, string Modulo)[]
         {
-            ("CHAT_CONSULTAR", "Consultar chat", "Chat"),
-            ("CHAT_ADMINISTRAR", "Administrar chat", "Chat"),
-            ("DOCUMENTOS_CONSULTAR", "Consultar documentos", "Documentos"),
-            ("DOCUMENTOS_ADMINISTRAR", "Administrar documentos", "Documentos"),
-            ("FUENTES_CONSULTAR", "Consultar fuentes", "Fuentes"),
             ("FUENTES_ADMINISTRAR", "Administrar fuentes", "Fuentes"),
-            ("ASISTENTES_CONSULTAR", "Consultar asistentes", "Asistentes"),
-            ("ASISTENTES_ADMINISTRAR", "Administrar asistentes", "Asistentes"),
+            ("ASISTENTES_ADMINISTRAR", "Asignar asistentes a usuarios", "Asistentes"),
             ("HERRAMIENTAS_CONSULTAR", "Consultar herramientas", "Herramientas"),
-            ("HERRAMIENTAS_ADMINISTRAR", "Administrar herramientas", "Herramientas"),
-            ("WORKFLOWS_CONSULTAR", "Consultar workflows", "Workflows"),
-            ("WORKFLOWS_EJECUTAR", "Ejecutar workflows", "Workflows"),
-            ("WORKFLOWS_ADMINISTRAR", "Administrar workflows", "Workflows"),
             ("SQL_CONSULTAR", "Consultar SQL", "SQL"),
-            ("SQL_ADMINISTRAR", "Administrar SQL", "SQL"),
-            ("AUDITORIA_CONSULTAR", "Consultar auditoría", "Auditoria"),
-            ("CONFIGURACION_ADMINISTRAR", "Administrar configuración", "Configuracion")
+            ("AUDITORIA_CONSULTAR", "Consultar auditoría", "Auditoria")
         };
 
         var mapaPermisos = new Dictionary<string, Permiso>();
@@ -406,15 +396,18 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        await AsignarAsync(rolAdmin, permisosDefinidos.Select(p => p.Codigo).ToArray());
-        await AsignarAsync(rolSupervisor,
-            "CHAT_CONSULTAR", "DOCUMENTOS_CONSULTAR", "FUENTES_CONSULTAR", "ASISTENTES_CONSULTAR",
-            "HERRAMIENTAS_CONSULTAR", "WORKFLOWS_CONSULTAR", "WORKFLOWS_EJECUTAR", "SQL_CONSULTAR", "AUDITORIA_CONSULTAR");
-        await AsignarAsync(rolUsuario,
-            "CHAT_CONSULTAR", "DOCUMENTOS_CONSULTAR", "FUENTES_CONSULTAR", "HERRAMIENTAS_CONSULTAR",
-            "WORKFLOWS_CONSULTAR", "WORKFLOWS_EJECUTAR", "SQL_CONSULTAR");
-        await AsignarAsync(rolOperador,
-            "CHAT_CONSULTAR", "DOCUMENTOS_CONSULTAR", "FUENTES_CONSULTAR", "HERRAMIENTAS_CONSULTAR");
+        // Solo siembra inicial: si ya hay asignaciones se respetan los cambios
+        // hechos desde la matriz (no resucitar permisos desmarcados al reiniciar).
+        if (!await context.RolPermisos.AnyAsync())
+        {
+            await AsignarAsync(rolAdmin, permisosDefinidos.Select(p => p.Codigo).ToArray());
+            await AsignarAsync(rolSupervisor,
+                "HERRAMIENTAS_CONSULTAR", "SQL_CONSULTAR", "AUDITORIA_CONSULTAR");
+            await AsignarAsync(rolUsuario,
+                "HERRAMIENTAS_CONSULTAR", "SQL_CONSULTAR");
+            await AsignarAsync(rolOperador,
+                "HERRAMIENTAS_CONSULTAR", "SQL_CONSULTAR");
+        }
 
         // 4) Políticas de IA por defecto (Actividad 12)
         if (!await context.PoliticasIA.AnyAsync())

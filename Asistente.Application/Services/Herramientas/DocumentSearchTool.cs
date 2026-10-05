@@ -16,6 +16,12 @@ namespace Asistente.Application.Services.Herramientas;
 /// </summary>
 public class DocumentSearchTool : ITool
 {
+    /// <summary>
+    /// Marcador máquina-máquina cuando RAG no trae nada. Contrato interno:
+    /// Orchestrator y ReportTool lo reconocen para no contaminar reportes.
+    /// </summary>
+    public const string SinResultadosMarcador = "No se encontró información documental relevante para la consulta.";
+
     private readonly IRagService _ragService;
     private readonly IRecuperacionService? _recuperacionService;
     private readonly ILogger<DocumentSearchTool> _logger;
@@ -55,7 +61,7 @@ public class DocumentSearchTool : ITool
             try
             {
                 var (contextoAlcance, _) = await _recuperacionService.RecuperarContextoConFuentesAsync(
-                    consulta, request.IdAsistente, cancellationToken);
+                    consulta, request.IdAsistente, request.IdUsuario, cancellationToken);
                 if (!string.IsNullOrWhiteSpace(contextoAlcance))
                 {
                     _logger.LogInformation("DocumentSearchTool con alcance del asistente {IdAsistente}: {N} caracteres.",
@@ -84,7 +90,10 @@ public class DocumentSearchTool : ITool
             return new ToolExecutionResult
             {
                 Exitoso = true,
-                Contenido = "No se encontró información documental relevante para la consulta.",
+                // Contrato compartido: el consumidor reconoce el token, no la prosa.
+                // La frase legible se conserva para el usuario final.
+                Contenido = ContratoResultado.MarcarSinDatos("sin fragmentos documentales relevantes")
+                            + "\n" + SinResultadosMarcador,
                 Metadatos = new() { ["totalFragmentos"] = 0 }
             };
         }

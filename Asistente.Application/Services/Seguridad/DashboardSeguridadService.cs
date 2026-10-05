@@ -18,33 +18,44 @@ public class DashboardSeguridadService : IDashboardSeguridadService
     private readonly IAuditoriaActividadRepository _auditoriaRepository;
     private readonly IAuditoriaIARepository _auditoriaIARepository;
     private readonly IEventoProcesadoRepository _eventoProcesadoRepository;
+    private readonly IMensajeRepository _mensajeRepository;
+    private readonly IEjecucionHerramientaRepository _ejecucionHerramientaRepository;
+    private readonly IWorkflowEjecucionRepository _workflowEjecucionRepository;
 
     public DashboardSeguridadService(
         IUsuarioRepository usuarioRepository,
         IConversacionRepository conversacionRepository,
         IAuditoriaActividadRepository auditoriaRepository,
         IAuditoriaIARepository auditoriaIARepository,
-        IEventoProcesadoRepository eventoProcesadoRepository)
+        IEventoProcesadoRepository eventoProcesadoRepository,
+        IMensajeRepository mensajeRepository,
+        IEjecucionHerramientaRepository ejecucionHerramientaRepository,
+        IWorkflowEjecucionRepository workflowEjecucionRepository)
     {
         _usuarioRepository = usuarioRepository;
         _conversacionRepository = conversacionRepository;
         _auditoriaRepository = auditoriaRepository;
         _auditoriaIARepository = auditoriaIARepository;
         _eventoProcesadoRepository = eventoProcesadoRepository;
+        _mensajeRepository = mensajeRepository;
+        _ejecucionHerramientaRepository = ejecucionHerramientaRepository;
+        _workflowEjecucionRepository = workflowEjecucionRepository;
     }
 
     public async Task<DashboardSeguridadDto> ObtenerAsync(CancellationToken ct = default)
     {
         var usuarios = await _usuarioRepository.GetAllAsync();
         var conversaciones = await _conversacionRepository.GetAllAsync();
-        var eventos = await _eventoProcesadoRepository.GetAllAsync(ct);
+        var eventos = (await _eventoProcesadoRepository.GetAllAsync(ct)).ToList();
         var auditoriasRecientes = (await _auditoriaRepository.GetAllAsync(0, 50, ct)).Select(Map).ToList();
 
-        var consultas = await _auditoriaRepository.CountByFiltroAsync(modulo: "Chat", accion: "Pregunta", ct: ct);
-        var usoHerramientas = await _auditoriaRepository.CountByFiltroAsync(modulo: "Herramientas", ct: ct);
-        var consultasSql = await _auditoriaRepository.CountByFiltroAsync(modulo: "SQL", ct: ct);
-        var workflows = await _auditoriaRepository.CountByFiltroAsync(modulo: "Workflows", ct: ct);
-        var errores = await _auditoriaRepository.CountByFiltroAsync(resultado: "Error", ct: ct);
+        // Contadores desde las tablas reales (antes leían módulos de auditoría
+        // que ningún flujo registraba y siempre daban 0).
+        var consultas = await _mensajeRepository.CountByRolAsync(Asistente.Domain.Enums.RolMensaje.User, ct);
+        var (usoHerramientas, consultasSql) = await _ejecucionHerramientaRepository.ContarAsync(ct);
+        var workflows = await _workflowEjecucionRepository.CountAsync(ct);
+        var erroresAuditoria = await _auditoriaRepository.CountByFiltroAsync(resultado: "Error", ct: ct);
+        var errores = erroresAuditoria + eventos.Count(e => e.Estado == "Error");
 
         var iaRecientes = await _auditoriaIARepository.GetRecientesAsync(200, ct);
         var tiempoPromedio = iaRecientes.Any() ? iaRecientes.Average(a => a.TiempoRespuestaMs) : 0;

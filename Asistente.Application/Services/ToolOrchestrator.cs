@@ -80,11 +80,17 @@ public class ToolOrchestrator : IToolOrchestrator
         }
 
         // Tope de ejecuciones simultaneas (antes no se leia: parametro muerto).
+        // El tope sigue mandando: no se ejecuta mas de `maxSimultaneas` a la vez.
+        // Lo que cambia es que, en vez de RECHAZAR en seco, se espera un hueco
+        // corto: un DAG con 5 ramas SQL en paralelo (plan #12197) llenaba el tope
+        // y 3 ramas volaban con "Motor de herramientas ocupado", mas 35 s de
+        // backoff cada una y ~4 reintentos en la auditoria. Esperar en la cola
+        // mantiene el limite y quita el ruido.
         var maxSimultaneas = Math.Max(1, cfgMotor?.MaxEjecucionesSimultaneas ?? 4);
-        if (!IntentarEntrar(maxSimultaneas))
+        if (!await EsperarHuecoAsync(maxSimultaneas, cancellationToken))
         {
-            _logger.LogWarning("Herramienta '{Codigo}' rechazada: tope de ejecuciones simultaneas ({Tope}) alcanzado.",
-                request.HerramientaCodigo, maxSimultaneas);
+            _logger.LogWarning("Herramienta '{Codigo}' rechazada: tope de ejecuciones simultaneas ({Tope}) alcanzado y sin hueco en {Espera}s.",
+                request.HerramientaCodigo, maxSimultaneas, (int)EsperaHueco.TotalSeconds);
             await RegistrarAuditoriaAsync(null, request, "Rechazada", "Motor de herramientas ocupado. Intente de nuevo en unos segundos.", inicio);
             return new ToolExecutionResult { Exitoso = false, Error = "Motor de herramientas ocupado. Intente de nuevo en unos segundos." };
         }
@@ -102,6 +108,9 @@ public class ToolOrchestrator : IToolOrchestrator
     private static int _ejecucionesEnCurso;
     private static readonly object _candadoEjecuciones = new();
 
+    /// <summary>Espera máxima por un hueco en el motor antes de rechazar.</summary>
+    private static readonly TimeSpan EsperaHueco = TimeSpan.FromSeconds(20);
+
     private static bool IntentarEntrar(int maximo)
     {
         lock (_candadoEjecuciones)
@@ -110,6 +119,24 @@ public class ToolOrchestrator : IToolOrchestrator
             _ejecucionesEnCurso++;
             return true;
         }
+    }
+
+    /// <summary>
+    /// Entra en el motor esperando hasta <see cref="EsperaHueco"/> si el tope esta
+    /// lleno. No mira NADA del contenido de la peticion: es una cola FIFO por
+    /// orden de llegada, identica para cualquier herramienta o conexion.
+    /// </summary>
+    private static async Task<bool> EsperarHuecoAsync(int maximo, CancellationToken ct)
+    {
+        if (IntentarEntrar(maximo)) return true;
+        var limite = DateTime.UtcNow + EsperaHueco;
+        while (DateTime.UtcNow < limite)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(250, ct);
+            if (IntentarEntrar(maximo)) return true;
+        }
+        return false;
     }
 
     private static void Salir()
@@ -157,7 +184,10 @@ public class ToolOrchestrator : IToolOrchestrator
         try
         {
             var config = await _configRepository.GetAsync();
-            var timeout = config?.TiempoMaximoEjecucionMs ?? 30000;
+            // 30s默认 era insuficiente: SqlQueryTool descubre esquema + valores distintos
+            // + columna medida y recién ahí ejecuta, y con ramas paralelas sobre CPU
+            // saturada (Ollama al 100%) la rama moría con "A task was canceled".
+            var timeout = config?.TiempoMaximoEjecucionMs ?? 120000;
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromMilliseconds(timeout));
 

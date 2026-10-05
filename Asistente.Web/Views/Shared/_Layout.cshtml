@@ -79,7 +79,7 @@
 
                 <div class="collapse navbar-collapse" id="navbarMain">
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0 ms-3 gap-1">
-                        @if (User.IsInRole("Administrador") || User.IsInRole("Operador") || User.IsInRole("Supervisor"))
+                        @if (User.IsInRole("Administrador") || User.IsInRole("Operador") || User.IsInRole("Supervisor") || User.IsInRole("Usuario"))
                         {
                             <li class="nav-item">
                                 <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Chat" ? "active" : "")"
@@ -211,7 +211,6 @@
                                         <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,0.07);"></li>
                                         <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard Seguridad</a></li>
                                         <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Permisos"><i class="bi bi-key me-2"></i>Permisos</a></li>
-                                        <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Politicas"><i class="bi bi-shield-lock me-2"></i>Políticas de IA</a></li>
                                         <li><a class="dropdown-item" asp-controller="Seguridad" asp-action="Usuarios"><i class="bi bi-people me-2"></i>Control de Acceso (Usuarios)</a></li>
                                     </ul>
                                 </li>
@@ -238,6 +237,12 @@
                                 <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Auditoria" ? "active" : "")"
                                    asp-controller="Auditoria" asp-action="Index">
                                     <i class="bi bi-journal-text"></i> Auditoría
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link-custom @(ViewContext.RouteData.Values["controller"]?.ToString() == "Seguridad" ? "active" : "")"
+                                   asp-controller="Seguridad" asp-action="Dashboard">
+                                    <i class="bi bi-speedometer2"></i> Dashboard Seguridad
                                 </a>
                             </li>
                         }

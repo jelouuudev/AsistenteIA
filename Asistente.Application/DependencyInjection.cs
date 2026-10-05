@@ -49,6 +49,10 @@ public static class DependencyInjection
         services.AddScoped<IEjecucionHerramientaService, EjecucionHerramientaService>();
         services.AddScoped<IDecisionHerramientaService, DecisionHerramientaService>();
         services.AddScoped<IToolOrchestrator, ToolOrchestrator>();
+        // Selección de herramienta por similitud con la DESCRIPCIÓN de cada herramienta
+        // (configuración en BD), en lugar de listas de términos.
+        services.AddSingleton<ISeleccionHerramientaSemantica>(sp =>
+            new SeleccionHerramientaSemantica(sp.GetService<IEmbeddingProvider>()));
         services.AddScoped<ITool, DocumentSearchTool>();
         services.AddScoped<ITool, SqlQueryTool>();
         services.AddScoped<ITool, CalculatorTool>();

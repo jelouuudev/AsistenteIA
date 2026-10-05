@@ -24,3 +24,18 @@ scripts/
 # Imágenes/logs temporales
 **/*.log
 **/TestResults/
+
+# Pesados del host que la imagen no necesita (aligeran el contexto de build)
+*.zip
+*.pdf
+*.db
+*.db-*
+*.ipynb
+*.png
+*.html
+*.sql
+.hermes/
+backend-red-salud/
+Documentacion/
+Pruebas/
+Configuracion/

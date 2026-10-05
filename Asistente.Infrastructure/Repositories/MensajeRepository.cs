@@ -1,3 +1,4 @@
+using System.Threading;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Asistente.Infrastructure.Data;
@@ -32,5 +33,11 @@ public class MensajeRepository : IMensajeRepository
     {
         return await _context.Mensajes
             .CountAsync(m => m.IdConversacion == conversacionId);
+    }
+
+    public async Task<long> CountByRolAsync(Asistente.Domain.Enums.RolMensaje rol, CancellationToken ct = default)
+    {
+        return await _context.Mensajes
+            .LongCountAsync(m => m.Rol == rol, ct);
     }
 }

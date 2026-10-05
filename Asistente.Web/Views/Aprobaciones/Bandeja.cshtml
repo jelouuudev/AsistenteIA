@@ -12,6 +12,7 @@
 
 @{
     var bandeja = ViewBag.Bandeja;
+    var usuarios = (IEnumerable<Asistente.Shared.UsuarioDto>)(ViewBag.Usuarios ?? new List<Asistente.Shared.UsuarioDto>());
 }
 
 <div class="row">
@@ -50,7 +51,13 @@
                             <form asp-action="Delegar" method="post" class="row g-2 align-items-end mt-1">
                                 <input type="hidden" name="id" value="@id" />
                                 <div class="col-md-8">
-                                    <input type="number" name="idUsuarioDestino" min="1" required class="form-control bg-dark text-white border-secondary" placeholder="ID usuario destino" />
+                                    <select name="idUsuarioDestino" required class="form-select bg-dark text-white border-secondary">
+                                        <option value="">Delegar a...</option>
+                                        @foreach (var u in usuarios)
+                                        {
+                                            <option value="@u.IdUsuario">@u.Nombres @u.Apellidos (@u.UsuarioNombre)</option>
+                                        }
+                                    </select>
                                 </div>
                                 <div class="col-md-4">
                                     <button type="submit" class="btn btn-sm w-100 fw-semibold" style="background:linear-gradient(135deg,#6366f1,#a855f7);color:white;border:none;border-radius:8px;">Delegar</button>

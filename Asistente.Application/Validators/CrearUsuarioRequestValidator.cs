@@ -27,5 +27,8 @@ public class CrearUsuarioRequestValidator : AbstractValidator<CrearUsuarioReques
         RuleFor(x => x.Contrasena)
             .NotEmpty().WithMessage("La contraseña es obligatoria.")
             .MinimumLength(6).WithMessage("La contraseña debe tener al menos 6 caracteres.");
+
+        RuleFor(x => x.Roles)
+            .NotEmpty().WithMessage("Debe asignar al menos un rol; sin rol el usuario no puede entrar a ninguna pantalla.");
     }
 }

@@ -109,6 +109,9 @@ public class WorkflowEjecucionRepository : IWorkflowEjecucionRepository
     private readonly AsistenteDbContext _context;
     public WorkflowEjecucionRepository(AsistenteDbContext context) => _context = context;
 
+    public async Task<long> CountAsync(CancellationToken ct = default)
+        => await _context.WorkflowEjecuciones.LongCountAsync(ct);
+
     public async Task<WorkflowEjecucion?> GetByIdAsync(int id, CancellationToken ct = default)
         => await _context.WorkflowEjecuciones.AsNoTracking()
             .Include(e => e.PasosEjecucion)

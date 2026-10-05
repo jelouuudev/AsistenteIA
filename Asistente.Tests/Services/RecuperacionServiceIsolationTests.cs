@@ -17,6 +17,7 @@ public class RecuperacionServiceIsolationTests
     private readonly Mock<IDocumentoFuenteRepository> _mockDocumentoFuente;
     private readonly Mock<IFuenteConocimientoRepository> _mockFuente;
     private readonly Mock<IConfiguracionRAGRepository> _mockConfigRAG;
+    private readonly Mock<IUsuarioFuenteRepository> _mockUsuarioFuente;
     private readonly Mock<ILogger<RecuperacionService>> _mockLogger;
     private readonly RecuperacionService _service;
 
@@ -31,6 +32,9 @@ public class RecuperacionServiceIsolationTests
         _mockDocumentoFuente = new Mock<IDocumentoFuenteRepository>();
         _mockFuente = new Mock<IFuenteConocimientoRepository>();
         _mockConfigRAG = new Mock<IConfiguracionRAGRepository>();
+        _mockUsuarioFuente = new Mock<IUsuarioFuenteRepository>();
+        _mockUsuarioFuente.Setup(r => r.GetFuentesAutorizadasAsync(It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync(new List<int>());
         _mockLogger = new Mock<ILogger<RecuperacionService>>();
 
         _mockConfigRAG.Setup(r => r.GetActivaAsync()).ReturnsAsync((ConfiguracionRAG?)null);
@@ -43,7 +47,8 @@ public class RecuperacionServiceIsolationTests
             _mockDocumentoFuente.Object,
             _mockFuente.Object,
             _mockConfigRAG.Object,
-            _mockLogger.Object);
+            _mockLogger.Object,
+            _mockUsuarioFuente.Object);
     }
 
     [Fact]
@@ -280,5 +285,115 @@ public class RecuperacionServiceIsolationTests
         var contexto = await _service.RecuperarContextoAsync("pregunta");
 
         _mockVectorStore.Verify(v => v.SearchAsync(It.IsAny<string>(), It.Is<int>(k => k == 6)), Times.Once);
+    }
+
+    [Fact]
+    public async Task Usuario_Con_Fuentes_Excluye_Docs_Fuera_De_Su_Alcance()
+    {
+        _mockAsistenteFuente
+            .Setup(r => r.GetFuentesActivasPorAsistenteAsync(1))
+            .ReturnsAsync(new List<FuenteConocimiento> { new() { IdFuente = 1, Nombre = "F1", Prioridad = 1 } });
+        _mockDocumentoFuente
+            .Setup(r => r.GetDocumentosProcesadosIdsByFuenteAsync(1))
+            .ReturnsAsync(new List<int> { 100 });
+        _mockDocumentoFuente
+            .Setup(r => r.GetDocumentosProcesadosIdsByFuenteAsync(2))
+            .ReturnsAsync(new List<int> { 200 });
+        _mockUsuarioFuente
+            .Setup(r => r.GetFuentesAutorizadasAsync(7, It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync(new List<int> { 2 });
+        _mockVectorStore
+            .Setup(v => v.SearchWithFilterAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<VectorSearchFilter>()))
+            .ReturnsAsync(new List<VectorSearchResult>
+            {
+                new() { IdFuente = 1, DocumentoProcesadoId = 100, Score = 0.95f, Text = "Texto asistente", MetadataDocumentoNombre = "Doc" }
+            });
+
+        var (contexto, referencias) = await _service.RecuperarContextoConFuentesAsync("pregunta", 1, 7);
+
+        Assert.Empty(contexto);
+        Assert.Empty(referencias);
+    }
+
+    [Fact]
+    public async Task Empate_Con_El_Mejor_Bajo_El_Umbral_Se_Rescata()
+    {
+        // Plan #9138: dos documentos responden casi igual (0.71 vs 0.69) y el
+        // umbral (0.7 por defecto) dejaba fuera al segundo. Si el mejor lo supera,
+        // los fragmentos a menos de la brecha compartida también responden.
+        _mockAsistenteFuente
+            .Setup(r => r.GetFuentesActivasPorAsistenteAsync(1))
+            .ReturnsAsync(new List<FuenteConocimiento> { new() { IdFuente = 1, Nombre = "F1", Prioridad = 1 } });
+        _mockDocumentoFuente
+            .Setup(r => r.GetDocumentosProcesadosIdsByFuenteAsync(1))
+            .ReturnsAsync(new List<int> { 100, 101 });
+        _mockProcesamiento
+            .Setup(r => r.GetAllAsync())
+            .ReturnsAsync(new List<DocumentoProcesado>());
+        _mockVectorStore
+            .Setup(v => v.SearchWithFilterAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<VectorSearchFilter>()))
+            .ReturnsAsync(new List<VectorSearchResult>
+            {
+                new() { IdFuente = 1, DocumentoProcesadoId = 100, Orden = 1, Score = 0.71f, Text = "Texto del primer documento", MetadataDocumentoNombre = "DocA" },
+                new() { IdFuente = 1, DocumentoProcesadoId = 101, Orden = 1, Score = 0.69f, Text = "Texto del segundo documento", MetadataDocumentoNombre = "DocV" }
+            });
+
+        var (contexto, _) = await _service.RecuperarContextoConFuentesAsync("pregunta", 1);
+
+        Assert.Contains("Texto del primer documento", contexto);
+        Assert.Contains("Texto del segundo documento", contexto);
+    }
+
+    [Fact]
+    public async Task Sin_Mejor_Sobre_El_Umbral_No_Se_Rescata_Nada()
+    {
+        // El rescate de empates exige un mejor sobre el umbral: con 0.65/0.64
+        // (pregunta ajena) el resultado sigue vacío en vez de traer ruido.
+        _mockAsistenteFuente
+            .Setup(r => r.GetFuentesActivasPorAsistenteAsync(1))
+            .ReturnsAsync(new List<FuenteConocimiento> { new() { IdFuente = 1, Nombre = "F1", Prioridad = 1 } });
+        _mockDocumentoFuente
+            .Setup(r => r.GetDocumentosProcesadosIdsByFuenteAsync(1))
+            .ReturnsAsync(new List<int> { 100, 101 });
+        _mockProcesamiento
+            .Setup(r => r.GetAllAsync())
+            .ReturnsAsync(new List<DocumentoProcesado>());
+        _mockVectorStore
+            .Setup(v => v.SearchWithFilterAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<VectorSearchFilter>()))
+            .ReturnsAsync(new List<VectorSearchResult>
+            {
+                new() { IdFuente = 1, DocumentoProcesadoId = 100, Orden = 1, Score = 0.65f, Text = "Texto del primer documento", MetadataDocumentoNombre = "DocA" },
+                new() { IdFuente = 1, DocumentoProcesadoId = 101, Orden = 1, Score = 0.64f, Text = "Texto del segundo documento", MetadataDocumentoNombre = "DocV" }
+            });
+
+        var (contexto, referencias) = await _service.RecuperarContextoConFuentesAsync("pregunta", 1);
+
+        Assert.Empty(contexto);
+        Assert.Empty(referencias);
+    }
+
+    [Fact]
+    public async Task Usuario_Sin_Fuentes_Explicitas_No_Obtiene_Resultados()
+    {
+        _mockAsistenteFuente
+            .Setup(r => r.GetFuentesActivasPorAsistenteAsync(1))
+            .ReturnsAsync(new List<FuenteConocimiento> { new() { IdFuente = 1, Nombre = "F1", Prioridad = 1 } });
+        _mockDocumentoFuente
+            .Setup(r => r.GetDocumentosProcesadosIdsByFuenteAsync(1))
+            .ReturnsAsync(new List<int> { 100 });
+        _mockUsuarioFuente
+            .Setup(r => r.GetFuentesAutorizadasAsync(9, It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync(new List<int>());
+        _mockVectorStore
+            .Setup(v => v.SearchWithFilterAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<VectorSearchFilter>()))
+            .ReturnsAsync(new List<VectorSearchResult>
+            {
+                new() { IdFuente = 1, DocumentoProcesadoId = 100, Score = 0.95f, Text = "Texto asistente", MetadataDocumentoNombre = "Doc" }
+            });
+
+        var (contexto, referencias) = await _service.RecuperarContextoConFuentesAsync("pregunta", 1, 9);
+
+        Assert.Empty(contexto);
+        Assert.Empty(referencias);
     }
 }

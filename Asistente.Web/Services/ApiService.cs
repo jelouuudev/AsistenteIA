@@ -1418,6 +1418,15 @@ public class ApiService : IApiService
     public async Task AsignarFuentesUsuarioAsync(int idUsuario, AsignarFuentesUsuarioRequest request, int currentUserId, string ip)
         => await EnviarSinRetornoAsync(CrearRequest(HttpMethod.Post, $"/api/seguridad/usuarios/{idUsuario}/fuentes", request, currentUserId, ip));
 
+    public async Task<List<PermisoAsignadoDto>> GetPermisosDeRolAsync(int idRol, int currentUserId, string ip)
+    {
+        try { return await EnviarYLeerAsync<List<PermisoAsignadoDto>>(CrearRequest(HttpMethod.Get, $"/api/seguridad/roles/{idRol}/permisos", null, currentUserId, ip)); }
+        catch { return new List<PermisoAsignadoDto>(); }
+    }
+
+    public async Task AsignarPermisosRolAsync(int idRol, AsignarPermisosRolRequest request, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(CrearRequest(HttpMethod.Post, $"/api/seguridad/roles/{idRol}/permisos", request, currentUserId, ip));
+
     // ===== Agent Orchestrator (ETAPA 17) =====
     public async Task<AgentExecutionResultDto?> ExecuteOrchestratorAsync(int idAgentePrincipal, string pregunta, int currentUserId, string ip)
     {

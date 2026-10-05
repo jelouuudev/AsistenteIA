@@ -109,7 +109,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Seed database
+// Seed database + migraciones (requerido en contenedores prod)
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;

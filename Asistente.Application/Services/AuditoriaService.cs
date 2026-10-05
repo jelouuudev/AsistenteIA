@@ -52,7 +52,7 @@ public class AuditoriaService : IAuditoriaService
         });
     }
 
-    public async Task RegistrarActividadAsync(int userId, string modulo, string accion, string descripcion, string? ipAddress)
+    public async Task RegistrarActividadAsync(int userId, string modulo, string accion, string descripcion, string? ipAddress, string resultado = "Exitoso")
     {
         var actividad = new AuditoriaActividad
         {
@@ -61,7 +61,8 @@ public class AuditoriaService : IAuditoriaService
             Modulo = modulo,
             Accion = accion,
             Descripcion = descripcion,
-            DireccionIP = ipAddress
+            DireccionIP = ipAddress,
+            Resultado = resultado
         };
 
         await _auditoriaRepository.AddActividadAsync(actividad);

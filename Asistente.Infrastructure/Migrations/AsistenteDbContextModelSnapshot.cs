@@ -2124,6 +2124,9 @@ namespace Asistente.Infrastructure.Migrations
                     b.Property<string>("Descripcion")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Entrada")
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("Estado")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -2471,12 +2474,7 @@ namespace Asistente.Infrastructure.Migrations
                     b.Property<bool>("Activo")
                         .HasColumnType("bit");
 
-                    b.Property<int?>("AsistenteIdAsistente")
-                        .HasColumnType("int");
-
                     b.HasKey("IdUsuario", "IdAsistente");
-
-                    b.HasIndex("AsistenteIdAsistente");
 
                     b.HasIndex("IdAsistente");
 
@@ -3227,12 +3225,8 @@ namespace Asistente.Infrastructure.Migrations
 
             modelBuilder.Entity("Asistente.Domain.Entities.UsuarioAsistente", b =>
                 {
-                    b.HasOne("Asistente.Domain.Entities.Asistente", null)
-                        .WithMany("UsuariosAsistentes")
-                        .HasForeignKey("AsistenteIdAsistente");
-
                     b.HasOne("Asistente.Domain.Entities.Asistente", "Asistente")
-                        .WithMany()
+                        .WithMany("UsuariosAsistentes")
                         .HasForeignKey("IdAsistente")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

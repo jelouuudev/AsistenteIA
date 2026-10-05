@@ -98,7 +98,7 @@
                             </form>
                         }
                         <a asp-action="Simular" asp-route-id="@plan.IdPlan" class="btn btn-sm btn-outline-info">🔍 Simular</a>
-                        @if (plan.Estado == "EnEjecucion")
+                        @if (plan.Estado == "EnEjecucion" || plan.Estado == "IniciandoEjecucion")
                         {
                             <form asp-action="Cancelar" method="post" asp-route-id="@plan.IdPlan">
                                 <button class="btn btn-sm btn-danger w-100">⛔ Cancelar</button>
@@ -146,7 +146,7 @@
         </div>
     }
 
-    @if (plan.Estado == "EnEjecucion")
+    @if (plan.Estado == "EnEjecucion" || plan.Estado == "IniciandoEjecucion")
     {
         <meta http-equiv="refresh" content="10" />
         <div class="text-center text-secondary small mt-2">Plan en ejecución… esta página se actualiza sola cada 10 segundos.</div>

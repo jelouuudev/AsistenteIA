@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
@@ -44,6 +45,18 @@ public class EjecucionHerramientaRepository : IEjecucionHerramientaRepository
         var ultima = ejecuciones.Max(e => e.FechaHora);
 
         return (ejecuciones.Count, promedio, errores, ultima);
+    }
+
+    public async Task<(long Total, long ConsultasSql)> ContarAsync(CancellationToken ct = default)
+    {
+        var total = await _context.EjecucionesHerramientas.LongCountAsync(ct);
+        var sql = await _context.EjecucionesHerramientas
+            .Join(_context.Herramientas,
+                e => e.IdHerramienta,
+                h => h.IdHerramienta,
+                (e, h) => h.Codigo)
+            .LongCountAsync(codigo => codigo == "SqlQueryTool", ct);
+        return (total, sql);
     }
 
     public async Task<IEnumerable<EjecucionHerramienta>> GetByHerramientaAsync(int idHerramienta, int top = 50)

@@ -22,12 +22,30 @@ public class CrearPermisoRequest
     public string Modulo { get; set; } = string.Empty;
 }
 
+// ---- Permiso asignado a rol ----
+public class PermisoAsignadoDto
+{
+    public int IdPermiso { get; set; }
+    public string Codigo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string Modulo { get; set; } = string.Empty;
+    public bool Asignado { get; set; }
+}
+
+public class AsignarPermisosRolRequest
+{
+    public int IdRol { get; set; }
+    public List<string> Codigos { get; set; } = new();
+}
+
 // ---- Asistente autorizado ----
 public class AsistenteAutorizadoDto
 {
     public int IdAsistente { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public bool Autorizado { get; set; }
+    /// <summary>Nombres de los roles del usuario que también otorgan acceso (solo informativo).</summary>
+    public List<string> RolesQueOtorgan { get; set; } = new();
 }
 
 public class AsignarAsistentesUsuarioRequest

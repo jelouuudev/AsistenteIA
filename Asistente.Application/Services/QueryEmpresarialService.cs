@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Application.Services.Herramientas;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Enums;
 using Asistente.Domain.Interfaces;
@@ -28,6 +29,8 @@ public class QueryEmpresarialService : IQueryEmpresarialService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<QueryEmpresarialService> _logger;
 
+    private readonly IEmbeddingProvider? _embeddingProvider;
+
     public QueryEmpresarialService(
         IConexionBaseDatosRepository conexionRepository,
         ITablaAutorizadaRepository tablaRepository,
@@ -38,7 +41,8 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         IConexionCifrador cifrador,
         ISqlQueryExecutor executor,
         IUnitOfWork unitOfWork,
-        ILogger<QueryEmpresarialService> logger)
+        ILogger<QueryEmpresarialService> logger,
+        IEmbeddingProvider? embeddingProvider = null)
     {
         _conexionRepository = conexionRepository;
         _tablaRepository = tablaRepository;
@@ -50,26 +54,22 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         _executor = executor;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _embeddingProvider = embeddingProvider;
     }
 
-    private static readonly string[] IndicadoresDatos =
-    [
-        "clientes", "cliente", "pedidos", "pedido", "facturas", "factura", "ventas", "venta",
-        "productos", "producto", "stock", "inventario", "proveedores", "proveedor", "empleados",
-        "empleado", "usuarios", "usuario activo", "categorías", "categoría", "contar", "cuántos",
-        "cuantos", "cuántas", "cuantas", "total", "promedio", "media", "suma", "sumar", "máximo",
-        "mínimo", "minimo", "registros", "tickets", "órdenes", "ordenes", "orden", "cantidad",
-        "activos", "activo", "monedas", "moneda", "ubicaciones", "ubicación", "movimientos",
-        "historial", "roles", "rol"
-    ];
-
-    private static readonly string[] PalabrasClaveDatos =
-    [
-        "cliente", "pedido", "factura", "venta", "producto", "stock", "proveedor", "empleado",
-        "usuario", "categoria", "ticket", "orden", "inventario", "cantidad", "precio", "total",
-        "cuenta", "registro", "membresia", "suscripcion", "asignacion", "activos", "activo",
-        "moneda", "ubicacion", "movimiento", "historial", "rol"
-    ];
+    /// <summary>
+    /// Descripción de la CAPACIDAD de este motor, no una lista de palabras. Antes había
+    /// dos listas fijas: IndicadoresDatos (clientes, pedidos, facturas, ventas, productos,
+    /// stock, tickets, órdenes, monedas, roles...) y PalabrasClaveDatos (idéntica, otra vez).
+    /// Es vocabulario del negocio actual: con otra base de datos ninguna de esas palabras
+    /// aparece y el motor se declara inactivo aunque la pregunta sí sea de datos; peor,
+    /// dos listas que deben mantenerse sincronizadas a mano.
+    /// Ahora se compara la pregunta con esta descripción por similitud: describe lo que
+    /// el motor HACE, que es lo mismo en cualquier esquema.
+    /// </summary>
+    private static readonly string DescripcionCapacidadDatos =
+        "consulta de datos de la base de datos: inquire, consulta, lista, busca registros y " +
+        "reporta totales, conteos, promedios y sumas de tablas y vistas autorizadas";
 
     // Control de concurrencia (MaxConsultasSimultaneas; antes no se leia: parametro muerto).
     private static int _consultasEnCurso;
@@ -108,7 +108,7 @@ public class QueryEmpresarialService : IQueryEmpresarialService
                 return respuesta;
             }
 
-            if (!EsPreguntaDeDatos(pregunta))
+            if (!await EsPreguntaDeDatosAsync(pregunta, cancellationToken))
             {
                 respuesta.Tipo = "documental";
                 respuesta.Exitoso = true;
@@ -317,17 +317,30 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         }
     }
 
-    private bool EsPreguntaDeDatos(string pregunta)
+    /// <summary>
+    /// ¿La pregunta pide datos de la base? Antes se respondía buscando ~40 palabras del
+    /// negocio actual (clientes, facturas, stock, tickets, monedas, roles...). Contra una
+    /// base nueva ninguna aparece y el motor se declaraba inactivo aunque la pregunta sí
+    /// fuera de datos. Ahora se compara la pregunta con la DESCRIPCIÓN de la capacidad:
+    /// "consulta de datos de la base de datos..." describe el comportamiento del motor, no
+    /// el dominio, y vale para cualquier esquema.
+    /// Sin embeddings disponible no se decide (se responde que el motor no aplica): es
+    /// preferible no activar la consulta a activarla por una lista de palabras.
+    /// </summary>
+    private async Task<bool> EsPreguntaDeDatosAsync(string pregunta, CancellationToken ct)
     {
-        var texto = Normalizar(pregunta);
-
-        foreach (var palabra in IndicadoresDatos)
+        if (string.IsNullOrWhiteSpace(pregunta)) return false;
+        if (_embeddingProvider is null) return false;
+        try
         {
-            if (texto.Contains(Normalizar(palabra)))
-                return true;
+            var embPregunta = await _embeddingProvider.GenerateEmbeddingAsync(pregunta).WaitAsync(ct);
+            var embCapacidad = await _embeddingProvider.GenerateEmbeddingAsync(DescripcionCapacidadDatos).WaitAsync(ct);
+            return SeleccionHerramientaSemantica.Coseno(embPregunta, embCapacidad) >= 0.35;
         }
-
-        return false;
+        catch
+        {
+            return false;
+        }
     }
 
     private static ConexionBaseDatos SeleccionarConexion(
@@ -379,7 +392,7 @@ public class QueryEmpresarialService : IQueryEmpresarialService
             // exigir parametros. El lenguaje natural debe funcionar sin plantillas.
             var tablasFallback = (await _tablaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
             var vistasFallback = (await _vistaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
-            var sqlAdHoc = GenerarConsultaAdHoc(pregunta, tablasFallback, vistasFallback);
+            var sqlAdHoc = await GenerarConsultaAdHocAsync(pregunta, tablasFallback, vistasFallback, conexion, cancellationToken);
             if (!string.IsNullOrWhiteSpace(sqlAdHoc))
                 return (sqlAdHoc, null, new List<string>());
             return (string.Empty, mejorSinResolver, faltantesMejor);
@@ -388,46 +401,200 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         var tablas = (await _tablaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
         var vistas = (await _vistaRepository.GetActivasByConexionIdAsync(conexion.IdConexion)).ToList();
 
-        var sqlGenerada = GenerarConsultaAdHoc(pregunta, tablas, vistas);
+        var sqlGenerada = await GenerarConsultaAdHocAsync(pregunta, tablas, vistas, conexion, cancellationToken);
         return (sqlGenerada, null, new List<string>());
     }
 
-    private string GenerarConsultaAdHoc(string pregunta, List<TablaAutorizada> tablas, List<VistaAutorizada> vistas)
+    /// <summary>
+    /// Generador ad-hoc de consultas.
+    ///
+    /// Antes elegía intención, tabla y columnas por PALABRAS FIJAS: buscaba
+    /// "cuantos/contar/total de", "promedio", "suma", y devolvía literalmente las columnas
+    /// "Cantidad", "Total", "Monto", "Nombre", "Correo", "Telefono", "Estado" y "Fecha".
+    /// Eso solo funciona en tablas con ese esquema: en cualquier base nueva esas columnas
+    /// no existen y el SQL falla, y pedir "el promedio de edad" nunca encuentra "Edad"
+    /// porque no está en la lista.
+    ///
+    /// Ahora la intención se decide por similitud con descripciones de cada una, la
+    /// tabla por su Descripcion configurada, y las columnas salen del CATALOGO real de la
+    /// tabla elegida (la de agregación, entre las numéricas). Agregar una base o tabla no
+    /// requiere tocar este método.
+    /// </summary>
+    private async Task<string> GenerarConsultaAdHocAsync(
+        string pregunta, List<TablaAutorizada> tablas, List<VistaAutorizada> vistas,
+        ConexionBaseDatos conexion, CancellationToken ct)
     {
-        var normalizada = Normalizar(pregunta);
-        var esConteo = Contiene(normalizada, "cuantos", "cuántos", "cuantas", "cuántas", "contar", "total de");
-        var esPromedio = Contiene(normalizada, "promedio", "media de");
-        var esSuma = Contiene(normalizada, "suma", "sumar", "total de");
-
-        var tabla = SeleccionarTablaPorPregunta(normalizada, tablas, vistas);
-        if (tabla == null)
-            return string.Empty;
+        var tabla = await SeleccionarTablaPorDescripcionAsync(pregunta, tablas, vistas, ct);
+        if (tabla is null) return string.Empty;
 
         var tablaCalificada = $"[{tabla.Value.Esquema}].[{tabla.Value.Nombre}]";
+        var catalogo = await ObtenerCatalogoTablaAsync(conexion, tabla.Value.Esquema, tabla.Value.Nombre, ct);
+        var intencion = await DetectarIntencionAsync(pregunta, ct);
 
-        if (esConteo && !esSuma)
-        {
+        if (intencion == IntencionConsulta.Conteo)
             return $"SELECT COUNT(*) AS Total FROM {tablaCalificada};";
-        }
 
-        var columnaAgregacion = SeleccionarColumnaAgregacion(normalizada);
-        if (esSuma && columnaAgregacion != null)
+        var numericas = catalogo.Where(c => c.EsNumerica).Select(c => c.Nombre).ToList();
+        var agregacion = numericas.Count > 0 ? await ElegirColumnaAsync(pregunta, numericas, ct) : null;
+
+        if (!string.IsNullOrEmpty(agregacion))
         {
-            return $"SELECT SUM([{columnaAgregacion}]) AS Total FROM {tablaCalificada};";
+            if (intencion == IntencionConsulta.Suma)
+                return $"SELECT SUM([{agregacion}]) AS Total FROM {tablaCalificada};";
+            if (intencion == IntencionConsulta.Promedio)
+                return $"SELECT AVG([{agregacion}]) AS Promedio FROM {tablaCalificada};";
         }
 
-        if (esPromedio && columnaAgregacion != null)
-        {
-            return $"SELECT AVG([{columnaAgregacion}]) AS Promedio FROM {tablaCalificada};";
-        }
-
-        var columnas = SeleccionarColumnas(normalizada);
+        var columnas = await ElegirColumnasAsync(pregunta, catalogo.Select(c => c.Nombre).ToList(), ct);
         if (columnas.Count > 0)
-        {
             return $"SELECT {string.Join(", ", columnas.Select(c => $"[{c}]"))} FROM {tablaCalificada};";
-        }
 
         return $"SELECT * FROM {tablaCalificada};";
+    }
+
+    private enum IntencionConsulta { Conteo, Suma, Promedio, Listado }
+
+    /// <summary>
+    /// Descripciones de cada intención de agregación. La pregunta se compara con ellas por
+    /// similitud: no hay que enumerar "cuantos", "total de", "media de" y sus variantes.
+    /// </summary>
+    private static readonly string DescConteo = "cuenta cuantos registros hay en total, numero de filas";
+    private static readonly string DescSuma = "suma los valores de una columna numerica, total acumulado";
+    private static readonly string DescPromedio = "promedio o media aritmetica de una columna numerica";
+
+    private async Task<IntencionConsulta> DetectarIntencionAsync(string pregunta, CancellationToken ct)
+    {
+        if (_embeddingProvider is null) return IntencionConsulta.Listado;
+        try
+        {
+            var emb = await _embeddingProvider.GenerateEmbeddingAsync(pregunta).WaitAsync(ct);
+            async Task<double> Sim(string descripcion)
+                => SeleccionHerramientaSemantica.Coseno(emb, await _embeddingProvider!.GenerateEmbeddingAsync(descripcion).WaitAsync(ct));
+
+            var c = await Sim(DescConteo);
+            var s = await Sim(DescSuma);
+            var p = await Sim(DescPromedio);
+            if (p >= c && p >= s) return IntencionConsulta.Promedio;
+            if (s >= c) return IntencionConsulta.Suma;
+            if (c > 0.30) return IntencionConsulta.Conteo;
+            return IntencionConsulta.Listado;
+        }
+        catch { return IntencionConsulta.Listado; }
+    }
+
+    private async Task<(string Esquema, string Nombre)?> SeleccionarTablaPorDescripcionAsync(
+        string pregunta, List<TablaAutorizada> tablas, List<VistaAutorizada> vistas, CancellationToken ct)
+    {
+        var candidatas = new List<(string Esquema, string Nombre, string Descripcion)>();
+        foreach (var t in (tablas ?? new List<TablaAutorizada>()).Where(t => t.Activa))
+            candidatas.Add((t.Esquema, t.NombreTabla, t.Descripcion ?? ""));
+        foreach (var v in (vistas ?? new List<VistaAutorizada>()).Where(v => v.Activa))
+            candidatas.Add(("dbo", v.NombreVista, v.Descripcion ?? ""));
+        if (candidatas.Count == 0) return null;
+
+        if (_embeddingProvider is not null)
+        {
+            try
+            {
+                var embPregunta = await _embeddingProvider.GenerateEmbeddingAsync(pregunta).WaitAsync(ct);
+                var mejor = candidatas[0];
+                var mejorSim = double.NegativeInfinity;
+                foreach (var c in candidatas)
+                {
+                    var texto = string.IsNullOrWhiteSpace(c.Descripcion) ? c.Nombre : c.Nombre + " " + c.Descripcion;
+                    var sim = SeleccionHerramientaSemantica.Coseno(
+                        embPregunta, await _embeddingProvider.GenerateEmbeddingAsync(texto).WaitAsync(ct));
+                    if (sim > mejorSim) { mejorSim = sim; mejor = c; }
+                }
+                return (mejor.Esquema, mejor.Nombre);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "MotorConsultas: no se pudo elegir tabla por similitud.");
+            }
+        }
+
+        // SIN embeddings no se decide tabla: devolver la primera sería adivinar y
+        // consultar la tabla equivocada. Antes se comparaba el nombre de la tabla con la
+        // pregunta y, si no coincidía, se respondía "sin plantilla". Se conserva ese
+        // contrato: es preferible no generar SQL a generar el de otra tabla.
+        return null;
+    }
+
+    private sealed record ColumnaCatalogo(string Nombre, bool EsNumerica);
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Expira, List<ColumnaCatalogo> Cols)> _cacheCatalogoColumnas
+        = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Columnas reales de una tabla y su tipo, desde INFORMATION_SCHEMA.</summary>
+    private async Task<List<ColumnaCatalogo>> ObtenerCatalogoTablaAsync(
+        ConexionBaseDatos conexion, string esquema, string tabla, CancellationToken ct)
+    {
+        var clave = $"{conexion.IdConexion}:{esquema}.{tabla}";
+        if (_cacheCatalogoColumnas.TryGetValue(clave, out var hit) && hit.Expira > DateTime.UtcNow)
+            return hit.Cols;
+
+        var resultado = new List<ColumnaCatalogo>();
+        try
+        {
+            var cadena = _cifrador.Descifrar(conexion.CadenaConexionCifrada);
+            var filas = (await _executor.ExecuteReadOnlyAsync(
+                cadena,
+                "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @t ORDER BY ORDINAL_POSITION",
+                new Dictionary<string, object?> { ["t"] = tabla }, 200, ct)).ToList();
+            foreach (var f in filas)
+            {
+                var nombre = f.Values.ElementAtOrDefault(0)?.ToString();
+                var tipo = (f.Values.ElementAtOrDefault(1)?.ToString() ?? "").ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(nombre)) continue;
+                resultado.Add(new ColumnaCatalogo(nombre,
+                    tipo is "int" or "bigint" or "smallint" or "tinyint" or "decimal" or "numeric"
+                         or "money" or "smallmoney" or "float" or "real"));
+            }
+        }
+        catch { }
+
+        _cacheCatalogoColumnas[clave] = (DateTime.UtcNow.AddMinutes(10), resultado);
+        return resultado;
+    }
+
+    private async Task<string?> ElegirColumnaAsync(string pregunta, List<string> candidatas, CancellationToken ct)
+    {
+        if (candidatas.Count == 0) return null;
+        if (_embeddingProvider is null) return candidatas[0];
+        try
+        {
+            var embPregunta = await _embeddingProvider.GenerateEmbeddingAsync(pregunta).WaitAsync(ct);
+            var mejor = candidatas[0];
+            var mejorSim = double.NegativeInfinity;
+            foreach (var c in candidatas)
+            {
+                var sim = SeleccionHerramientaSemantica.Coseno(embPregunta, await _embeddingProvider.GenerateEmbeddingAsync(c).WaitAsync(ct));
+                if (sim > mejorSim) { mejorSim = sim; mejor = c; }
+            }
+            return mejor;
+        }
+        catch { return candidatas[0]; }
+    }
+
+    private async Task<List<string>> ElegirColumnasAsync(string pregunta, List<string> catalogo, CancellationToken ct)
+    {
+        if (catalogo.Count == 0 || _embeddingProvider is null) return new();
+
+        // Umbral alto: preferimos traer menos columnas que elegir una que la tabla no tiene.
+        const double umbral = 0.55;
+        try
+        {
+            var embPregunta = await _embeddingProvider.GenerateEmbeddingAsync(pregunta).WaitAsync(ct);
+            var elegidas = new List<string>();
+            foreach (var c in catalogo)
+            {
+                var sim = SeleccionHerramientaSemantica.Coseno(embPregunta, await _embeddingProvider.GenerateEmbeddingAsync(c).WaitAsync(ct));
+                if (sim >= umbral) elegidas.Add(c);
+            }
+            return elegidas;
+        }
+        catch { return new(); }
     }
 
     private static (string? Esquema, string Nombre)? SeleccionarTablaPorPregunta(
@@ -453,25 +620,6 @@ public class QueryEmpresarialService : IQueryEmpresarialService
             return (mejor.Tabla.Esquema, mejor.Tabla.Nombre);
 
         return null;
-    }
-
-    private static string? SeleccionarColumnaAgregacion(string pregunta)
-    {
-        if (Contiene(pregunta, "cantidad")) return "Cantidad";
-        if (Contiene(pregunta, "precio", "monto", "importe", "valor", "total")) return "Total";
-        if (Contiene(pregunta, "monto")) return "Monto";
-        return null;
-    }
-
-    private static List<string> SeleccionarColumnas(string pregunta)
-    {
-        var columnas = new List<string>();
-        if (Contiene(pregunta, "nombre")) columnas.Add("Nombre");
-        if (Contiene(pregunta, "correo", "email")) columnas.Add("Correo");
-        if (Contiene(pregunta, "telefono", "celular")) columnas.Add("Telefono");
-        if (Contiene(pregunta, "estado")) columnas.Add("Estado");
-        if (Contiene(pregunta, "fecha")) columnas.Add("Fecha");
-        return columnas.Distinct().ToList();
     }
 
     // Resuelve los parametros de una plantilla con valores extraidos de la pregunta.
@@ -570,23 +718,16 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         int idConexion,
         CancellationToken cancellationToken = default)
     {
-        var sqlNormalizado = sql.TrimStart();
-        if (!sqlNormalizado.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
-        {
-            return (false, "solo se permiten consultas SELECT de solo lectura.");
-        }
+        // Validación ESTRUCTURAL: tokenizador + gramática. Antes era un StartsWith("SELECT")
+        // más una lista de palabras prohibidas buscadas por SUBSTRING, lo que rechazaba
+        // consultas de solo lectura que tuvieran una columna "LastUpdate" o "IsDeleted"
+        // y no detectaba un verbo dentro de un comentario. El analizador no depende del
+        // dominio y es más estricto.
+        var seguridad = AnalizadorSql.ValidarSoloLectura(sql);
+        if (!seguridad.Seguro)
+            return (false, seguridad.Motivo);
 
-        if (sql.Contains(';') && !sqlNormalizado.TrimEnd().EndsWith(";", StringComparison.Ordinal))
-        {
-            return (false, "solo se permite una sola sentencia por consulta.");
-        }
-
-        if (Contiene(sql, "insert", "update", "delete", "drop", "alter", "truncate", "exec", "sp_", "xp_", "grant", "revoke", "create"))
-        {
-            return (false, "la consulta contiene operaciones no permitidas.");
-        }
-
-        var tablasReferenciadas = ExtraerTablasDeSql(sql);
+        var tablasReferenciadas = AnalizadorSql.ObjetosReferenciados(sql);
         var tablasAutorizadas = (await _tablaRepository.GetActivasByConexionIdAsync(idConexion)).ToList();
         var vistasAutorizadas = (await _vistaRepository.GetActivasByConexionIdAsync(idConexion)).ToList();
 
@@ -596,7 +737,7 @@ public class QueryEmpresarialService : IQueryEmpresarialService
 
         foreach (var tabla in tablasReferenciadas)
         {
-            if (!nombresAutorizados.Contains(tabla))
+            if (!nombresAutorizados.Contains(tabla.Trim('[', ']', '"')))
             {
                 return (false, $"la tabla u objeto '{tabla}' no está autorizado para consultas.");
             }
@@ -605,24 +746,6 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         return (true, null);
     }
 
-    private static List<string> ExtraerTablasDeSql(string sql)
-    {
-        var tablas = new List<string>();
-        var patronIdentificador = @"(?:\[?[A-Za-z_][A-Za-z0-9_]*\]?\.\s*)?\[?([A-Za-z_][A-Za-z0-9_]*)\]?";
-
-        var fromMatch = Regex.Match(sql, $@"\bFROM\s+{patronIdentificador}", RegexOptions.IgnoreCase);
-        if (fromMatch.Success)
-            tablas.Add(fromMatch.Groups[1].Value);
-
-        foreach (Match m in Regex.Matches(sql, $@"\bJOIN\s+{patronIdentificador}", RegexOptions.IgnoreCase))
-        {
-            tablas.Add(m.Groups[1].Value);
-        }
-
-        return tablas.Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(t => t.ToLowerInvariant())
-            .ToList();
-    }
 
     private static List<string> ExtraerColumnasDeSql(string sql)
     {
@@ -744,15 +867,6 @@ public class QueryEmpresarialService : IQueryEmpresarialService
         return texto.ToLowerInvariant();
     }
 
-    private static bool Contiene(string texto, params string[] terminos)
-    {
-        foreach (var t in terminos)
-        {
-            if (texto.Contains(Normalizar(t)))
-                return true;
-        }
-        return false;
-    }
 
     private static string? Truncar(string? valor, int max)
     {

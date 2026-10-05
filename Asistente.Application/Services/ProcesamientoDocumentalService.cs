@@ -87,6 +87,14 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
             foreach (var t in triggers)
             {
                 if (string.IsNullOrWhiteSpace(t.CodigoEvento)) continue;
+                // Los marcados con "soloIndexado": true esperan a tener vectores:
+                // no corren al procesarse, solo tras indexarse (IndexacionBackgroundService).
+                if (EsSoloIndexado(t.ConfigJson))
+                {
+                    _logger.LogInformation("Disparador {Id} diferido hasta indexación para documento {Doc}.",
+                        t.IdDisparador, idDocumento);
+                    continue;
+                }
                 // Reutiliza el mismo contexto del documento procesado.
                 var evento = await _eventoMotorService.DispararEventoAsync(t.CodigoEvento, contexto);
                 _logger.LogInformation("Disparador {Id} encendió evento {Evento} para documento {Doc}.",
@@ -98,6 +106,22 @@ public class ProcesamientoDocumentalService : IProcesamientoDocumentalService
         {
             _logger.LogWarning(ex, "Error al evaluar disparadores de documento para {Id}.", idDocumento);
         }
+    }
+
+    /// <summary>
+    /// Lee la bandera "soloIndexado" del ConfigJson del disparador. Si es true, el
+    /// disparador no corre al procesarse (sin vectores) sino solo tras indexarse
+    /// (IndexacionBackgroundService re-dispara todos los Documento activos).
+    /// </summary>
+    private static bool EsSoloIndexado(string? configJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(configJson) ? "{}" : configJson);
+            return doc.RootElement.TryGetProperty("soloIndexado", out var v)
+                && v.ValueKind == JsonValueKind.True;
+        }
+        catch { return false; }
     }
 
     public async Task<DocumentoProcesadoDto?> ObtenerPorIdAsync(int id)

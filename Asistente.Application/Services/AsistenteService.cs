@@ -108,6 +108,13 @@ public class AsistenteService
         a.MensajeBienvenida = r.MensajeBienvenida;
         a.FechaModificacion = DateTime.UtcNow;
 
+        // Las asignaciones directas a usuarios NO se gestionan en el form de editar
+        // asistente (solo Fuentes/Herramientas/Workflows/Roles): se conservan para que
+        // guardar no las borre en silencio. Se administran en Seguridad → AsignarAsistentes.
+        var usuariosActuales = a.UsuariosAsistentes?.Where(x => x.Activo).Select(x => x.IdUsuario).ToList()
+            ?? new List<int>();
+        var usuarios = (r.Usuarios != null && r.Usuarios.Any()) ? r.Usuarios : usuariosActuales;
+
         // Eliminar las asignaciones actuales (de BD y del change tracker) para evitar
         // el conflicto de tracking al reinsertarlas (Regla: una sola instancia por clave).
         await _asistenteRepository.EliminarAsignacionesAsync(a.IdAsistente);
@@ -119,7 +126,7 @@ public class AsistenteService
         a.UsuariosAsistentes = null!;
 
         // Sincronizar asignaciones (recrear activas con IdAsistente resuelto)
-        SincronizarAsignaciones(a, r.Fuentes, r.Herramientas, r.Workflows, r.Roles, r.Usuarios);
+        SincronizarAsignaciones(a, r.Fuentes, r.Herramientas, r.Workflows, r.Roles, usuarios);
 
         _asistenteRepository.Update(a);
         await _unitOfWork.SaveChangesAsync();

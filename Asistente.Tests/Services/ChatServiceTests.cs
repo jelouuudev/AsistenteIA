@@ -29,6 +29,7 @@ public class ChatServiceTests
     private readonly Mock<IWorkflowDecisionService> _mockWorkflowDecision;
     private readonly Mock<IWorkflowEngine> _mockWorkflowEngine;
     private readonly Mock<IAgentOrchestrator> _mockAgentOrchestrator;
+    private readonly Mock<Asistente.Application.Services.Herramientas.ISeleccionHerramientaSemantica> _mockSeleccionHerramienta;
     private readonly IChatService _chatService;
 
     public ChatServiceTests()
@@ -109,10 +110,14 @@ public class ChatServiceTests
 
         _mockOrchestrator.Setup(o => o.ObtenerHerramientasParaAsistenteAsync(It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>()))
             .ReturnsAsync(new List<Herramienta>());
-        _mockRecuperacionService.Setup(r => r.RecuperarContextoConFuentesAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<System.Threading.CancellationToken>()))
+        _mockRecuperacionService.Setup(r => r.RecuperarContextoConFuentesAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<int?>(), It.IsAny<System.Threading.CancellationToken>()))
             .ReturnsAsync((string.Empty, new List<ReferenciaDocumentalDto>()));
         _mockMessageRepository.Setup(x => x.GetByConversacionIdAsync(It.IsAny<int>()))
             .ReturnsAsync(new List<Mensaje>());
+
+                // Selector por descripcion (sin vocabulario): el Fake devuelve el valor que el
+        // test configure para el mensaje.
+        _mockSeleccionHerramienta = new Mock<Asistente.Application.Services.Herramientas.ISeleccionHerramientaSemantica>();
 
         _chatService = new ChatService(
             _mockConversationRepository.Object,
@@ -138,7 +143,55 @@ public class ChatServiceTests
             _mockMetricas.Object,
             _mockUsuarioFuente.Object,
             new Lazy<Asistente.Application.Interfaces.IAgentOrchestrator>(() => _mockAgentOrchestrator.Object),
-            new Mock<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>().Object);
+            new Mock<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>().Object,
+            _mockSeleccionHerramienta.Object);
+    }
+
+    /// <summary>
+    /// El servicio NO debe decidir la herramienta por una lista de términos. Este test
+    /// pasa por la ruta real de decisión (no por el selector aislado) y comprueba que un
+    /// mensaje redactado con el vocabulario histórico del negocio sigue activando la
+    /// herramienta que corresponde, y que uno ajeno a todo vocabulario también.
+    ///
+    /// Regresión: reintroducir un array como "si el mensaje contiene cliente/total/
+    /// producto, no elijas herramienta" hace que SqlQueryTool deje de dispararse en
+    /// consultas legítimas, sin que ningún otro test lo note.
+    /// </summary>
+    [Fact]
+    public async Task DecisionDeHerramienta_NoDependeDePalabrasClave()
+    {
+        // El selector (mock) decide por descripción; el test verifica que ChatService no
+        // FILTRA antes por vocabulario.
+        _mockSeleccionHerramienta
+            .Setup(s => s.SeleccionarAsync(It.IsAny<string>(), It.IsAny<IEnumerable<Herramienta>>(),
+                                           It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _m, IEnumerable<Herramienta> disp, double _u, CancellationToken _c) =>
+                disp.FirstOrDefault(h => h.Codigo == "SqlQueryTool"));
+
+        var conVocabularioHistorico = await InvocarDecisionAsync("total de clientes activos, cuántos son");
+        Assert.NotNull(conVocabularioHistorico);
+        Assert.Equal("SqlQueryTool", conVocabularioHistorico!.CodigoHerramienta);
+
+        var sinVocabularioConocido = await InvocarDecisionAsync("quisiera saber quantos escarlatas xy anacapa");
+        Assert.NotNull(sinVocabularioConocido);
+        Assert.Equal("SqlQueryTool", sinVocabularioConocido!.CodigoHerramienta);
+    }
+
+    /// <summary>Invoca la decisión de herramienta del ChatService con el catálogo dado.</summary>
+    private async Task<DecisionHerramienta?> InvocarDecisionAsync(string mensaje)
+    {
+        var herramientaSql = new Herramienta
+        {
+            Codigo = "SqlQueryTool",
+            Descripcion = "Ejecuta consultas SELECT de solo lectura sobre la base de datos empresarial autorizada.",
+            Categoria = "ConsultaSQL",
+            Activa = true
+        };
+        _mockOrchestrator.Setup(o => o.ObtenerHerramientasParaAsistenteAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Herramienta> { herramientaSql });
+
+        return await ChatService.DecidirHerramientaSemanticaAsync(
+            mensaje, new List<Herramienta> { herramientaSql }, _mockSeleccionHerramienta.Object, CancellationToken.None);
     }
 
     [Fact]

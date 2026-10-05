@@ -18,6 +18,12 @@ public class PlanStep
     public string? CodigoHerramienta { get; set; } // para tipo Tool
     public int? IdWorkflow { get; set; }     // para tipo Workflow
     public int Intentos { get; set; } // reintentos realizados
+    /// <summary>
+    /// Entrada específica del paso (sub-consulta autocontenida asignada por el
+    /// PlanBuilder para ramas paralelas). Si es null, el paso usa el objetivo
+    /// del plan. Contrato máquina-máquina, no se muestra en UI.
+    /// </summary>
+    public string? Entrada { get; set; }
 
     public Plan? Plan { get; set; }
 }

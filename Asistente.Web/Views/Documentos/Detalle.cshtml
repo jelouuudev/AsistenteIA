@@ -31,15 +31,20 @@
         </div>
 
         <div class="d-flex gap-2 flex-wrap">
+            @if (User.IsInRole("Administrador") || User.IsInRole("Operador") || User.IsInRole("Supervisor"))
+            {
             <a asp-action="Editar" asp-route-id="@Model.IdDocumento" class="btn btn-sm px-3 py-2 fw-semibold"
                style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);color:#cbd5e1;border-radius:10px;">
                 <i class="bi bi-pencil me-1"></i> Editar Metadatos
             </a>
+            }
             <a asp-action="CargarVersion" asp-route-id="@Model.IdDocumento" class="btn btn-sm px-3 py-2 fw-semibold text-white"
                style="background:linear-gradient(135deg,#6366f1,#a855f7);border:none;border-radius:10px;box-shadow:0 4px 12px rgba(99,102,241,0.2);">
                 <i class="bi bi-upload me-1"></i> Nueva Versión
             </a>
 
+            @if (User.IsInRole("Administrador") || User.IsInRole("Operador") || User.IsInRole("Supervisor"))
+            {
             <!-- Acciones de Estado -->
             <div class="dropdown">
                 <button class="btn btn-sm px-3 py-2 fw-semibold text-white dropdown-toggle" type="button" data-bs-toggle="dropdown"
@@ -75,6 +80,7 @@
                     </li>
                 </ul>
             </div>
+            }
         </div>
     </div>
 </div>

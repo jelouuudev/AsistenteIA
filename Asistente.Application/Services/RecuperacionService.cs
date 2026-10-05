@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Application.Services.Herramientas;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Enums;
 using Asistente.Domain.Interfaces;
@@ -24,6 +25,7 @@ public class RecuperacionService : IRecuperacionService
     private readonly IDocumentoFuenteRepository _documentoFuenteRepository;
     private readonly IFuenteConocimientoRepository _fuenteRepository;
     private readonly IConfiguracionRAGRepository _configuracionRAGRepository;
+    private readonly IUsuarioFuenteRepository _usuarioFuenteRepository;
     private readonly ILogger<RecuperacionService> _logger;
 
     private const int MaxChunksDefault = 5;
@@ -53,7 +55,8 @@ public class RecuperacionService : IRecuperacionService
         IDocumentoFuenteRepository documentoFuenteRepository,
         IFuenteConocimientoRepository fuenteRepository,
         IConfiguracionRAGRepository configuracionRAGRepository,
-        ILogger<RecuperacionService> logger)
+        ILogger<RecuperacionService> logger,
+        IUsuarioFuenteRepository usuarioFuenteRepository)
     {
         _procesamientoRepository = procesamientoRepository;
         _vectorStore = vectorStore;
@@ -62,6 +65,7 @@ public class RecuperacionService : IRecuperacionService
         _documentoFuenteRepository = documentoFuenteRepository;
         _fuenteRepository = fuenteRepository;
         _configuracionRAGRepository = configuracionRAGRepository;
+        _usuarioFuenteRepository = usuarioFuenteRepository;
         _logger = logger;
     }
 
@@ -210,7 +214,12 @@ public class RecuperacionService : IRecuperacionService
         return sb.ToString().Trim();
     }
 
-    private static List<(DocumentoChunk chunk, double score)> PuntuarLexico(
+    /// <summary>
+    /// Puntuación léxica SOLO con las palabras de la pregunta (densidad y
+    /// encabezados). No hay lista de términos privilegiados: "objetivo" puntúa
+    /// igual que cualquier otra palabra con la misma densidad.
+    /// </summary>
+    internal static List<(DocumentoChunk chunk, double score)> PuntuarLexico(
         string preguntaNormalizada,
         List<string> terminosPregunta,
         IEnumerable<DocumentoChunk> chunks,
@@ -269,28 +278,12 @@ public class RecuperacionService : IRecuperacionService
             if (mejorEncabezado >= 2)
                 score += mejorEncabezado * 8;
 
-            // Boost por múltiples términos coincidentes (densidad)
+            // Boost por múltiples términos coincidentes (densidad). Usa SOLO las
+            // palabras de la pregunta, sin listas fijas: cada pregunta puntúa
+            // con su propio vocabulario.
             var terminosCoincidentes = terminosPregunta.Count(t => frecuencias.ContainsKey(t));
             var densidad = terminosPregunta.Count > 0 ? (double)terminosCoincidentes / terminosPregunta.Count : 0;
             score += densidad * 5;
-
-            // Boost por términos específicos de alta relevancia
-            var terminosClave = new[] { "solucion", "problema", "error", "configuracion", "instalacion", "requisito", "objetivo", "horario", "politica", "contraseña", "base de datos", "modelo" };
-            foreach (var termino in terminosClave)
-            {
-                if (terminosPregunta.Contains(termino) && frecuencias.ContainsKey(termino))
-                    score += 10;
-
-                if (terminosPregunta.Contains(termino) && primerasLineas.Contains(termino))
-                    score += 8;
-            }
-
-            // Boost por frase completa "solución de problemas"
-            if (preguntaNormalizada.Contains("solucion") && preguntaNormalizada.Contains("problema"))
-            {
-                if (textoNormalizado.Contains("solucion") && textoNormalizado.Contains("problema"))
-                    score += 15;
-            }
 
             if (score > 0)
                 puntuados.Add((chunk, score));
@@ -380,7 +373,7 @@ public class RecuperacionService : IRecuperacionService
         return frecuencias;
     }
 
-    public async Task<(string Contexto, List<ReferenciaDocumentalDto> Referencias)> RecuperarContextoConFuentesAsync(string pregunta, int? idAsistente = null, CancellationToken cancellationToken = default)
+    public async Task<(string Contexto, List<ReferenciaDocumentalDto> Referencias)> RecuperarContextoConFuentesAsync(string pregunta, int? idAsistente = null, int? idUsuario = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(pregunta))
             return (string.Empty, new List<ReferenciaDocumentalDto>());
@@ -441,6 +434,24 @@ public class RecuperacionService : IRecuperacionService
 
             _logger.LogInformation("Asistente {IdAsistente}: {CountFuentes} fuentes autorizadas, {CountDocs} documentos procesados disponibles. IncluirHistoricos={IncluirHistoricos}.",
                 idAsistente.Value, idsFuentes.Count, documentosProcesadosIds.Count, incluirHistoricos);
+
+            // SEGURIDAD (usuario): intersección con las fuentes del usuario. Acceso
+            // efectivo = asistente ∩ usuario. Sin filas explícitas no hay acceso
+            // (denegar por defecto; el admin asigna en Seguridad → AsignarFuentes).
+            if (idUsuario.HasValue && idUsuario.Value > 0)
+            {
+                var fuentesUsuario = (await _usuarioFuenteRepository.GetFuentesAutorizadasAsync(idUsuario.Value, cancellationToken)).ToList();
+                var docsUsuario = new HashSet<int>();
+                foreach (var idFuente in fuentesUsuario)
+                {
+                    var ids = await _documentoFuenteRepository.GetDocumentosProcesadosIdsByFuenteAsync(idFuente);
+                    foreach (var id in ids) docsUsuario.Add(id);
+                }
+                var antes = documentosProcesadosIds.Count;
+                documentosProcesadosIds = documentosProcesadosIds.Where(id => docsUsuario.Contains(id)).ToList();
+                _logger.LogInformation("Filtro usuario {IdUsuario}: {Antes}->{Despues} documentos tras intersección ({Fuentes} fuentes).",
+                    idUsuario.Value, antes, documentosProcesadosIds.Count, fuentesUsuario.Count);
+            }
         }
 
         try
@@ -518,9 +529,43 @@ public class RecuperacionService : IRecuperacionService
 
             if (resultadosSemanticos != null && resultadosSemanticos.Any())
             {
-                var listaResultados = resultadosSemanticos
+                var todosResultados = resultadosSemanticos.ToList();
+                var listaResultados = todosResultados
                     .Where(r => Math.Clamp(r.Score, 0f, 1f) >= minScore)
                     .ToList();
+
+                // Empates con el mejor por debajo del umbral (plan #9138: 0.671 vs
+                // 0.670): dos documentos pueden responder casi igual y ninguno es
+                // ruido. Si el mejor supera el umbral, los fragmentos a menos de la
+                // brecha compartida también responden. Sin mejor sobre el umbral no
+                // se rescata nada (una pregunta ajena sigue devolviendo vacío).
+                var mejorPuntaje = todosResultados
+                    .Select(r => Math.Clamp(r.Score, 0f, 1f))
+                    .DefaultIfEmpty(0f).Max();
+                if (mejorPuntaje >= minScore)
+                {
+                    var enLista = new HashSet<(int, int)>(
+                        listaResultados.Select(r => (r.DocumentoProcesadoId, r.Orden)));
+                    var rescatados = 0;
+                    foreach (var r in todosResultados)
+                    {
+                        var s = Math.Clamp(r.Score, 0f, 1f);
+                        if (s >= minScore
+                            || s < mejorPuntaje - (float)SeleccionHerramientaSemantica.BrechaEmpate)
+                            continue;
+                        if (enLista.Add((r.DocumentoProcesadoId, r.Orden)))
+                        {
+                            listaResultados.Add(r);
+                            rescatados++;
+                        }
+                    }
+                    if (rescatados > 0)
+                    {
+                        listaResultados = listaResultados.OrderByDescending(r => r.Score).ToList();
+                        _logger.LogInformation("Empate con el mejor ({Mejor:F3}): {N} fragmento(s) bajo el umbral rescatados.",
+                            mejorPuntaje, rescatados);
+                    }
+                }
 
                 if (prioridadesFuentes != null && prioridadesFuentes.Count > 0)
                 {
@@ -640,10 +685,21 @@ public class RecuperacionService : IRecuperacionService
                 if (filtrados.Count > 0)
                 {
                     // Seguridad: ningun chunk (semantico, lexico o vecino expandido)
-                    // puede quedar por debajo del MinScore configurado.
-                    // Tope de fragmentos al modelo (MaxChunksAlModelo).
+                    // puede quedar por debajo del MinScore configurado, SALVO empate
+                    // con el mejor (plan #9138): si el mejor lo supera, los
+                    // fragmentos a menos de la brecha compartida también responden.
+                    // Sin mejor sobre el umbral no pasa nada (pregunta ajena = vacío).
+                    var mejorFinal = filtrados
+                        .Select(r => Math.Clamp(r.Score, 0f, 1f))
+                        .DefaultIfEmpty(0f).Max();
                     filtrados = filtrados
-                        .Where(r => Math.Clamp(r.Score, 0f, 1f) >= minScore)
+                        .Where(r =>
+                        {
+                            var s = Math.Clamp(r.Score, 0f, 1f);
+                            if (s >= minScore) return true;
+                            return mejorFinal >= minScore
+                                && s >= mejorFinal - (float)SeleccionHerramientaSemantica.BrechaEmpate;
+                        })
                         .OrderByDescending(r => r.Score)
                         .Take(maxChunksAlModelo)
                         .ToList();
@@ -756,14 +812,6 @@ public class RecuperacionService : IRecuperacionService
             var documentCounts = await _vectorStore.GetDocumentCountsAsync();
             var preguntaLower = Normalizar(pregunta);
 
-            var palabrasPregunta = preguntaLower.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
-
-            var indicadores = new[] { "segun", "segundo", "conforme", "acuerdo" };
-            var indicadorPrefijos = new[] { "del", "en" };
-
-            var contieneIndicador = palabrasPregunta.Any(p => indicadores.Contains(p))
-                || palabrasPregunta.Any(p => indicadorPrefijos.Any(pref => p == pref || p.StartsWith(pref) && p.Length > pref.Length));
-
             var candidates = new List<(string nombre, int coincidencias, int totalPalabras, int chunkCount)>();
 
             _logger.LogInformation("Nombres de documentos disponibles: [{Names}]",
@@ -801,10 +849,12 @@ public class RecuperacionService : IRecuperacionService
                 .First();
 
             var ratio = (double)best.coincidencias / best.totalPalabras;
-            
-            // Umbrales diferentes según si hay indicador explícito
-            var umbralRatio = contieneIndicador ? 0.5 : 1.0; // Sin indicador, requiere coincidencia completa
-            var umbralCoincidencias = contieneIndicador ? 2 : 1;
+
+            // Coincidencia completa del nombre registrado, o al menos una de sus
+            // palabras: es la única señal, y sale del catálogo vivo, no de una
+            // lista de conectores.
+            const double umbralRatio = 1.0;
+            const int umbralCoincidencias = 1;
             
             if (ratio < umbralRatio && best.coincidencias < umbralCoincidencias)
             {
@@ -813,8 +863,8 @@ public class RecuperacionService : IRecuperacionService
                 return null;
             }
 
-            _logger.LogInformation("Documento detectado: '{DocumentName}' ({Matches}/{Total} palabras coincidentes en la pregunta). Indicador: {Indicador}",
-                best.nombre, best.coincidencias, best.totalPalabras, contieneIndicador ? "si" : "no");
+            _logger.LogInformation("Documento detectado: '{DocumentName}' ({Matches}/{Total} palabras coincidentes en la pregunta).",
+                best.nombre, best.coincidencias, best.totalPalabras);
             return best.nombre;
         }
         catch (Exception ex)

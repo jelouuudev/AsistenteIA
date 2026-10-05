@@ -43,6 +43,10 @@ public class PlannerEngine : IPlannerEngine
     private readonly SemaphoreSlim _sem = new(1, 1);
     // Registry de CancellationTokenSource por ejecución activa (para cancelación real).
     private static readonly ConcurrentDictionary<int, CancellationTokenSource> _activeExecutions = new();
+    // Resultados en memoria de esta ejecución (Orden → Resultado), para que los
+    // pasos de abajo (reporte/entrega) no dependan de releer filas que puedan
+    // haberse degradado en BD. Una instancia por ejecución (scoped).
+    private readonly ConcurrentDictionary<int, string> _memoriaResultados = new();
 
     public PlannerEngine(
         PlanBuilder builder,
@@ -235,6 +239,16 @@ public class PlannerEngine : IPlannerEngine
     /// </summary>
     private async Task LanzarEjecucionGrafo(Plan plan, CancellationToken ct)
     {
+        // B-03: el CTS se registra AQUÍ, antes de la fase pesada (era el bug:
+        // se registraba en la fase B de background, así que durante los 60-90s
+        // de SQL/RAG inline no existía y el cancel no encontraba nada). El
+        // token de ejecución cubre ambas fases; el del request solo se usa
+        // como padre enlazado.
+        var idPlanLocalInicio = plan.IdPlan;
+        var execCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _activeExecutions[idPlanLocalInicio] = execCts;
+        var execToken = execCts.Token;
+
         // 1. Ejecutar paso Coordination vía Orchestrator (texto fijo, sin LLM)
         var todosLosPasos = await _stepRepo.GetByPlanAsync(plan.IdPlan, ct);
         var pasoCoordinacion = todosLosPasos.FirstOrDefault(p => p.Tipo == "Coordination");
@@ -252,80 +266,194 @@ public class PlannerEngine : IPlannerEngine
         // 2. Ejecutar pasos Tool y RAG VÍA EL ORCHESTRATOR (fuente de verdad del DAG):
         // el Planner aporta validación, retry por nodo (supervisor) y auditoría; la
         // ejecución de cada paso la realiza el Agent Orchestrator (EjecutarPasoValidadoAsync).
-        // Ante fallo, el supervisor decide reintento; si se agota, el paso queda en Error
-        // y el resto del grafo continúa.
+        // Capas por dependencias: los pasos sin dependencias entre sí (ej. ramas
+        // paralelas de consulta + RAG) corren en paralelo con scopes propios
+        // (DbContext aislado por tarea). Ante fallo, el supervisor decide reintento;
+        // si se agota, el paso queda en Error y el resto del grafo continúa.
         var pasosTool = todosLosPasos.Where(p => p.Tipo == "Tool" || p.Tipo == "RAG").ToList();
-        string? resultadoAnterior = null;
-        foreach (var paso in pasosTool)
+        foreach (var capa in CalcularCapasTool(pasosTool, plan.Dependencias))
         {
-            while (true)
+            execToken.ThrowIfCancellationRequested();
+            // Backstop por estado con scope fresco (mismo motivo que en la fase
+            // B: el repositorio es tracking y el request puede haber marcado
+            // Cancelado mientras esta capa estaba en vuelo).
+            await using (var scopeCapa = _scopeFactory.CreateAsyncScope())
             {
-                ct.ThrowIfCancellationRequested();
-                bool exitoPaso = false;
-                try
-                {
-                    var resOrch = await _agentOrchestrator.EjecutarPasoValidadoAsync(
-                        plan, paso, null, resultadoAnterior, plan.IdUsuario, ct);
+                var repoCapa = scopeCapa.ServiceProvider.GetRequiredService<IPlanRepository>();
+                if ((await repoCapa.GetByIdAsync(plan.IdPlan, CancellationToken.None))?.Estado == "Cancelado")
+                    throw new OperationCanceledException($"Plan {plan.IdPlan} cancelado (detectado por estado en fase A).");
+            }
+            var tareas = capa.Select(paso => EjecutarPasoToolConReintentoAsync(paso, plan, execToken)).ToArray();
+            if (tareas.Length > 0)
+                await Task.WhenAll(tareas);
+        }
 
-                    if (resOrch.Exito)
-                    {
-                        paso.Resultado = resOrch.Resultado;
-                        paso.Estado = "Completado";
-                        await _stepRepo.UpdateAsync(paso, ct);
-                        resultadoAnterior = resOrch.Resultado;
-                        await RegistrarLogAsync(plan.IdPlan, paso.Orden, "PasoToolEjecutado",
-                            $"'{paso.CodigoHerramienta ?? paso.Tipo}' ejecutó '{paso.Nombre}' con éxito (vía Orchestrator).", ct);
-                        exitoPaso = true;
-                    }
-                    else
-                    {
-                        paso.Resultado = resOrch.Error;
-                        await _stepRepo.UpdateAsync(paso, ct);
-                    }
-                }
-                catch (Exception ex)
+        // Funciones locales: capas topológicas (misma capa = paralelo seguro) y
+        // ejecución de un paso con reintentos, todo en scope propio.
+        static List<List<PlanStep>> CalcularCapasTool(List<PlanStep> pasos, ICollection<PlanDependency> dependencias)
+    {
+        var ordenes = new HashSet<int>(pasos.Select(p => p.Orden));
+        var nivel = pasos.ToDictionary(p => p.Orden, _ => 0);
+        bool cambio = true;
+        while (cambio)
+        {
+            cambio = false;
+            foreach (var d in dependencias.Where(d => ordenes.Contains(d.StepOrigen) && ordenes.Contains(d.StepDestino)))
+            {
+                if (nivel[d.StepDestino] <= nivel[d.StepOrigen])
                 {
-                    _logger.LogWarning(ex, "Planner: fallo al ejecutar '{Herramienta}' para el paso {Paso}", paso.CodigoHerramienta, paso.Nombre);
-                    paso.Resultado = $"Error al ejecutar {paso.CodigoHerramienta}: " + ex.Message;
-                    await _stepRepo.UpdateAsync(paso, ct);
-                }
-
-                if (exitoPaso) break;
-
-                // Fallo: el supervisor decide si se reintenta el MISMO nodo.
-                bool reintentar;
-                try
-                {
-                    reintentar = await _supervisor.ManejarFalloPasoAsync(plan, paso, paso.Resultado ?? "Error en paso Tool.", ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    paso.Estado = "Cancelado";
-                    await _stepRepo.UpdateAsync(paso, CancellationToken.None);
-                    break;
-                }
-                if (!reintentar)
-                {
-                    await RegistrarLogAsync(plan.IdPlan, paso.Orden, "PasoToolSinDatos",
-                        $"{paso.CodigoHerramienta}: {paso.Resultado}", ct);
-                    break;
+                    nivel[d.StepDestino] = nivel[d.StepOrigen] + 1;
+                    cambio = true;
                 }
             }
         }
+        return pasos.GroupBy(p => nivel[p.Orden]).OrderBy(g => g.Key)
+            .Select(g => g.OrderBy(p => p.Orden).ToList()).ToList();
+    }
+
+    /// <summary>
+    /// Ejecuta un paso Tool/RAG con reintentos del supervisor, todo en scope propio
+    /// (seguro para ejecución paralela entre ramas: sin DbContext compartido).
+    /// </summary>
+    async Task EjecutarPasoToolConReintentoAsync(PlanStep pasoOrigen, Plan plan, CancellationToken ct)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var sp = scope.ServiceProvider;
+        var stepRepo = sp.GetRequiredService<IPlanStepRepository>();
+        var supervisor = sp.GetRequiredService<ExecutionSupervisor>();
+        var logRepo = sp.GetRequiredService<IPlanExecutionLogRepository>();
+        _logger.LogInformation("PlannerTask: paso {Orden} (IdStep {Id}) en scope propio.", pasoOrigen.Orden, pasoOrigen.IdStep);
+
+        async Task LogAsync(string evento, string? detalle)
+        {
+            try
+            {
+                await logRepo.AddAsync(new PlanExecutionLog
+                {
+                    IdPlan = plan.IdPlan,
+                    IdStep = pasoOrigen.IdStep,
+                    Evento = evento,
+                    Detalle = detalle,
+                    Fecha = DateTime.UtcNow
+                }, ct);
+            }
+            catch { }
+        }
+
+        // Entidad fresca del scope propio (la de la petición no debe tocarse en paralelo).
+        var paso = await stepRepo.GetByIdAsync(pasoOrigen.IdStep, ct) ?? pasoOrigen;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            bool exitoPaso = false;
+            try
+            {
+                // Handoff en memoria: los pasos Tool/RAG reciben lo acumulado por
+                // ramas previas (el ReportTool lo prefiere sobre releer la BD).
+                var resOrch = await _agentOrchestrator.EjecutarPasoValidadoAsync(
+                    plan, paso, null, CombinarMemoria(paso.Orden), plan.IdUsuario, ct);
+
+                if (resOrch.Exito)
+                {
+                    paso.Resultado = resOrch.Resultado;
+                    paso.Estado = "Completado";
+                    await stepRepo.UpdateAsync(paso, ct);
+                    // Handoff en memoria para capas posteriores (no depender de la BD).
+                    if (!string.IsNullOrWhiteSpace(resOrch.Resultado))
+                        _memoriaResultados[paso.Orden] = resOrch.Resultado;
+                    // Verificación REAL con scope fresco y sin tracking: el repositorio
+                    // comparte contexto con la escritura y siempre diría que sí.
+                    try
+                    {
+                        await using var scopeVerif = _scopeFactory.CreateAsyncScope();
+                        var verifRepo = scopeVerif.ServiceProvider.GetRequiredService<IPlanStepRepository>();
+                        var verificado = (await verifRepo.GetByPlanAsync(plan.IdPlan, ct, true))
+                            .FirstOrDefault(s => s.Orden == paso.Orden);
+                        _logger.LogInformation("PlannerTask: verificación paso {Orden}: Estado={Estado}, LenRes={Len}.",
+                            paso.Orden, verificado?.Estado, verificado?.Resultado?.Length ?? -1);
+                        if (verificado == null || verificado.Estado != "Completado" || string.IsNullOrWhiteSpace(verificado.Resultado))
+                        {
+                            _logger.LogError("Planner: el paso {Orden} NO persistió su resultado (verificación post-Update falló).", paso.Orden);
+                        }
+                    }
+                    catch (Exception exVerif)
+                    {
+                        _logger.LogWarning(exVerif, "Planner: no se pudo verificar la persistencia del paso {Orden}.", paso.Orden);
+                    }
+                    await LogAsync("PasoToolEjecutado",
+                        $"'{paso.CodigoHerramienta ?? paso.Tipo}' ejecutó '{paso.Nombre}' con éxito (vía Orchestrator).");
+                    exitoPaso = true;
+                }
+                else
+                {
+                    paso.Resultado = resOrch.Error;
+                    await stepRepo.UpdateAsync(paso, ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Planner: fallo al ejecutar '{Herramienta}' para el paso {Paso}", paso.CodigoHerramienta, paso.Nombre);
+                paso.Resultado = $"Error al ejecutar {paso.CodigoHerramienta}: " + ex.Message;
+                try { await stepRepo.UpdateAsync(paso, ct); } catch { }
+            }
+
+            if (exitoPaso) break;
+
+            // Fallo: el supervisor decide si se reintenta el MISMO nodo.
+            bool reintentar;
+            try
+            {
+                reintentar = await supervisor.ManejarFalloPasoAsync(plan, paso, paso.Resultado ?? "Error en paso Tool.", ct);
+            }
+            catch (OperationCanceledException)
+            {
+                paso.Estado = "Cancelado";
+                try { await stepRepo.UpdateAsync(paso, CancellationToken.None); } catch { }
+                break;
+            }
+            if (!reintentar)
+            {
+                await LogAsync("PasoToolSinDatos", $"{paso.CodigoHerramienta}: {paso.Resultado}");
+                break;
+            }
+        }
+    }
 
         // 3. Construir el ExecutionGraph desde el Plan (fuente de verdad)
         var grafo = _graphBuilder.Construir(plan);
         var capas = grafo.ObtenerCapas();
 
-        // Marcar ejecución en curso
-        plan.Estado = "EnEjecucion";
-        await _planRepo.UpdateAsync(plan, ct);
+        // B-03 (carrera validación-vs-cancel): la validación previa tarda 20+s en
+        // CPU y el usuario puede cancelar en ese ventana, ANTES de que exista el
+        // CTS. Si al llegar aquí el plan ya está Cancelado, no se lanza nada y
+        // sobre todo no se pisa el estado con EnEjecucion. Sin esta guarda, el
+        // lanzamiento borraba el Cancelado y el plan corría entero (plan #13237:
+        // cancelado a los 25s, completado a los 100s). Lectura con scope fresco:
+        // el repositorio es tracking y devolvería el estado stale.
+        string? estadoPrevio;
+        await using (var scopePrevio = _scopeFactory.CreateAsyncScope())
+        {
+            var repoPrevio = scopePrevio.ServiceProvider.GetRequiredService<IPlanRepository>();
+            estadoPrevio = (await repoPrevio.GetByIdAsync(plan.IdPlan, CancellationToken.None))?.Estado;
+        }
+        if (estadoPrevio == "Cancelado")
+        {
+            _logger.LogInformation("Planner: plan {IdPlan} cancelado durante la validación; no se lanza la ejecución.", plan.IdPlan);
+            await RegistrarLogAsync(plan.IdPlan, null, "PlanCancelado", "Cancelado antes de iniciar la ejecución.", ct);
+            return;
+        }
 
-        // 4. Ejecutar capas en background (fire-and-forget) con CTS registrado
-        // para cancelación real (B-03): el endpoint Cancelar invoca Cancel().
+        // Marcar ejecución en curso (solo escalar: jamás tocar filas de pasos aquí,
+        // los resultados de la sección 2 ya están persistidos por sus scopes).
+        // Tampoco se pisa un estado terminal que otro flujo haya fijado.
+        if (estadoPrevio == "Fallido" || estadoPrevio == "Completado") return;
+        await _planRepo.UpdateEstadoAsync(plan.IdPlan, "EnEjecucion", null, ct);
+
+        // 4. Ejecutar capas en background (fire-and-forget) con el MISMO CTS
+        // registrado al inicio (B-03): crear otro aquí lo reemplazaría en el
+        // diccionario y el cancel golpearía al equivocado. El endpoint Cancelar
+        // invoca Cancel() sobre este.
         var idPlanLocal = plan.IdPlan;
-        var execCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _activeExecutions[idPlanLocal] = execCts;
         _ = Task.Run(async () =>
         {
             try
@@ -338,6 +466,20 @@ public class PlannerEngine : IPlannerEngine
                 foreach (var capa in capas)
                 {
                     execCts.Token.ThrowIfCancellationRequested();
+                    // Backstop por estado (B-03): si el CTS no existe o no se
+                    // propagó (carrera con la validación, reinicio, doble
+                    // lanzamiento), el estado Cancelado en BD es la segunda
+                    // señal y también detiene. Se lee con SCOPE FRESCO en cada
+                    // capa: el repositorio es tracking a propósito y devolvería
+                    // la entidad stale (EnEjecucion) para siempre.
+                    string? estadoCapa;
+                    await using (var scopeEstado = _scopeFactory.CreateAsyncScope())
+                    {
+                        var repoEstado = scopeEstado.ServiceProvider.GetRequiredService<IPlanRepository>();
+                        estadoCapa = (await repoEstado.GetByIdAsync(idPlanLocal, CancellationToken.None))?.Estado;
+                    }
+                    if (estadoCapa == "Cancelado")
+                        throw new OperationCanceledException($"Plan {idPlanLocal} cancelado (detectado por estado).");
                     var tareasCapa = capa
                         .Where(n => n.Estado != "Completado")
                         .Select(n => EjecutarNodoGrafoAsync(n, plan, stepRepo, execCts.Token))
@@ -347,16 +489,60 @@ public class PlannerEngine : IPlannerEngine
                         await Task.WhenAll(tareasCapa);
                 }
 
-                // Actualizar estado del Plan a Completado (salvo cancelación: si algún
-                // paso quedó Cancelado, el plan es Cancelado aunque el grafo haya terminado).
+                // Estado final del Plan. UPDATE escalar directo: jamás toca filas de pasos.
+                // Se acepta también IniciandoEjecucion: si el marcado a EnEjecucion se
+                // perdió (o el plan viene de una versión anterior), igual debe cerrarse.
                 var planFinal = await planRepo.GetByIdAsync(idPlanLocal, CancellationToken.None);
-                if (planFinal != null && planFinal.Estado == "EnEjecucion")
+                // Un Cancelado nunca se sobrescribe con Completado: si el usuario
+                // canceló (o el backstop por estado abortó capas), el final es
+                // Cancelado aunque algún nodo tardío haya terminado. La lectura
+                // es con scope fresco por el tracking del repositorio.
+                string? estadoFinalLeido;
+                await using (var scopeFinal = _scopeFactory.CreateAsyncScope())
                 {
-                    planFinal.Estado = planFinal.Pasos.Any(p => p.Estado == "Cancelado")
+                    var repoFinal = scopeFinal.ServiceProvider.GetRequiredService<IPlanRepository>();
+                    estadoFinalLeido = (await repoFinal.GetByIdAsync(idPlanLocal, CancellationToken.None))?.Estado;
+                }
+                if (planFinal != null && estadoFinalLeido == "Cancelado")
+                {
+                    await RegistrarLogAsync(idPlanLocal, null, "PlanCancelado", "Ejecución interrumpida por cancelación.", CancellationToken.None);
+                }
+                else if (planFinal != null && (planFinal.Estado == "EnEjecucion" || planFinal.Estado == "IniciandoEjecucion"))
+                {
+                    // Cancelado > Fallido > Completado. Un plan con pasos en Error NO es
+                    // "Completado": en el #6038 los dos pasos SqlQueryTool agotaron
+                    // reintentos y el plan se anunciado como Completado igual, lo que
+                    // ocultaba el fallo real detrás de una entrega final que además
+                    // se inventó los datos.
+                    var estadoFinal = planFinal.Pasos.Any(p => p.Estado == "Cancelado")
                         ? "Cancelado"
-                        : "Completado";
-                    planFinal.FechaFin = DateTime.UtcNow;
-                    await planRepo.UpdateAsync(planFinal, CancellationToken.None);
+                        : planFinal.Pasos.Any(p => p.Estado == "Error")
+                            ? "Fallido"
+                            : "Completado";
+                    await planRepo.UpdateEstadoAsync(idPlanLocal, estadoFinal, DateTime.UtcNow, CancellationToken.None);
+                    var logRepo = scope.ServiceProvider.GetRequiredService<IPlanExecutionLogRepository>();
+                    var fallidos = planFinal.Pasos.Where(p => p.Estado == "Error").Select(p => p.Nombre).ToList();
+                    try
+                    {
+                        await logRepo.AddAsync(new PlanExecutionLog
+                        {
+                            IdPlan = idPlanLocal,
+                            Evento = estadoFinal switch
+                            {
+                                "Completado" => "PlanCompletado",
+                                "Cancelado" => "PlanCancelado",
+                                _ => "PlanFallido"
+                            },
+                            Detalle = estadoFinal switch
+                            {
+                                "Completado" => $"Plan #{idPlanLocal} completado con {planFinal.Pasos.Count} paso(s).",
+                                "Cancelado" => $"Plan #{idPlanLocal} finalizado con pasos cancelados.",
+                                _ => $"Plan #{idPlanLocal} finalizado con {fallidos.Count} paso(s) en error: {string.Join(" | ", fallidos)}."
+                            },
+                            Fecha = DateTime.UtcNow
+                        }, CancellationToken.None);
+                    }
+                    catch { }
                 }
             }
             catch (OperationCanceledException)
@@ -368,9 +554,7 @@ public class PlannerEngine : IPlannerEngine
                     var planC = await planRepoC.GetByIdAsync(idPlanLocal, CancellationToken.None);
                     if (planC != null && planC.Estado == "EnEjecucion")
                     {
-                        planC.Estado = "Cancelado";
-                        planC.FechaFin = DateTime.UtcNow;
-                        await planRepoC.UpdateAsync(planC, CancellationToken.None);
+                        await planRepoC.UpdateEstadoAsync(idPlanLocal, "Cancelado", DateTime.UtcNow, CancellationToken.None);
                     }
                     await RegistrarLogAsync(idPlanLocal, null, "PlanCancelado", "Ejecución interrumpida por cancelación.", CancellationToken.None);
                 } catch { }
@@ -382,7 +566,7 @@ public class PlannerEngine : IPlannerEngine
                     await using var scopeErr = _scopeFactory.CreateAsyncScope();
                     var planRepoErr = scopeErr.ServiceProvider.GetRequiredService<IPlanRepository>();
                     var planErr = await planRepoErr.GetByIdAsync(idPlanLocal, CancellationToken.None);
-                    if (planErr != null) { planErr.Estado = "Fallido"; await planRepoErr.UpdateAsync(planErr, CancellationToken.None); }
+                    if (planErr != null) { await planRepoErr.UpdateEstadoAsync(idPlanLocal, "Fallido", DateTime.UtcNow, CancellationToken.None); }
                 } catch { }
             }
             finally
@@ -398,11 +582,17 @@ public class PlannerEngine : IPlannerEngine
     /// </summary>
     public async Task<bool> CancelarEjecucionAsync(int idPlan, CancellationToken ct = default)
     {
-        // 1. Detener trabajo activo si existe.
+        // 1. Detener trabajo activo si existe. Se registra si se encontró CTS o
+        // no: sin ese dato un {"cancelado":true} no prueba nada (plan #13237).
         if (_activeExecutions.TryGetValue(idPlan, out var cts))
         {
+            _logger.LogInformation("Planner: cancelación con CTS activo para plan {IdPlan}.", idPlan);
             try { cts.Cancel(); }
             catch (ObjectDisposedException) { }
+        }
+        else
+        {
+            _logger.LogWarning("Planner: cancelación sin CTS activo para plan {IdPlan}; solo se marca estado (el backstop por estado frenará las capas).", idPlan);
         }
 
         // 2. Marcar estado aunque ya no esté activo (encolado, en espera, etc.).
@@ -411,11 +601,9 @@ public class PlannerEngine : IPlannerEngine
         var plan = await planRepo.GetByIdAsync(idPlan, ct);
         if (plan == null) return false;
 
-        if (plan.Estado == "EnEjecucion" || plan.Estado == "EnEsperaAprobacion" || plan.Estado == "Borrador")
+        if (plan.Estado == "EnEjecucion" || plan.Estado == "IniciandoEjecucion" || plan.Estado == "EnEsperaAprobacion" || plan.Estado == "Borrador")
         {
-            plan.Estado = "Cancelado";
-            plan.FechaFin = DateTime.UtcNow;
-            await planRepo.UpdateAsync(plan, ct);
+            await planRepo.UpdateEstadoAsync(idPlan, "Cancelado", DateTime.UtcNow, ct);
         }
         await RegistrarLogAsync(idPlan, null, "PlanCancelado", "Cancelado por el usuario.", ct);
         return true;
@@ -425,6 +613,56 @@ public class PlannerEngine : IPlannerEngine
     /// Ejecuta un nodo del grafo con retry por nodo (ítem 6): ante Error, el supervisor
     /// decide reintento del MISMO nodo según política; la cancelación no se reintenta.
     /// </summary>
+    /// <summary>
+    /// Combina resultados en memoria de pasos anteriores (por Orden). Tope 12000
+    /// caracteres por la cabeza (datos crudos primero). Null si no hay nada.
+    /// </summary>
+    private string? CombinarMemoria(int ordenTope)
+    {
+        var partes = _memoriaResultados
+            .Where(kv => kv.Key < ordenTope)
+            .OrderBy(kv => kv.Key)
+            .Select(kv => kv.Value)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+        if (partes.Count == 0) return null;
+        var combinado = string.Join("\n", partes);
+        const int max = 12000;
+        return combinado.Length > max ? combinado[..max] + "\n… (datos truncados)" : combinado;
+    }
+
+    /// <summary>
+    /// Contexto para pasos Agent: memoria en memoria primero (cola, lo más
+    /// reciente = consolidado), relectura de BD como respaldo.
+    /// </summary>
+    private async Task<string> ConstruirContextoAgenteAsync(
+        IPlanStepRepository stepRepo, Plan plan, PlanStep paso, CancellationToken ct)
+    {
+        var partes = _memoriaResultados
+            .Where(kv => kv.Key < paso.Orden)
+            .OrderBy(kv => kv.Key)
+            .Select(kv => kv.Value)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+        if (partes.Count > 0)
+        {
+            var combinado = string.Join("\n", partes);
+            const int max = 6000;
+            if (combinado.Length > max)
+            {
+                var cola = combinado[^max..];
+                var corte = cola.IndexOf('\n');
+                if (corte >= 0 && corte < cola.Length - 1) cola = cola[(corte + 1)..];
+                combinado = "[contexto recortado: se conserva lo más reciente]\n" + cola;
+            }
+            return combinado;
+        }
+        var pasosAnteriores = (await stepRepo.GetByPlanAsync(plan.IdPlan, ct, true))
+            .Where(p => p.Orden < paso.Orden && !string.IsNullOrWhiteSpace(p.Resultado))
+            .Select(p => $"[Paso {p.Orden}: {p.Nombre}]\n{p.Resultado}");
+        return string.Join("\n", pasosAnteriores);
+    }
+
     private async Task EjecutarNodoGrafoAsync(ExecutionNode nodo, Plan plan, IPlanStepRepository stepRepo, CancellationToken ct)
     {
         while (true)
@@ -450,13 +688,38 @@ public class PlannerEngine : IPlannerEngine
             {
                 try
                 {
-                    paso.Estado = "Cancelado";
-                    await stepRepo.UpdateAsync(paso, CancellationToken.None);
+                    await PersistirPasoAsync(stepRepo, paso, "Cancelado", paso.Resultado, CancellationToken.None);
                 }
                 catch { }
                 return;
             }
             if (!reintentar) return;
+        }
+    }
+
+    /// <summary>
+    /// Persiste el estado/resultado de un paso cargando la entidad FRESCA en el scope
+    /// del repositorio. El `plan` del background es stale (trackeado por un DbContext
+    /// ya dispuesto y con Pasos en Pendiente): actualizarlo directamente hacía
+    /// graph-attach y SaveChanges revertía las filas Tool ya completadas.
+    /// También sincroniza el objeto en memoria para el control del bucle de reintentos.
+    /// </summary>
+    private static async Task PersistirPasoAsync(
+        IPlanStepRepository stepRepo, PlanStep pasoStale, string estado, string? resultado, CancellationToken ct)
+    {
+        pasoStale.Estado = estado;
+        pasoStale.Resultado = resultado;
+        var fresco = await stepRepo.GetByIdAsync(pasoStale.IdStep, ct);
+        if (fresco != null)
+        {
+            fresco.Estado = estado;
+            fresco.Resultado = resultado;
+            await stepRepo.UpdateAsync(fresco, ct);
+        }
+        else
+        {
+            pasoStale.Plan = null; // romper el grafo: jamás adjuntar el plan stale
+            await stepRepo.UpdateAsync(pasoStale, ct);
         }
     }
 
@@ -470,14 +733,23 @@ public class PlannerEngine : IPlannerEngine
         if (paso.Tipo == "Tool" || paso.Tipo == "Coordination" || paso.Tipo == "RAG") return;
 
         // Aprobación vía Orchestrator (la gestiona ApprovalManager; aquí se marca Omitido).
+        // Con semáforo como los demás: sin él, este UpdateAsync corría en paralelo con
+        // otros nodos sobre el mismo DbContext ("second operation started...").
         if (paso.Tipo == "Approval")
         {
-            var resApr = await _agentOrchestrator.EjecutarPasoValidadoAsync(
-                plan, paso, null, null, plan.IdUsuario, ct);
-            if (resApr.Omitido)
+            await _sem.WaitAsync(ct);
+            try
             {
-                paso.Estado = "Omitido";
-                await stepRepo.UpdateAsync(paso, ct);
+                var resApr = await _agentOrchestrator.EjecutarPasoValidadoAsync(
+                    plan, paso, null, null, plan.IdUsuario, ct);
+                if (resApr.Omitido)
+                {
+                    await PersistirPasoAsync(stepRepo, paso, "Omitido", paso.Resultado, ct);
+                }
+            }
+            finally
+            {
+                _sem.Release();
             }
             return;
         }
@@ -494,23 +766,19 @@ public class PlannerEngine : IPlannerEngine
 
                 if (resWf.Exito)
                 {
-                    paso.Resultado = resWf.Resultado;
-                    paso.Estado = "Completado";
+                    await PersistirPasoAsync(stepRepo, paso, "Completado", resWf.Resultado, ct);
                 }
                 else
                 {
-                    paso.Estado = "Error";
-                    paso.Resultado = resWf.Error ?? "El workflow no devolvió resultado.";
+                    await PersistirPasoAsync(stepRepo, paso, "Error",
+                        resWf.Error ?? "El workflow no devolvió resultado.", ct);
                 }
-                await stepRepo.UpdateAsync(paso, ct);
             }
             catch (OperationCanceledException)
             {
                 try
                 {
-                    paso.Estado = "Cancelado";
-                    paso.Resultado = "Ejecución cancelada o timeout";
-                    await stepRepo.UpdateAsync(paso, ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Cancelado", "Ejecución cancelada o timeout", ct);
                 }
                 catch { }
             }
@@ -518,9 +786,7 @@ public class PlannerEngine : IPlannerEngine
             {
                 try
                 {
-                    paso.Estado = "Error";
-                    paso.Resultado = $"Error: {ex.Message}";
-                    await stepRepo.UpdateAsync(paso, ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Error", $"Error: {ex.Message}", ct);
                 }
                 catch { }
             }
@@ -540,11 +806,8 @@ public class PlannerEngine : IPlannerEngine
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var chatService = scope.ServiceProvider.GetRequiredService<IChatService>();
 
-                // Inyectar resultados de pasos anteriores
-                var pasosAnteriores = (await stepRepo.GetByPlanAsync(plan.IdPlan, ct, true))
-                    .Where(p => p.Orden < paso.Orden && !string.IsNullOrWhiteSpace(p.Resultado))
-                    .Select(p => $"[Paso {p.Orden}: {p.Nombre}]\n{p.Resultado}");
-                var contextoPrevio = string.Join("\n", pasosAnteriores);
+                // Inyectar resultados de pasos anteriores (memoria en vivo primero).
+                var contextoPrevio = await ConstruirContextoAgenteAsync(stepRepo, plan, paso, ct);
 
                 // Timeout más largo para CPU (15 min)
                 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
@@ -556,31 +819,24 @@ public class PlannerEngine : IPlannerEngine
 
                 if (resAg.Exito)
                 {
-                    paso.Resultado = resAg.Resultado;
-                    paso.Estado = "Completado";
-                    await stepRepo.UpdateAsync(paso, ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Completado", resAg.Resultado, ct);
                 }
                 else
                 {
-                    paso.Estado = "Error";
-                    paso.Resultado = resAg.Error ?? "Sin respuesta del agente";
-                    await stepRepo.UpdateAsync(paso, ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Error",
+                        resAg.Error ?? "Sin respuesta del agente", ct);
                 }
             }
             catch (OperationCanceledException)
             {
                 try {
-                    paso.Estado = "Cancelado";
-                    paso.Resultado = "Ejecución cancelada o timeout";
-                    await stepRepo.UpdateAsync(paso, ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Cancelado", "Ejecución cancelada o timeout", ct);
                 } catch { }
             }
             catch (Exception ex)
             {
                 try {
-                    paso.Estado = "Error";
-                    paso.Resultado = $"Error: {ex.Message}";
-                    await stepRepo.UpdateAsync(paso, ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Error", $"Error: {ex.Message}", ct);
                 } catch { }
             }
             finally

@@ -7,6 +7,7 @@ using Asistente.Application.Aprobaciones;
 using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Entities.Aprobaciones;
+using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -27,8 +28,19 @@ public class ApprovalManagerTests
     private readonly Mock<IPlanRepository> _plan = new();
     private readonly Mock<IPlanExecutionLogRepository> _log = new();
     private readonly Mock<ILogger<ApprovalManager>> _logger = new();
+    private readonly Mock<IUsuarioRepository> _usu = new();
 
-    private ApprovalManager Manager() => new(_req.Object, _dec.Object, _asg.Object, _pol.Object, _plan.Object, _log.Object, _logger.Object, Mock.Of<IServiceScopeFactory>());
+    private ApprovalManager Manager() => new(_req.Object, _dec.Object, _asg.Object, _pol.Object, _plan.Object, _log.Object, _logger.Object, Mock.Of<IServiceScopeFactory>(), _usu.Object);
+
+    private static Usuario UsuarioConRol(int id, string rol, bool activo = true)
+    {
+        var u = new Usuario { IdUsuario = id, UsuarioNombre = $"user{id}", Activo = activo };
+        u.UsuarioRoles.Add(new UsuarioRol { Rol = new Rol { IdRol = 2, Nombre = rol, Activo = true } });
+        return u;
+    }
+
+    private void SetupAprobador(int id, string rol = "Operador") =>
+        _usu.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(UsuarioConRol(id, rol));
 
     [Fact]
     public async Task CrearSolicitud_Asigna_Aprobadores_Y_PasaAPendiente()
@@ -41,6 +53,8 @@ public class ApprovalManagerTests
             .Returns((ApprovalAssignee a, CancellationToken _) => Task.FromResult(a));
 
         var mgr = Manager();
+        SetupAprobador(1);
+        SetupAprobador(2);
         var sol = await mgr.CrearSolicitudAsync(100, TipoAprobacion.Financiera, 5, "Reporte", new() { 1, 2 }, ct: CancellationToken.None);
 
         Assert.Equal(EstadoAprobacion.Pendiente, sol.Estado);
@@ -67,6 +81,7 @@ public class ApprovalManagerTests
             .Returns((Plan p, CancellationToken _) => Task.FromResult(p));
 
         var mgr = Manager();
+        SetupAprobador(1);
         var res = await mgr.DecidirAsync(10, 1, "Aprobar", "OK", CancellationToken.None);
 
         Assert.Equal(EstadoAprobacion.Aprobado, res.Estado);
@@ -98,7 +113,8 @@ public class ApprovalManagerTests
         var factory = new Mock<IServiceScopeFactory>();
         factory.Setup(f => f.CreateScope()).Returns(scope.Object);
         var mgr = new ApprovalManager(_req.Object, _dec.Object, _asg.Object, _pol.Object, _plan.Object, _log.Object,
-            new Mock<ILogger<ApprovalManager>>().Object, factory.Object);
+            new Mock<ILogger<ApprovalManager>>().Object, factory.Object, _usu.Object);
+        _usu.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(UsuarioConRol(1, "Operador"));
 
         await mgr.DecidirAsync(12, 1, "Aprobar", "OK", CancellationToken.None);
 
@@ -132,6 +148,7 @@ public class ApprovalManagerTests
             .Returns((Plan p, CancellationToken _) => Task.FromResult(p));
 
         var mgr = Manager();
+        SetupAprobador(1);
         var res = await mgr.DecidirAsync(11, 1, "Rechazar", "No", CancellationToken.None);
 
         Assert.Equal(EstadoAprobacion.Rechazado, res.Estado);
@@ -146,6 +163,7 @@ public class ApprovalManagerTests
         _req.Setup(x => x.GetByIdAsync(12, It.IsAny<CancellationToken>())).ReturnsAsync(sol);
 
         var mgr = Manager();
+        SetupAprobador(5);
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
             () => mgr.DecidirAsync(12, 5, "Aprobar", "yo", CancellationToken.None));
     }
@@ -164,6 +182,7 @@ public class ApprovalManagerTests
             .Returns((ApprovalRequest r, CancellationToken _) => Task.FromResult(r));
 
         var mgr = Manager();
+        SetupAprobador(1);
         var res = await mgr.DecidirAsync(13, 1, "Aprobar", "ok", CancellationToken.None);
 
         // Con aprobadores pendientes, la cadena secuencial queda en Delegado
@@ -184,6 +203,8 @@ public class ApprovalManagerTests
             .Returns((ApprovalAssignee a, CancellationToken _) => Task.FromResult(a));
         _req.Setup(x => x.UpdateAsync(It.IsAny<ApprovalRequest>(), It.IsAny<CancellationToken>()))
             .Returns((ApprovalRequest r, CancellationToken _) => Task.FromResult(r));
+        _usu.Setup(x => x.GetByIdAsync(9))
+            .ReturnsAsync(UsuarioConRol(9, "Supervisor"));
 
         var mgr = Manager();
         var res = await mgr.DelegarAsync(14, 1, 9, "delego", CancellationToken.None);
@@ -208,6 +229,102 @@ public class ApprovalManagerTests
         Assert.Equal(EstadoAprobacion.Pendiente, sol.Estado);
         Assert.All(sol.Asignados, a => Assert.Equal("Pendiente", a.Estado));
         _asg.Verify(x => x.AddAsync(It.IsAny<ApprovalAssignee>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Delegar_UsuarioInexistente_Rechaza_YNoModifica()
+    {
+        var sol = new ApprovalRequest { IdApproval = 17, IdPlan = 107, Solicitante = 5, Estado = EstadoAprobacion.Pendiente };
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 17, IdUsuario = 1, Estado = "Pendiente", EsPrincipal = true });
+        _req.Setup(x => x.GetByIdAsync(17, It.IsAny<CancellationToken>())).ReturnsAsync(sol);
+        _usu.Setup(x => x.GetByIdAsync(999)).ReturnsAsync((Usuario?)null);
+
+        var mgr = Manager();
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => mgr.DelegarAsync(17, 1, 999, "fantasma", CancellationToken.None));
+
+        Assert.Equal(EstadoAprobacion.Pendiente, sol.Estado);
+        _asg.Verify(x => x.AddAsync(It.IsAny<ApprovalAssignee>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CrearSolicitud_Descarta_RolUsuario_Y_Falla_SiNoQuedanAprobadores()
+    {
+        ApprovalRequest? guardada = null;
+        _req.Setup(x => x.AddAsync(It.IsAny<ApprovalRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ApprovalRequest, CancellationToken>((r, _) => guardada = r)
+            .Returns((ApprovalRequest r, CancellationToken _) => Task.FromResult(r));
+        _asg.Setup(x => x.AddAsync(It.IsAny<ApprovalAssignee>(), It.IsAny<CancellationToken>()))
+            .Returns((ApprovalAssignee a, CancellationToken _) => Task.FromResult(a));
+        _usu.Setup(x => x.GetByIdAsync(7)).ReturnsAsync(UsuarioConRol(7, "Usuario"));
+        SetupAprobador(1);
+
+        var mgr = Manager();
+
+        // Solo rol Usuario -> sin aprobadores válidos.
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => mgr.CrearSolicitudAsync(200, TipoAprobacion.Manual, 5, "X", new() { 7 }, ct: CancellationToken.None));
+
+        // Mixta -> se asigna solo el aprobador con rol válido.
+        var sol = await mgr.CrearSolicitudAsync(201, TipoAprobacion.Manual, 5, "Y", new() { 7, 1 }, ct: CancellationToken.None);
+        Assert.NotNull(guardada);
+        _asg.Verify(x => x.AddAsync(It.Is<ApprovalAssignee>(a => a.IdUsuario == 7), It.IsAny<CancellationToken>()), Times.Never);
+        _asg.Verify(x => x.AddAsync(It.Is<ApprovalAssignee>(a => a.IdUsuario == 1), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Decidir_RolUsuario_NoPuedeAprobar_AunqueEsteAsignado()
+    {
+        var sol = new ApprovalRequest { IdApproval = 20, IdPlan = 200, Solicitante = 5, Estado = EstadoAprobacion.Pendiente };
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 20, IdUsuario = 7, Estado = "Pendiente", EsPrincipal = true });
+        _req.Setup(x => x.GetByIdAsync(20, It.IsAny<CancellationToken>())).ReturnsAsync(sol);
+        _usu.Setup(x => x.GetByIdAsync(7)).ReturnsAsync(UsuarioConRol(7, "Usuario"));
+
+        var mgr = Manager();
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => mgr.DecidirAsync(20, 7, "Aprobar", "ok", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Delegar_RolUsuarioDestino_Rechaza_YNoModifica()
+    {
+        var sol = new ApprovalRequest { IdApproval = 21, IdPlan = 201, Solicitante = 5, Estado = EstadoAprobacion.Pendiente };
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 21, IdUsuario = 1, Estado = "Pendiente", EsPrincipal = true });
+        _req.Setup(x => x.GetByIdAsync(21, It.IsAny<CancellationToken>())).ReturnsAsync(sol);
+        _usu.Setup(x => x.GetByIdAsync(7)).ReturnsAsync(UsuarioConRol(7, "Usuario"));
+
+        var mgr = Manager();
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => mgr.DelegarAsync(21, 1, 7, "a usuario", CancellationToken.None));
+
+        Assert.Equal(EstadoAprobacion.Pendiente, sol.Estado);
+        _asg.Verify(x => x.AddAsync(It.IsAny<ApprovalAssignee>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Decidir_TrasDobleDelegacion_ApruebaConAsignacionPendiente()
+    {
+        // Admin delegó a operador y operador devolvió a admin: admin tiene una
+        // fila "Delegado" (vieja) y una "Pendiente" (actual). Debe poder decidir.
+        var sol = new ApprovalRequest { IdApproval = 22, IdPlan = 202, Solicitante = 2, Estado = EstadoAprobacion.Pendiente };
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 22, IdUsuario = 1, Estado = "Delegado", EsPrincipal = true });
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 22, IdUsuario = 2, Estado = "Delegado" });
+        sol.Asignados.Add(new ApprovalAssignee { IdApproval = 22, IdUsuario = 1, Estado = "Pendiente", EsPrincipal = true });
+        _req.Setup(x => x.GetByIdAsync(22, It.IsAny<CancellationToken>())).ReturnsAsync(sol);
+        _asg.Setup(x => x.UpdateAsync(It.IsAny<ApprovalAssignee>(), It.IsAny<CancellationToken>()))
+            .Returns((ApprovalAssignee a, CancellationToken _) => Task.FromResult(a));
+        _req.Setup(x => x.UpdateAsync(It.IsAny<ApprovalRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ApprovalRequest r, CancellationToken _) => Task.FromResult(r));
+        var plan = new Plan { IdPlan = 202, Estado = "EnEsperaAprobacion" };
+        _plan.Setup(x => x.GetByIdAsync(202, It.IsAny<CancellationToken>())).ReturnsAsync(plan);
+        _plan.Setup(x => x.UpdateAsync(It.IsAny<Plan>(), It.IsAny<CancellationToken>()))
+            .Returns((Plan p, CancellationToken _) => Task.FromResult(p));
+        SetupAprobador(1);
+
+        var mgr = Manager();
+        var res = await mgr.DecidirAsync(22, 1, "Aprobar", "ok tras ping-pong", CancellationToken.None);
+
+        Assert.Equal(EstadoAprobacion.Aprobado, res.Estado);
     }
 
     [Fact]

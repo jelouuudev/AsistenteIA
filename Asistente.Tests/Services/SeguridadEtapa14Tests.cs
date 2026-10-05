@@ -72,12 +72,14 @@ public class SeguridadEtapa14Tests
     [Fact]
     public async Task Autorizacion_VerificarHerramienta_SinPermiso_RetornaDenegado()
     {
+        var usuRepo = new Mock<IUsuarioRepository>();
+        usuRepo.Setup(r => r.GetByIdAsync(9)).ReturnsAsync(UsuarioConRol(9, "Operador"));
         var permisoRepo = new Mock<IPermisoRepository>();
         permisoRepo.Setup(r => r.ObtenerCodigosPorUsuarioAsync(9, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<string> { "CHAT_CONSULTAR" }); // sin HERRAMIENTAS_ADMINISTRAR
+            .ReturnsAsync(new List<string> { "CHAT_CONSULTAR" }); // sin HERRAMIENTAS_CONSULTAR
 
         var svc = new AutorizacionService(
-            new Mock<IUsuarioRepository>().Object,
+            usuRepo.Object,
             new Mock<IUsuarioAsistenteRepository>().Object,
             new Mock<IUsuarioFuenteRepository>().Object,
             permisoRepo.Object, new Mock<IAsistenteRepository>().Object);
@@ -85,6 +87,52 @@ public class SeguridadEtapa14Tests
         var res = await svc.VerificarHerramientaAsync(9, 0, "ReportTool");
         Assert.False(res.Permitido);
         Assert.Contains("permiso", res.Motivo);
+    }
+
+    private static Usuario UsuarioConRol(int id, string rol)
+    {
+        var u = new Usuario { IdUsuario = id, UsuarioNombre = $"user{id}", Activo = true };
+        u.UsuarioRoles.Add(new UsuarioRol { Rol = new Rol { IdRol = 2, Nombre = rol, Activo = true } });
+        return u;
+    }
+
+    // ---- ReportTool: todos los roles con permiso pueden generar reportes ----
+    [Fact]
+    public async Task Autorizacion_ReportTool_RolUsuario_RetornaOk()
+    {
+        var usuRepo = new Mock<IUsuarioRepository>();
+        usuRepo.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(UsuarioConRol(7, "Usuario"));
+        var permisoRepo = new Mock<IPermisoRepository>();
+        permisoRepo.Setup(r => r.ObtenerCodigosPorUsuarioAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "HERRAMIENTAS_CONSULTAR" });
+
+        var svc = new AutorizacionService(
+            usuRepo.Object,
+            new Mock<IUsuarioAsistenteRepository>().Object,
+            new Mock<IUsuarioFuenteRepository>().Object,
+            permisoRepo.Object, new Mock<IAsistenteRepository>().Object);
+
+        var res = await svc.VerificarHerramientaAsync(7, 0, "ReportTool");
+        Assert.True(res.Permitido);
+    }
+
+    [Fact]
+    public async Task Autorizacion_ReportTool_RolOperador_RetornaOk()
+    {
+        var usuRepo = new Mock<IUsuarioRepository>();
+        usuRepo.Setup(r => r.GetByIdAsync(8)).ReturnsAsync(UsuarioConRol(8, "Operador"));
+        var permisoRepo = new Mock<IPermisoRepository>();
+        permisoRepo.Setup(r => r.ObtenerCodigosPorUsuarioAsync(8, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "HERRAMIENTAS_CONSULTAR" });
+
+        var svc = new AutorizacionService(
+            usuRepo.Object,
+            new Mock<IUsuarioAsistenteRepository>().Object,
+            new Mock<IUsuarioFuenteRepository>().Object,
+            permisoRepo.Object, new Mock<IAsistenteRepository>().Object);
+
+        var res = await svc.VerificarHerramientaAsync(8, 0, "ReportTool");
+        Assert.True(res.Permitido);
     }
 
     // ---- Caso 4: prompt injection en documento/mensaje ----

@@ -1,0 +1,37 @@
+@model List<Asistente.Shared.PermisoAsignadoDto>
+@{
+    ViewData["Title"] = "Asignar Permisos";
+    int idRol = (int)ViewBag.IdRol;
+    var grupos = Model.Select((p, i) => new { p, i }).GroupBy(x => x.p.Modulo).OrderBy(g => g.Key).ToList();
+}
+<div class="container-fluid py-4">
+    <h2 class="mb-1"><i class="bi bi-key me-2"></i>Asignar Permisos al Rol #@idRol</h2>
+    <p class="text-secondary small mb-4">Los cambios aplican de inmediato a todos los usuarios con este rol (excepto Administrador, que siempre tiene acceso total).</p>
+    <form method="post" asp-action="AsignarPermisos" asp-route-idRol="@idRol">
+        @foreach (var g in grupos)
+        {
+            <h5 class="mt-4 mb-2"><span class="badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border-radius:8px;">@g.Key</span></h5>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover">
+                    <thead><tr><th style="width:60px;">Asignado</th><th>Código</th><th>Nombre</th></tr></thead>
+                    <tbody>
+                    @foreach (var x in g)
+                    {
+                        <tr>
+                            <td>@Html.CheckBoxFor(m => m[x.i].Asignado)</td>
+                            <td><code style="color:#818cf8;">@Model[x.i].Codigo</code></td>
+                            <td>@Model[x.i].Nombre</td>
+                        </tr>
+                        @Html.HiddenFor(m => m[x.i].IdPermiso)
+                        @Html.HiddenFor(m => m[x.i].Codigo)
+                        @Html.HiddenFor(m => m[x.i].Nombre)
+                        @Html.HiddenFor(m => m[x.i].Modulo)
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Guardar asignaciones</button>
+        <a asp-controller="Roles" asp-action="Index" class="btn btn-secondary">Volver a roles</a>
+    </form>
+</div>

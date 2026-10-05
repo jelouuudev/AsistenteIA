@@ -45,6 +45,21 @@ public class PermisoService : IPermisoService
         await _unitOfWork.SaveChangesAsync(ct);
     }
 
+    public async Task<IEnumerable<PermisoDto>> ObtenerPorRolAsync(int idRol, CancellationToken ct = default)
+        => (await _permisoRepository.GetByRolAsync(idRol, ct)).Select(Map);
+
+    public async Task ReemplazarPermisosRolAsync(int idRol, IEnumerable<string> codigos, CancellationToken ct = default)
+    {
+        await _permisoRepository.DeleteByRolAsync(idRol, ct);
+        foreach (var codigo in codigos.Distinct())
+        {
+            var permiso = await _permisoRepository.GetByCodigoAsync(codigo, ct);
+            if (permiso != null)
+                await _permisoRepository.AddRolPermisoAsync(new RolPermiso { IdRol = idRol, IdPermiso = permiso.IdPermiso }, ct);
+        }
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
     public async Task CrearPermisoAsync(CrearPermisoRequest request, CancellationToken ct = default)
     {
         await _permisoRepository.AddAsync(new Permiso

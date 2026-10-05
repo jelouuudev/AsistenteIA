@@ -11,6 +11,8 @@ public interface IPermisoService
     Task<IEnumerable<string>> ObtenerCodigosPorUsuarioAsync(int idUsuario, CancellationToken ct = default);
     Task<bool> TienePermisoAsync(int idUsuario, string codigoPermiso, CancellationToken ct = default);
     Task AsignarPermisosRolAsync(int idRol, IEnumerable<string> codigos, CancellationToken ct = default);
+    Task<IEnumerable<PermisoDto>> ObtenerPorRolAsync(int idRol, CancellationToken ct = default);
+    Task ReemplazarPermisosRolAsync(int idRol, IEnumerable<string> codigos, CancellationToken ct = default);
     Task CrearPermisoAsync(CrearPermisoRequest request, CancellationToken ct = default);
 }
 

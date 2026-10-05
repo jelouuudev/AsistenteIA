@@ -44,32 +44,23 @@ public class RolesController : Controller
         }
     }
 
+    // Creación de roles deshabilitada: los roles son fijos (Administrador,
+    // Supervisor, Operador, Usuario) porque las autorizaciones [Authorize(Roles)]
+    // están cableadas por nombre. Un rol nuevo no tendría acceso a nada.
     [HttpGet]
     public IActionResult Crear()
     {
-        return View(new CrearRolRequest());
+        TempData["ErrorMessage"] = "La creación de roles está deshabilitada. Los roles del sistema son fijos.";
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Crear(CrearRolRequest model)
     {
-        if (!ModelState.IsValid)
-        {
-            return View(model);
-        }
-
-        try
-        {
-            await _apiService.CrearRolAsync(model, GetCurrentUserId(), GetIpAddress());
-            TempData["SuccessMessage"] = "Rol creado exitosamente.";
-            return RedirectToAction(nameof(Index));
-        }
-        catch (Exception ex)
-        {
-            ModelState.AddModelError(string.Empty, ex.Message);
-            return View(model);
-        }
+        await Task.CompletedTask;
+        TempData["ErrorMessage"] = "La creación de roles está deshabilitada. Los roles del sistema son fijos.";
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpGet]

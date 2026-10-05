@@ -38,6 +38,7 @@ public class PlanStepConfiguration : IEntityTypeConfiguration<PlanStep>
         builder.Property(s => s.Nombre).IsRequired();
         builder.Property(s => s.Estado).HasMaxLength(20).IsRequired().HasDefaultValue("Pendiente");
         builder.Property(s => s.Resultado).HasColumnType("nvarchar(max)");
+        builder.Property(s => s.Entrada).HasColumnType("nvarchar(1000)");
         builder.HasOne(s => s.Plan)
             .WithMany(p => p.Pasos)
             .HasForeignKey(s => s.IdPlan)

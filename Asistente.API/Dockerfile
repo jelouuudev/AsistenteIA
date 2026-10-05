@@ -20,6 +20,12 @@ COPY Asistente.API/appsettings*.json /app/publish/
 
 # Imagen final
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+# Fuentes con mapa ToUnicode correcto para los PDF (QuestPDF/SkiaSharp las
+# resuelve por fontconfig): sin ellas cae en un sustituto cuya ligadura "ti"
+# se pierde al copiar texto del PDF ("permitir" -> "permir", plan #10181).
+# Liberation Sans es clon métrico de Arial (misma maquetación) con licencia OFL.
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-liberation2 fontconfig \
+    && rm -rf /var/lib/apt/lists
 WORKDIR /app
 COPY --from=build /app/publish .
 ENV ASPNETCORE_ENVIRONMENT=Production

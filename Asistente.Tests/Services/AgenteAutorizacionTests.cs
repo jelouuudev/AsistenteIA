@@ -8,8 +8,9 @@ namespace Asistente.Tests.Services;
 
 /// <summary>
 /// Pruebas de autorización de agentes (ETAPA 16 - Regla 1): un usuario accede
-/// a un agente si es Administrador, si el agente está asignado directamente a él,
-/// o si el agente está asignado a alguno de sus roles.
+/// a un agente si está asignado directamente a él o si el agente está asignado
+/// a alguno de sus roles. Sin bypass: las asignaciones mandan para todos,
+/// incluido el Administrador.
 /// </summary>
 public class AgenteAutorizacionTests
 {
@@ -45,14 +46,17 @@ public class AgenteAutorizacionTests
     }
 
     [Fact]
-    public async Task VerificarAsistenteAsync_Admin_Siempre_Permitido()
+    public async Task VerificarAsistenteAsync_AdminSinAsignacion_Denegado()
     {
         _mockUsuarioRepo.Setup(x => x.GetByIdAsync(1)).ReturnsAsync(
             new Usuario { IdUsuario = 1, UsuarioRoles = new List<UsuarioRol> { new() { IdRol = 1, Rol = new Rol { IdRol = 1, Nombre = "Administrador" } } } });
+        _mockUsuarioAsistenteRepo.Setup(x => x.EstaAutorizadoAsync(1, 10, It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(false);
+        _mockAsistenteRepo.Setup(x => x.GetByIdAsync(10)).ReturnsAsync(
+            new Domain.Entities.Asistente { IdAsistente = 10, AgentesRoles = new List<AgenteRol>() });
 
         var result = await _service.VerificarAsistenteAsync(1, 10);
 
-        Assert.True(result.Permitido);
+        Assert.False(result.Permitido);
     }
 
     [Fact]

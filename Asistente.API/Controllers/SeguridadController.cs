@@ -23,6 +23,7 @@ public class SeguridadController : ControllerBase
     private readonly IUsuarioFuenteRepository _usuarioFuenteRepository;
     private readonly IAsistenteRepository _asistenteRepository;
     private readonly IFuenteConocimientoRepository _fuenteRepository;
+    private readonly IUsuarioRepository _usuarioRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public SeguridadController(
@@ -33,6 +34,7 @@ public class SeguridadController : ControllerBase
         IUsuarioFuenteRepository usuarioFuenteRepository,
         IAsistenteRepository asistenteRepository,
         IFuenteConocimientoRepository fuenteRepository,
+        IUsuarioRepository usuarioRepository,
         IUnitOfWork unitOfWork)
     {
         _permisoService = permisoService;
@@ -42,6 +44,7 @@ public class SeguridadController : ControllerBase
         _usuarioFuenteRepository = usuarioFuenteRepository;
         _asistenteRepository = asistenteRepository;
         _fuenteRepository = fuenteRepository;
+        _usuarioRepository = usuarioRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -54,14 +57,43 @@ public class SeguridadController : ControllerBase
         return null;
     }
 
-    // --- Permisos ---
+    // --- Permisos y matriz: solo rol Administrador (la pestaña web también).
+    // CONFIGURACION_ADMINISTRAR controla únicamente la creación de políticas,
+    // así quitarlo nunca bloquea esta matriz (sin riesgo de autobloqueo).
     [HttpGet("permisos")]
     public async Task<ActionResult<IEnumerable<PermisoDto>>> GetPermisos(CancellationToken ct = default)
-        => Ok(await _permisoService.ObtenerTodosAsync(ct));
+    {
+        await Task.CompletedTask;
+        if (!User.IsInRole("Administrador"))
+            return StatusCode(403, "Solo el rol Administrador puede ver el catálogo de permisos.");
+        return Ok(await _permisoService.ObtenerTodosAsync(ct));
+    }
 
     [HttpGet("permisos/mios")]
     public async Task<ActionResult<IEnumerable<string>>> MisPermisos(CancellationToken ct = default)
         => Ok(await _permisoService.ObtenerCodigosPorUsuarioAsync(UsuarioId(), ct));
+
+    // --- Asignación de permisos al rol (matriz rol×permiso) ---
+    [HttpGet("roles/{idRol}/permisos")]
+    public async Task<ActionResult<IEnumerable<PermisoAsignadoDto>>> PermisosDeRol(int idRol, CancellationToken ct = default)
+    {
+        var todos = await _permisoService.ObtenerTodosAsync(ct);
+        var asignados = (await _permisoService.ObtenerPorRolAsync(idRol, ct)).Select(p => p.Codigo).ToHashSet();
+        return Ok(todos.Select(p => new PermisoAsignadoDto
+        {
+            IdPermiso = p.IdPermiso, Codigo = p.Codigo, Nombre = p.Nombre, Modulo = p.Modulo,
+            Asignado = asignados.Contains(p.Codigo)
+        }));
+    }
+
+    [HttpPost("roles/{idRol}/permisos")]
+    public async Task<ActionResult> AsignarPermisosRol(int idRol, [FromBody] AsignarPermisosRolRequest request, CancellationToken ct = default)
+    {
+        if (!User.IsInRole("Administrador"))
+            return StatusCode(403, "Solo el rol Administrador puede modificar la matriz de permisos.");
+        await _permisoService.ReemplazarPermisosRolAsync(idRol, request.Codigos ?? new List<string>(), ct);
+        return Ok("Permisos del rol actualizados.");
+    }
 
     // --- Políticas de IA ---
     [HttpGet("politicas")]
@@ -71,8 +103,9 @@ public class SeguridadController : ControllerBase
     [HttpPost("politicas")]
     public async Task<ActionResult> CrearPolitica([FromBody] CrearPoliticaIARequest request, CancellationToken ct = default)
     {
-        var deny = await VerificarPermisoAsync("CONFIGURACION_ADMINISTRAR", ct);
-        if (deny != null) return deny;
+        await Task.CompletedTask;
+        if (!User.IsInRole("Administrador"))
+            return StatusCode(403, "Solo el rol Administrador puede crear políticas.");
         await _politicaService.CrearAsync(request, ct);
         return Ok("Política creada.");
     }
@@ -94,9 +127,21 @@ public class SeguridadController : ControllerBase
         if (deny != null) return deny;
         var autorizados = await _usuarioAsistenteRepository.GetAsistentesAutorizadosAsync(idUsuario, ct);
         var todos = await _asistenteRepository.GetAllAsync();
+        var usuario = await _usuarioRepository.GetByIdAsync(idUsuario);
+        var rolesUsuario = usuario?.UsuarioRoles
+            .Where(ur => ur.Rol != null)
+            .ToDictionary(ur => ur.IdRol, ur => ur.Rol!.Nombre) ?? new Dictionary<int, string>();
         var dto = new List<AsistenteAutorizadoDto>();
         foreach (var a in todos)
-            dto.Add(new AsistenteAutorizadoDto { IdAsistente = a.IdAsistente, Nombre = a.Nombre, Autorizado = autorizados.Contains(a.IdAsistente) });
+        {
+            var completo = await _asistenteRepository.GetByIdAsync(a.IdAsistente);
+            var porRol = (completo?.AgentesRoles ?? Enumerable.Empty<Asistente.Domain.Entities.AgenteRol>())
+                .Where(ar => ar.Activo && rolesUsuario.ContainsKey(ar.IdRol))
+                .Select(ar => rolesUsuario[ar.IdRol])
+                .Distinct()
+                .ToList();
+            dto.Add(new AsistenteAutorizadoDto { IdAsistente = a.IdAsistente, Nombre = a.Nombre, Autorizado = autorizados.Contains(a.IdAsistente), RolesQueOtorgan = porRol });
+        }
         return Ok(dto);
     }
 

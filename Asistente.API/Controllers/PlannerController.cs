@@ -15,7 +15,7 @@ namespace Asistente.API.Controllers;
 
 [ApiController]
 [Route("api/planner")]
-[Authorize]
+[Authorize(Roles = "Administrador,Operador,Supervisor")]
 public class PlannerController : ControllerBase
 {
     private readonly IPlannerEngine _planner;
@@ -113,9 +113,8 @@ public class PlannerController : ControllerBase
                 return BadRequest(new { exitoso = false, error = $"El plan {id} ya tiene una solicitud de aprobación pendiente. Decida primero en el Centro de Aprobaciones." });
 
             // Lanzar ejecución en segundo plano.
-            // Marcar inmediatamente para evitar doble ejecución.
-            plan.Estado = "IniciandoEjecucion";
-            await _planRepo.UpdateAsync(plan, ct);
+            // Marcar inmediatamente para evitar doble ejecución (solo escalar).
+            await _planRepo.UpdateEstadoAsync(id, "IniciandoEjecucion", null, ct);
         }
         finally
         {
@@ -137,11 +136,19 @@ public class PlannerController : ControllerBase
         });
 
         // Esperar hasta que el estado cambie (evita doble ejecución: la 2da llamada ve el estado actualizado).
+        // OJO: "Pendiente" no es un estado de Plan (es Borrador/Validado/...), así que
+        // comparar contra él rompía en el primer poll y devolvía un snapshot stale
+        // (pasos aún en Pendiente). Se espera al marcado real de lanzamiento.
         var timeout = DateTime.UtcNow.AddSeconds(5);
         while (DateTime.UtcNow < timeout)
         {
             var actualizado = await _planRepo.GetByIdAsync(id, CancellationToken.None);
-            if (actualizado != null && actualizado.Estado != "Pendiente")
+            if (actualizado != null && (actualizado.Estado == "IniciandoEjecucion"
+                || actualizado.Estado == "EnEjecucion"
+                || actualizado.Estado == "Completado"
+                || actualizado.Estado == "Fallido"
+                || actualizado.Estado == "Cancelado"
+                || actualizado.Estado == "EnEsperaAprobacion"))
                 break;
             await Task.Delay(100);
         }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Domain.Entities;
 
@@ -31,6 +32,7 @@ public interface IEjecucionHerramientaRepository
     Task<IEnumerable<EjecucionHerramienta>> GetAllAsync(int top = 200);
     Task<(int Total, double TiempoPromedio, int Errores, DateTime? Ultima)> GetEstadisticasAsync(int idHerramienta);
     Task<IEnumerable<EjecucionHerramienta>> GetByHerramientaAsync(int idHerramienta, int top = 50);
+    Task<(long Total, long ConsultasSql)> ContarAsync(CancellationToken ct = default);
 }
 
 public interface IConfiguracionOrchestratorRepository

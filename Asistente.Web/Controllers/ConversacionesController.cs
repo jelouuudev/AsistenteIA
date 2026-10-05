@@ -6,7 +6,7 @@ using System.Security.Claims;
 
 namespace Asistente.Web.Controllers;
 
-[Authorize(Roles = "Administrador,Operador,Supervisor")]
+[Authorize(Roles = "Administrador,Operador,Supervisor,Usuario")]
 public class ConversacionesController : Controller
 {
     private readonly IApiService _apiService;

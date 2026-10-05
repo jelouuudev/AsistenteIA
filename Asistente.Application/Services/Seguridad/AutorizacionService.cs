@@ -9,7 +9,8 @@ namespace Asistente.Application.Services.Seguridad;
 /// <summary>
 /// Autorización en cada capa (ETAPA 14 - Actividades 4, 5, 6, 7 y Reglas 2, 4, 5).
 /// Valida asistentes, fuentes, herramientas y workflows autorizados por usuario.
-/// El administrador (Rol "Administrador") tiene acceso total por defecto.
+/// Los permisos de la matriz mandan para TODOS los roles incluido Administrador:
+/// permiso desactivado = acceso denegado.
 /// </summary>
 public class AutorizacionService : IAutorizacionService
 {
@@ -33,17 +34,9 @@ public class AutorizacionService : IAutorizacionService
         _asistenteRepository = asistenteRepository;
     }
 
-    private async Task<bool> EsAdministradorAsync(int idUsuario, CancellationToken ct)
-    {
-        var usuario = await _usuarioRepository.GetByIdAsync(idUsuario);
-        return usuario?.UsuarioRoles.Any(ur => ur.Rol?.Nombre == "Administrador") ?? false;
-    }
-
     public async Task<ResultadoAutorizacion> VerificarAsistenteAsync(int idUsuario, int idAsistente, CancellationToken ct = default)
     {
-        if (await EsAdministradorAsync(idUsuario, ct))
-            return Ok();
-
+        // Sin bypass: las asignaciones mandan para todos los roles incluido Administrador.
         // Agente asignado directamente al usuario (ETAPA 14)
         if (await _usuarioAsistenteRepository.EstaAutorizadoAsync(idUsuario, idAsistente, ct))
             return Ok();
@@ -70,16 +63,21 @@ public class AutorizacionService : IAutorizacionService
 
     public async Task<ResultadoAutorizacion> VerificarFuenteAsync(int idUsuario, int idFuente, CancellationToken ct = default)
     {
-        if (await EsAdministradorAsync(idUsuario, ct))
-            return Ok();
         var autorizada = await _usuarioFuenteRepository.EstaAutorizadaAsync(idUsuario, idFuente, ct);
         return autorizada ? Ok() : Denegado("La fuente de conocimiento no está autorizada para este usuario.");
     }
 
     public async Task<ResultadoAutorizacion> VerificarHerramientaAsync(int idUsuario, int idAsistente, string codigoHerramienta, CancellationToken ct = default)
     {
-        if (await EsAdministradorAsync(idUsuario, ct))
-            return Ok();
+        // ReportTool: todos los roles con el permiso pueden generar reportes.
+        if (codigoHerramienta.Equals("ReportTool", StringComparison.OrdinalIgnoreCase))
+        {
+            var usuario = await _usuarioRepository.GetByIdAsync(idUsuario);
+            var habilitado = usuario?.UsuarioRoles
+                .Any(ur => ur.Rol?.Nombre is "Administrador" or "Operador" or "Supervisor" or "Usuario") ?? false;
+            if (!habilitado)
+                return Denegado("La herramienta 'ReportTool' requiere un rol autorizado.");
+        }
 
         // El usuario debe tener el permiso asociado a la herramienta (Caso 1 y 3).
         // La asociación herramienta->asistente ya la valida el ToolOrchestrator.
@@ -102,8 +100,7 @@ public class AutorizacionService : IAutorizacionService
 
     public async Task<ResultadoAutorizacion> VerificarPermisoAsync(int idUsuario, string codigoPermiso, CancellationToken ct = default)
     {
-        if (await EsAdministradorAsync(idUsuario, ct))
-            return Ok();
+        // Sin bypass: la matriz de permisos manda para todos los roles.
         var tiene = await _permisoRepository.ObtenerCodigosPorUsuarioAsync(idUsuario, ct);
         return tiene.Contains(codigoPermiso) ? Ok() : Denegado($"Permiso requerido: {codigoPermiso}.");
     }
@@ -114,7 +111,7 @@ public class AutorizacionService : IAutorizacionService
     public static string? CodigoPermisoParaHerramienta(string codigoHerramienta) => codigoHerramienta switch
     {
         "SqlQueryTool" => "SQL_CONSULTAR",
-        "ReportTool" => "HERRAMIENTAS_ADMINISTRAR",
+        "ReportTool" => "HERRAMIENTAS_CONSULTAR",
         "DocumentSearchTool" => "HERRAMIENTAS_CONSULTAR",
         "CalculatorTool" => "HERRAMIENTAS_CONSULTAR",
         "DateTimeTool" => "HERRAMIENTAS_CONSULTAR",

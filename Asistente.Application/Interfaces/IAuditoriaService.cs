@@ -8,5 +8,5 @@ public interface IAuditoriaService
 {
     Task<IEnumerable<AuditoriaSesionDto>> ObtenerSesionesAsync();
     Task<IEnumerable<AuditoriaActividadDto>> ObtenerActividadesAsync();
-    Task RegistrarActividadAsync(int userId, string modulo, string accion, string descripcion, string? ipAddress);
+    Task RegistrarActividadAsync(int userId, string modulo, string accion, string descripcion, string? ipAddress, string resultado = "Exitoso");
 }

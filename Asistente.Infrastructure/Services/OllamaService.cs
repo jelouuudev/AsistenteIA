@@ -56,6 +56,7 @@ public class OllamaService : IOllamaService
         var options = new OllamaRequestOptions();
         options.Temperature = temperature ?? _config.Temperatura;
         options.NumPredict = maxTokens ?? _config.MaxTokens;
+        if (_config.NumCtx > 0) options.NumCtx = _config.NumCtx;
 
         var request = new OllamaChatRequest
         {

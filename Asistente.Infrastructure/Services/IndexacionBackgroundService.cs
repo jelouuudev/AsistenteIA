@@ -133,6 +133,17 @@ public class IndexacionBackgroundService : BackgroundService
 
                         await indexacionService.IndexarDocumentoAsync(doc.IdDocumentoProcesado);
 
+                        // El servicio de indexación omite los documentos que no están
+                        // Activos (borrador/archivado). Preguntar por el registro evita
+                        // announcing "indexado exitosamente" cuando no se indexó nada.
+                        var registro = await indexacionService.ObtenerPorProcesadoIdAsync(doc.IdDocumentoProcesado);
+                        if (registro == null)
+                        {
+                            _logger.LogInformation("Documento '{Nombre}' (procesado {Id}) sin indexar: sigue sin registro (no Activo). Se reintentará cuando se active.",
+                                doc.DocumentoNombre, doc.IdDocumentoProcesado);
+                            continue;
+                        }
+
                         _logger.LogInformation(
                             "Documento '{Nombre}' indexado exitosamente.",
                             doc.DocumentoNombre);
@@ -226,8 +237,9 @@ public class IndexacionBackgroundService : BackgroundService
         }
 
     /// <summary>
-    /// Dispara DOC_INDEXADO cuando un documento queda con vectores por primera vez.
-    /// Nunca rompe la indexación: si el evento no existe o falla, solo se registra.
+    /// Re-dispara los disparadores tipo Documento marcados con "soloIndexado": true
+    /// cuando un documento queda con vectores por primera vez (los que necesitan RAG).
+    /// Los demás ya corrieron al procesarse. Nunca rompe la indexación.
     /// El contexto lleva Nombre/Codigo para que los pasos usen {{Nombre}}.
     /// </summary>
     private async Task DispararDocIndexadoAsync(IServiceScope scope, int idDocumentoProcesado, bool yaEstabaIndexado, CancellationToken ct)
@@ -242,13 +254,14 @@ public class IndexacionBackgroundService : BackgroundService
                     EstadoIndexacion.Indexado.ToString(), StringComparison.OrdinalIgnoreCase))
                 return;
 
-            // Verificar si hay un disparador tipo Documento activo para DOC_INDEXADO
+            // Solo los marcados con "soloIndexado": true (los que necesitan vectores).
+            // Los demás ya corrieron al procesarse; re-dispararlos duplicaría su ejecución.
             var disparadoresService = scope.ServiceProvider.GetRequiredService<IDisparadorEventoService>();
             var activos = await disparadoresService.ObtenerActivosAsync(ct);
-            var evento = activos.FirstOrDefault(d => d.CodigoEvento == "DOC_INDEXADO" && d.Tipo == "Documento");
-            if (evento == null)
+            var triggers = activos.Where(d => d.Tipo == "Documento" && EsSoloIndexado(d.ConfigJson)).ToList();
+            if (triggers.Count == 0)
             {
-                _logger.LogInformation("No hay disparador activo para DOC_INDEXADO; se omite evento para documento '{Nombre}'.", actual.DocumentoNombre);
+                _logger.LogInformation("No hay disparadores tipo Documento activos; se omite evento para documento '{Nombre}'.", actual.DocumentoNombre);
                 return;
             }
 
@@ -262,13 +275,32 @@ public class IndexacionBackgroundService : BackgroundService
             });
 
             var motor = scope.ServiceProvider.GetRequiredService<IEventoMotorService>();
-            await motor.DispararEventoAsync("DOC_INDEXADO", contexto, null, ct);
-            _logger.LogInformation("Evento DOC_INDEXADO disparado para documento '{Nombre}'.",
-                actual.DocumentoNombre);
+            foreach (var t in triggers)
+            {
+                if (string.IsNullOrWhiteSpace(t.CodigoEvento)) continue;
+                await motor.DispararEventoAsync(t.CodigoEvento, contexto, null, ct);
+                _logger.LogInformation("Evento {Evento} disparado tras indexación para documento '{Nombre}'.",
+                    t.CodigoEvento, actual.DocumentoNombre);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "No se pudo disparar DOC_INDEXADO para procesado {Id}.", idDocumentoProcesado);
+            _logger.LogWarning(ex, "No se pudo disparar eventos tras indexación para procesado {Id}.", idDocumentoProcesado);
         }
+    }
+
+    /// <summary>
+    /// Lee la bandera "soloIndexado" del ConfigJson del disparador (misma convención
+    /// que respeta el detector al procesarse en ProcesamientoDocumentalService).
+    /// </summary>
+    private static bool EsSoloIndexado(string? configJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(configJson) ? "{}" : configJson);
+            return doc.RootElement.TryGetProperty("soloIndexado", out var v)
+                && v.ValueKind == JsonValueKind.True;
+        }
+        catch { return false; }
     }
 }

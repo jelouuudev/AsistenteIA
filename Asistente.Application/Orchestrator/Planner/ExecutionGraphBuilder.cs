@@ -17,9 +17,18 @@ public class ExecutionGraphBuilder
     public ExecutionGraph Construir(Plan plan)
     {
         var grafo = new ExecutionGraph();
-        var porOrden = plan.Pasos.ToDictionary(p => p.Orden);
 
-        foreach (var paso in plan.Pasos.OrderBy(p => p.Orden))
+        // Un nodo por ORDEN. Se deduplica porque plan.Pasos es una List<PlanStep> que,
+        // tras un read + un UPDATE con tracking en el mismo DbContext, puede llegar con
+        // el mismo paso repetido (fixup de navegaciones de EF). Antes este código hacía
+        // `plan.Pasos.ToDictionary(p => p.Orden)` —además muerto, no se usaba— y
+        // reventaba con "An item with the same key has already been added. Key: 0",
+        // dejando el plan colgado en IniciandoEjecucion para siempre (el background
+        // moría antes de LanzarEjecucionGrafo -> UpdateEstadoAsync("EnEjecucion")).
+        foreach (var paso in plan.Pasos
+                     .GroupBy(p => p.Orden)
+                     .OrderBy(g => g.Key)
+                     .Select(g => g.First()))
         {
             var dependeDe = plan.Dependencias
                 .Where(d => d.StepDestino == paso.Orden)

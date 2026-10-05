@@ -27,6 +27,7 @@ public class ChromaVectorStore : IVectorStore
     };
 
     private string? _collectionId;
+    private string _espacioMetrica = "l2";
 
     private static int GetMetadataInt(Dictionary<string, object> metadata, string key, int defaultValue)
     {
@@ -186,9 +187,10 @@ public class ChromaVectorStore : IVectorStore
 
             for (int i = 0; i < ids.Count; i++)
             {
-                // Similitud coseno desde L2 (vectores unitarios): cos = 1 - d²/2.
+                // Similitud desde la DISTANCIA que devuelve Chroma, según su métrica
+                // (cos = 1 - d en cosine; 1 - d/2 en l2 con vectores unitarios).
                 var dist = distances.Count > i ? distances[i] : float.MaxValue;
-                var score = dist == float.MaxValue ? 0f : Math.Clamp(1f - (dist * dist) / 2f, 0f, 1f);
+                var score = DistanciaASimilitud(dist);
                 var metadata = metadatas.Count > i ? metadatas[i] : new Dictionary<string, object>();
 
                 resultados.Add(new VectorSearchResult
@@ -493,6 +495,7 @@ public class ChromaVectorStore : IVectorStore
                 if (collection?.Id != null)
                 {
                     _collectionId = collection.Id;
+                    _espacioMetrica = LeerEspacioMetrica(collection.Metadata);
                     return _collectionId;
                 }
             }
@@ -507,7 +510,9 @@ public class ChromaVectorStore : IVectorStore
 
             var created = JsonSerializer.Deserialize<ChromaCollectionResponse>(createBody, JsonOptions);
             _collectionId = created?.Id ?? throw new Exception("No se pudo obtener el ID de la collection creada");
-            _logger.LogInformation("Collection {Name} creada en ChromaDB con ID {Id}.", _config.CollectionName, _collectionId);
+            _espacioMetrica = LeerEspacioMetrica(created?.Metadata);
+            _logger.LogInformation("Collection {Name} creada en ChromaDB con ID {Id} (métrica {Metrica}).",
+                _config.CollectionName, _collectionId, _espacioMetrica);
             return _collectionId;
         }
         catch (Exception ex)
@@ -515,6 +520,31 @@ public class ChromaVectorStore : IVectorStore
             _logger.LogError(ex, "Error al verificar/crear collection en ChromaDB.");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Métrica con la que ChromaDB compara los vectores. La respuesta a una query
+    /// es una DISTANCIA y hay que convertirla a similitud según la métrica:
+    /// "cosine" → 1 - d; "l2" (por defecto, distancia euclidiana AL CUADRADO) →
+    /// 1 - d/2 para vectores unitarios. Confundirlas inflaba el puntaje (0.85 en
+    /// vez de 0.73) y dejaba pasar fragmentos de otros documentos como si fueran
+    /// respuesta.
+    /// </summary>
+    private static string LeerEspacioMetrica(Dictionary<string, object>? metadata)
+    {
+        if (metadata != null && metadata.TryGetValue("hnsw:space", out var valor))
+            return valor?.ToString()?.Trim().ToLowerInvariant() ?? "l2";
+        return "l2";
+    }
+
+    private float DistanciaASimilitud(float distancia)
+    {
+        if (distancia == float.MaxValue) return 0f;
+        return _espacioMetrica switch
+        {
+            "cosine" or "dot" => Math.Clamp(1f - distancia, 0f, 1f),
+            _ => Math.Clamp(1f - (distancia / 2f), 0f, 1f)
+        };
     }
 }
 
@@ -545,6 +575,7 @@ public class ChromaCollectionResponse
     public string? Id { get; set; }
     public string? Name { get; set; }
     public int Count { get; set; }
+    public Dictionary<string, object>? Metadata { get; set; }
 }
 
 public class ChromaGetResponse

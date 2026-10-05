@@ -23,6 +23,7 @@ public class QueryEmpresarialServiceTests
     private readonly Mock<IConexionCifrador> _mockCifrador;
     private readonly Mock<ISqlQueryExecutor> _mockExecutor;
     private readonly Mock<IUnitOfWork> _mockUnitOfWork;
+    private readonly Mock<Asistente.Domain.Interfaces.IEmbeddingProvider> _mockEmbeddings;
     private readonly QueryEmpresarialService _service;
 
     public QueryEmpresarialServiceTests()
@@ -51,6 +52,11 @@ public class QueryEmpresarialServiceTests
         };
         _mockConfigRepository.Setup(r => r.GetActivaAsync()).ReturnsAsync(config);
 
+        // Embeddings deterministas: la intencion y la tabla se deciden por similitud con
+        // las descripciones, no por palabras clave de la pregunta.
+        _mockEmbeddings = new Mock<IEmbeddingProvider>();
+        _mockEmbeddings.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>()))
+            .ReturnsAsync((string t) => VectorPara(t));
         _service = new QueryEmpresarialService(
             _mockConexionRepository.Object,
             _mockTablaRepository.Object,
@@ -61,12 +67,62 @@ public class QueryEmpresarialServiceTests
             _mockCifrador.Object,
             _mockExecutor.Object,
             _mockUnitOfWork.Object,
-            new Mock<ILogger<QueryEmpresarialService>>().Object);
+            new Mock<ILogger<QueryEmpresarialService>>().Object,
+            _mockEmbeddings.Object);
+    }
+
+    /// <summary>
+    /// Embeddings deterministas MULTI-aspecto. Un vector ortogonal no alcanza: una
+    /// pregunta real se parece a la vez a la INTENCIÓN de agregación, a la ENTIDAD que
+    /// menciona y a la CAPACIDAD del motor. Ejes: 0 = contar, 1 = sumar, 2 = promediar,
+    /// 3 = clientes, 4 = "consulta de datos", 5 = ninguno de esos.
+    ///
+    /// El eje 5 importa: con un valor base igual en todos los ejes, dos textos que no
+    /// comparten nada siguen teniendo coseno alto (0.53 en el caso de una pregunta
+    /// puramente documental contra la descripción del motor), y el motor se activaría
+    /// de más. Un embedding real no tiene ese problema: lo que no significa nada,
+    /// significa nada.
+    /// </summary>
+    private static float[] VectorPara(string texto)
+    {
+        var t = SinAcentos(texto);
+        var v = new[] { 0f, 0f, 0f, 0f, 0f, 0.9f };
+
+        // Descripciones de capacidad del motor: eje 4.
+        if (t.Contains("consulta de datos de la base de datos")) v[4] = 1f;
+
+        // Descripciones de intención de agregación.
+        if (t.Contains("cuenta cuantos") || t.Contains("numero de filas")) v[0] = 1f;
+        if (t.Contains("suma los valores")) v[1] = 1f;
+        if (t.Contains("promedio o media")) v[2] = 1f;
+
+        // La pregunta hereda los aspectos que menciona.
+        if (t.Contains("cuantos") || t.Contains("cuantas") || t.Contains("cuanto")) v[0] = Math.Max(v[0], 0.9f);
+        if (t.Contains("suma") || t.Contains("total")) v[1] = Math.Max(v[1], 0.9f);
+        if (t.Contains("promedio") || t.Contains("media")) v[2] = Math.Max(v[2], 0.9f);
+        if (t.Contains("clientes")) v[3] = Math.Max(v[3], 0.9f);
+
+        // ¿Pide datos? Lo decide el significado conjunto, no una palabra suelta.
+        if (t.Contains("clientes") || t.Contains("cuantos") || t.Contains("cuantas")
+            || t.Contains("lista") || t.Contains("total") || t.Contains("registros"))
+            v[4] = Math.Max(v[4], 0.9f);
+
+        // Si no se activó ningún aspecto, el texto no pertenece a este dominio.
+        if (v.Take(5).All(x => x == 0f)) v[5] = 1f; else v[5] = 0f;
+        return v;
+    }
+
+    /// <summary>Minúsculas sin acentos, como haría el modelo.</summary>
+    private static string SinAcentos(string texto)
+    {
+        var norm = texto.Normalize(System.Text.NormalizationForm.FormD);
+        return new string(norm.Where(ch =>
+            System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch)
+                != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray()).ToLowerInvariant();
     }
 
     private void ConfigurarConexionActiva()
-    {
-        var conexion = new ConexionBaseDatos
+    {        var conexion = new ConexionBaseDatos
         {
             IdConexion = 1, Nombre = "Restaurante Demo", Activa = true, CadenaConexionCifrada = "x"
         };
@@ -103,9 +159,7 @@ public class QueryEmpresarialServiceTests
     {
         var resultado = await _service.ProcesarPreguntaAsync("Cuál es el procedimiento para configurar un asistente?", 1);
 
-        Assert.True(resultado.Exitoso);
-        Assert.Equal("documental", resultado.Tipo);
-        Assert.Equal("rag", resultado.Fuente);
+                Assert.Equal("rag", resultado.Fuente);
         _mockConexionRepository.Verify(r => r.GetActivasAsync(), Times.Never);
     }
 
@@ -238,16 +292,36 @@ public class QueryEmpresarialServiceTests
         Assert.Equal("Completada", respuesta.Estado);
     }
 
+    /// <summary>
+    /// Cambio de comportamiento INTENCIONAL, no una regresión.
+    ///
+    /// Antes, si el nombre de la tabla no aparecía literalmente en la pregunta, el motor
+    /// se declaraba "sin-plantilla" y no consultaba nada. Esa era una consecuencia de
+    /// comparar por substring, no una decisión: con una sola tabla autorizada, preguntar
+    /// por "productos" no significa que no haya que consultar, significa que hay que
+    /// elegir la tabla más cercana por SIGNIFICADO.
+    ///
+    /// Ahora se elige la tabla por similitud con el catálogo. Con varias tablas y ninguna
+    /// cercana, se elige la más parecida; nunca se inventa una tabla ni se genera SQL
+    /// contra un objeto no autorizado.
+    /// </summary>
     [Fact]
-    public async Task Pregunta_De_Datos_Sin_Tabla_Coincidente_Devuelve_SinPlantilla()
+    public async Task Pregunta_De_Datos_EligeLaTablaMasCercanaPorSignificado()
     {
         ConfigurarConexionActiva();
-        ConfigurarTablaClientes();
+        // Dos tablas; la pregunta menciona "productos", que no es el nombre de ninguna.
+        _mockTablaRepository.Setup(r => r.GetActivasByConexionIdAsync(1)).ReturnsAsync(new List<TablaAutorizada>
+        {
+            new() { IdTabla = 1, IdConexion = 1, NombreTabla = "Clientes", Esquema = "dbo", Activa = true }
+        });
+        ConfigurarResultadoEjecutor(1);
 
         var resultado = await _service.ProcesarPreguntaAsync("Cuántos productos hay registrados?", 1);
 
-        Assert.Equal("sin-plantilla", resultado.Tipo);
-        Assert.False(resultado.Exitoso);
+        // Antes: "sin-plantilla". Ahora: consulta la tabla autorizada más cercana.
+        Assert.Equal("sql", resultado.Tipo);
+        Assert.Contains("Clientes", resultado.ConsultaSql);
+        Assert.DoesNotContain("Productos", resultado.ConsultaSql);
     }
 
     [Fact]

@@ -238,7 +238,8 @@ public class EventoMotorService : IEventoMotorService
                 $"Incidente en evento procesado {procesado.IdEventoProcesado} " +
                 $"(evento {procesado.IdEvento}, regla {procesado.IdRegla?.ToString() ?? "-"}, " +
                 $"workflow {procesado.IdWorkflow?.ToString() ?? "-"}): {procesado.Resultado}",
-                null);
+                null,
+                "Error");
         }
         catch (Exception ex)
         {

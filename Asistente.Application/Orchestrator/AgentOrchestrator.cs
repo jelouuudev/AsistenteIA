@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator;
+using Asistente.Application.Services.Herramientas;
 using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
+using Asistente.Domain.Enums;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,10 +42,6 @@ public class AgentOrchestrator : IAgentOrchestrator
     private readonly IOllamaService _ollama;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AgentOrchestrator> _logger;
-    // Serializa el acceso a DbContext (no thread-safe) entre nodos del grafo.
-    // El DbContext es Scoped y se comparte entre los repos; al ejecutar nodos en paralelo
-    // dos hilos usaban el mismo contexto -> "second operation on this context instance".
-    private readonly SemaphoreSlim _sem = new(1, 1);
 
     public AgentOrchestrator(
         IAgentSelector selector,
@@ -172,15 +171,15 @@ public class AgentOrchestrator : IAgentOrchestrator
                 });
             }
 
-            // 4) Ejecución por capas: paralelo dentro de capa, secuencial entre capas (Actividades 5 y 6)
+            // 4) Ejecución por capas: PARALELO dentro de capa (B-02), secuencial entre
+            // capas (Actividades 5 y 6). Cada nodo corre en su propio scope (aislamiento
+            // de DbContext por rama); lo compartido se consolida después en orden.
             var resultadosParciales = new List<ContextoParcial>();
             var ordenWrap = new int[1]; // contador thread-safe para orden de pasos
 
             foreach (var capa in capas)
             {
-                // Los nodos de una capa se ejecutan secuencialmente bajo el semáforo para
-                // evitar concurrencia sobre el DbContext compartido (no thread-safe).
-                // Entre capas se mantiene el orden secuencial del grafo.
+                var pendientes = new List<ExecutionNode>();
                 foreach (var nodo in capa)
                 {
                     // ETAPA 19: los nodos de aprobación (Human-in-the-Loop) NO se ejecutan aquí;
@@ -194,21 +193,23 @@ public class AgentOrchestrator : IAgentOrchestrator
                         continue;
                     }
 
-                    await _sem.WaitAsync(cancellationToken);
-                    try
-                    {
-                        var ctxAgente = await _contextManager.BuildContextForAgentAsync(
-                            nodo.IdAgente, contextoGlobal, cancellationToken);
-                        // ETAPA 19.3: inyectar contexto completo de pasos anteriores para que
-                        // el LLM del agente tenga datos reales y no invente valores.
-                        ctxAgente.ContextoPrevio = request.ContextoPrevio;
-                        await EjecutarNodoAsync(execution, nodo, ctxAgente, ordenWrap, config, cancellationToken);
-                    }
-                    finally
-                    {
-                        _sem.Release();
-                    }
+                    pendientes.Add(nodo);
+                }
 
+                await Task.WhenAll(pendientes.Select(async nodo =>
+                {
+                    await using var scopeNodo = _scopeFactory.CreateAsyncScope();
+                    var orchNodo = scopeNodo.ServiceProvider.GetRequiredService<IAgentOrchestrator>();
+                    // ETAPA 19.3: inyectar contexto completo de pasos anteriores para que
+                    // el LLM del agente tenga datos reales y no invente valores.
+                    await orchNodo.EjecutarNodoAisladoAsync(
+                        execution, nodo, contextoGlobal, request.ContextoPrevio,
+                        ordenWrap, config, cancellationToken);
+                }));
+
+                // Consolidación en orden determinista (IdNodo), tras la capa.
+                foreach (var nodo in pendientes.OrderBy(n => n.IdNodo))
+                {
                     if (nodo.Estado == "Completado" && !string.IsNullOrWhiteSpace(nodo.Resultado))
                     {
                         contextoGlobal.ResultadosPrevios.Add(new ContextoParcial
@@ -303,10 +304,28 @@ public class AgentOrchestrator : IAgentOrchestrator
                 if (!paso.IdWorkflow.HasValue)
                     return new ResultadoPasoOrquestado { Exito = false, Error = "Paso Workflow sin IdWorkflow.", TiempoMs = Transcurrido() };
 
+                // Contexto inicial desde el contrato máquina-máquina del plan: si
+                // un paso RAG hermano lleva la preferencia {"documento":"..."},
+                // viaja como {{Nombre}} para que las plantillas del workflow no
+                // queden literales ("# Resumen: {{Nombre}}", plan #14251). Sin
+                // paso RAG con preferencia, no se inventa nada.
+                Dictionary<string, string>? contextoInicial = null;
+                var docHermano = plan.Pasos
+                    .Where(p => p.Tipo == "RAG" && !string.IsNullOrWhiteSpace(p.Entrada))
+                    .Select(p => ExtraerDocumentoDeEntrada(p.Entrada))
+                    .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d));
+                if (!string.IsNullOrWhiteSpace(docHermano))
+                    contextoInicial = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["Nombre"] = docHermano,
+                        ["Documento"] = docHermano
+                    };
+
                 var wf = await workflowEngine.EjecutarAsync(
                     paso.IdWorkflow.Value, idUsuario,
                     paso.IdAsistente > 0 ? paso.IdAsistente : null,
-                    confirmado: true, cancellationToken: cancellationToken);
+                    confirmado: true, cancellationToken: cancellationToken,
+                    contextoInicial: contextoInicial);
 
                 if (wf != null && wf.Exitoso && !wf.RequiereConfirmacion)
                     return new ResultadoPasoOrquestado { Exito = true, Resultado = wf.ResultadoFinal, TiempoMs = Transcurrido() };
@@ -324,26 +343,80 @@ public class AgentOrchestrator : IAgentOrchestrator
                 var herramienta = paso.CodigoHerramienta
                     ?? (paso.Tipo == "RAG" ? "DocumentSearchTool" : "SqlQueryTool");
                 var parametros = new Dictionary<string, object?>();
+                // Pregunta efectiva del paso (para PreguntaOriginal): por defecto el
+                // objetivo; la rama SqlQueryTool la puede refinar desde su Entrada.
+                var preguntaPaso = plan.Objetivo;
                 if (herramienta == "ReportTool")
                 {
                     parametros["titulo"] = paso.Nombre;
-                    parametros["datos"] = datoPrevio ?? plan.Objetivo;
+                    // Handoff en memoria (datos ya combinados por el Planner) manda
+                    // sobre releer la BD; respaldo: recopilar previos persistidos.
+                    parametros["datos"] = !string.IsNullOrWhiteSpace(datoPrevio)
+                        ? datoPrevio
+                        : await RecopilarDatosPreviosAsync(sp, plan, paso, datoPrevio, cancellationToken);
                 }
                 else if (herramienta == "DocumentSearchTool")
                 {
-                    parametros["consulta"] = plan.Objetivo;
+                    // Pregunta mixta (hay pasos SQL en el plan: criterio estructural
+                    // por códigos propios, sin leer el lenguaje): la mitad de datos
+                    // contamina el ranking documental ("trailer" + "electrónica",
+                    // plan #9072). Se extrae solo la parte documental por
+                    // comprensión semántica (micro-LLM, cero listas). Sin pasos
+                    // SQL no hay nada que separar: va el objetivo íntegro.
+                    var consultaRag = plan.Objetivo;
+                    if (plan.Pasos.Any(p => p.CodigoHerramienta == "SqlQueryTool"))
+                    {
+                        try
+                        {
+                            var ollama = sp.GetService<IOllamaService>();
+                            consultaRag = await ExtraerParteDocumentalAsync(ollama, plan.Objetivo, cancellationToken);
+                        }
+                        catch { /* respaldo: objetivo íntegro */ }
+                    }
+                    parametros["consulta"] = consultaRag;
+                    // Preferencia del Planner (documento mencionado por código, con
+                    // o sin typos): viaja en la Entrada como {"documento":"..."}. Sin
+                    // ella la herramienta decide por similitud global.
+                    var documentoPreferido = ExtraerDocumentoPreferido(paso.Entrada);
+                    if (!string.IsNullOrWhiteSpace(documentoPreferido))
+                        parametros["documento"] = documentoPreferido;
                 }
                 else
                 {
-                    parametros["pregunta"] = plan.Objetivo;
-                    var nombreLower = (paso.Nombre ?? "").ToLowerInvariant();
-                    parametros["forzarAgregacion"] = nombreLower.Contains("indicador") || nombreLower.Contains("calcular") ||
-                        nombreLower.Contains("métrica") || nombreLower.Contains("metrica") ||
-                        nombreLower.Contains("agrupar") || nombreLower.Contains("agrupado") ||
-                        nombreLower.Contains("conteos") || nombreLower.Contains("totales");
-                    parametros["forzarRaw"] = nombreLower.Contains("consultar") || nombreLower.Contains("obtener") ||
-                        nombreLower.Contains("listar") || nombreLower.Contains("mostrar") ||
-                        nombreLower.Contains("detalle") || nombreLower.Contains("datos");
+                    // Rama paralela: el paso trae su sub-consulta en Entrada; si es
+                    // null se usa el objetivo del plan. Contrato máquina-máquina
+                    // (PlanBuilder.EntradaSql): {"tabla","pregunta"}. Texto plano
+                    // o null en planes viejos siguen funcionando.
+                    var (preguntaRama, tablaPaso) = ExtraerPreguntaYTabla(paso.Entrada, plan.Objetivo);
+                    preguntaPaso = preguntaRama;
+                    parametros["pregunta"] = preguntaRama;
+                    // Pregunta mixta simétrica al RAG (plan #9152): si el plan también
+                    // consulta documentos, la parte documental contamina los filtros
+                    // ("Metas para 2027" → CostoUnitario > 2027). Se extrae solo la
+                    // parte de datos por comprensión semántica (micro-LLM, cero
+                    // listas). Sin pasos RAG no hay nada que separar.
+                    if (plan.Pasos.Any(p => p.CodigoHerramienta == "DocumentSearchTool"))
+                    {
+                        try
+                        {
+                            var ollamaDatos = sp.GetService<IOllamaService>();
+                            preguntaPaso = await ExtraerParteDatosAsync(ollamaDatos, preguntaRama, cancellationToken);
+                            parametros["pregunta"] = preguntaPaso;
+                        }
+                        catch { /* respaldo: pregunta de la rama */ }
+                    }
+                    if (!string.IsNullOrWhiteSpace(tablaPaso))
+                        parametros["tabla"] = tablaPaso;
+                    // Rol estructural sin keywords de usuario: el PlanBuilder genera los
+                    // nombres de paso con plantillas propias fijas; el modo se deriva de
+                    // ellas (o del tag MODO= en planes nuevos). No se inspecciona el
+                    // lenguaje del objetivo.
+                    var modo = ExtraerModoPaso(paso.Descripcion, paso.Nombre);
+                    parametros["modo"] = modo;
+                    // Compatibilidad con planes antiguos sin tag: no se fuerza nada,
+                    // la herramienta decide por LLM + esquema (nunca por keywords).
+                    parametros["forzarAgregacion"] = modo == "ANALISIS";
+                    parametros["forzarRaw"] = modo == "CONSULTA";
                 }
 
                 var resTool = await toolOrchestrator.EjecutarAsync(new ToolExecutionRequest
@@ -352,7 +425,7 @@ public class AgentOrchestrator : IAgentOrchestrator
                     Parametros = parametros,
                     IdUsuario = idUsuario,
                     IdAsistente = paso.IdAsistente,
-                    PreguntaOriginal = paso.Nombre + " " + plan.Objetivo
+                    PreguntaOriginal = paso.Nombre + " " + preguntaPaso
                 }, cancellationToken);
 
                 if (resTool.Exitoso)
@@ -362,16 +435,90 @@ public class AgentOrchestrator : IAgentOrchestrator
 
             // Agent (y otros): vía Agent Runtime con contexto previo de pasos anteriores.
             // El mensaje es el OBJETIVO original (con intención real); la descripción del
-            // paso ("Consolida...") es vaga y hace que el modelo rehúse.
+            // paso ("Consolida...") es vaga y hace que el modelo rehúse. Grounding genérico:
+            // responder desde los resultados previos y no negar si los contienen.
             var config = await configRepo.GetAsync();
             var timeoutMs = config?.MaxTiempoTotalMs ?? 900000;
+
+            // Clasificación de RIESGO por LLM (solo pasos de riesgo con datos). El
+            // resto de Agent usa entrega determinista para no alucinar (#6038,
+            // #6051), pero un paso "Clasificar por nivel de riesgo" que repite
+            // el informe no sirve. Prompt acotado con salida estructurada y
+            // grounding estricto; ante fallo/timeout se sigue al camino
+            // determinista normal. La detección es por plantilla propia
+            // ("Clasificar por nivel de riesgo" la genera el PlanBuilder), igual
+            // que ExtraerModoPaso: no se inspecciona el lenguaje del usuario.
+            if (EsPasoDeRiesgo(paso.Nombre))
+            {
+                var riesgo = await ClasificarRiesgoAsync(
+                    sp, plan, paso, contextoPrevio, datoPrevio, idUsuario, timeoutMs, cancellationToken);
+                if (riesgo != null)
+                    return new ResultadoPasoOrquestado { Exito = true, Resultado = riesgo, TiempoMs = Transcurrido() };
+            }
+
+            // GUARD DETERMINISTA (no depender del prompt): si el plan tiene pasos
+            // Tool/RAG previos y NINGUNO dejó datos utilizables, no se llama al LLM.
+            // Plan #6038: los dos pasos SqlQueryTool terminaron en Error y el agente
+            // "entregó" tablas inventadas (categorías y montos que no existen) pese a
+            // que el prompt lo prohibía. deepseek-r1:7b no respeta esa instrucción.
+            // Criterio estructural: Estado del paso + resultado vacío + marcadores de
+            // "sin datos" ya definidos. No se inspecciona el lenguaje del objetivo.
+            if (await SinDatosPreviosAsync(sp, plan, paso, cancellationToken))
+            {
+                return new ResultadoPasoOrquestado
+                {
+                    Exito = false,
+                    Error = "No hay datos de pasos previos para entregar: los pasos que debían " +
+                            "consultar la información fallaron o devolvieron vacío. No se genera " +
+                            "respuesta para no inventar resultados.",
+                    TiempoMs = Transcurrido()
+                };
+            }
+
+            // ENTREGA DETERMINISTA (sin LLM): si el contexto previo ya trae el reporte
+            // consolidado de ReportTool ("# ..." + "_Generado: ..."), se entrega tal
+            // cual. Las cifras ya las calculó SQL; pasarlas por el LLM solo añade
+            // latencia (minutos en CPU), typos y riesgo de fuga de instrucciones
+            // (plan #6051) o cifras inventadas (#6038). Sin reporte, se usa el LLM.
+            var entregaDirecta = ExtraerReporteConsolidado(contextoPrevio);
+            if (!string.IsNullOrWhiteSpace(entregaDirecta))
+            {
+                _logger.LogInformation("Orchestrator: entrega final determinista sin LLM ({Len} caracteres).", entregaDirecta.Length);
+                return new ResultadoPasoOrquestado { Exito = true, Resultado = entregaDirecta, TiempoMs = Transcurrido() };
+            }
+
+            // ENTREGA ESTRUCTURADA DETERMINISTA (plan #9066, sin LLM): si el contexto
+            // trae marcadores propios (totales/filas SQL, sección RAG o token de
+            // contrato) pero ningún reporte consolidado —típico plan mixto sin paso
+            // de informe—, se formatea con GenerarResumenEjecutivo en vez de pedirle
+            // al LLM que fusione: el modelo pequeño parafraseaba e inventaba ítems
+            // ("Pruéncipes") y disclaimers falsos. El RAG se reproduce verbatim.
+            var entregaEstructurada = EntregaEstructuradaDeterminista(contextoPrevio);
+            if (!string.IsNullOrWhiteSpace(entregaEstructurada))
+            {
+                _logger.LogInformation("Orchestrator: entrega estructurada determinista sin LLM ({Len} caracteres).", entregaEstructurada.Length);
+                return new ResultadoPasoOrquestado { Exito = true, Resultado = entregaEstructurada, TiempoMs = Transcurrido() };
+            }
+
+            // El contexto previo acumula todos los pasos (filas + reportes) y en CPU
+            // el thinking supera el timeout. Se conserva la COLA (lo más reciente =
+            // el reporte consolidado, que ya incluye totales y filas): estructural,
+            // sin inspeccionar contenido.
+            var contextoRecortado = RecortarContexto(contextoPrevio, 3000);
             var respTask = chatService.ProcesarMensajeAsync(new MensajeRequest
             {
                 IdAsistente = paso.IdAsistente,
-                Mensaje = plan.Objetivo,
+                Mensaje = "ENTREGA FINAL: presenta los resultados previos como respuesta definitiva " +
+                    "(tablas, datos o texto: reprodúcelos y preséntalos). Está prohibido decir que falta " +
+                    "información si los contienen, y prohibido describir pasos futuros o planes de acción: " +
+                    "el trabajo ya está hecho, solo entrégalo. " +
+                    "IMPORTANTE: si el contexto contiene 'Total filtrado: X' o 'Total: X', usa ese valor exacto " +
+                    "como el total de registros, no cuentes las filas visibles. Si el contexto NO contiene " +
+                    "ningún resultado (vacío o solo coordinación), dilo explícitamente y NO inventes " +
+                    "cifras ni tablas. Objetivo original: " + plan.Objetivo,
                 UsuarioPropietario = idUsuario,
                 EsEjecucionPlan = true,
-                ContextoAgente = contextoPrevio
+                ContextoAgente = contextoRecortado
             }, cancellationToken);
 
             var completed = await Task.WhenAny(respTask, Task.Delay(timeoutMs, cancellationToken));
@@ -386,7 +533,9 @@ public class AgentOrchestrator : IAgentOrchestrator
                     Error = resp?.Error ?? "Sin respuesta del agente.",
                     TiempoMs = Transcurrido()
                 };
-            return new ResultadoPasoOrquestado { Exito = true, Resultado = resp.Respuesta, TiempoMs = Transcurrido() };
+            // Sanea ecos del prompt interno (plan #6051): el modelo a veces devuelve
+            // las instrucciones del sistema como si fueran contenido.
+            return new ResultadoPasoOrquestado { Exito = true, Resultado = SanearEntrega(resp.Respuesta), TiempoMs = Transcurrido() };
         }
         catch (OperationCanceledException)
         {
@@ -398,6 +547,563 @@ public class AgentOrchestrator : IAgentOrchestrator
             return new ResultadoPasoOrquestado { Exito = false, Error = $"Error al ejecutar {paso.CodigoHerramienta ?? paso.Tipo}: " + ex.Message, TiempoMs = Transcurrido() };
         }
     }
+
+    /// <summary>
+    /// True solo cuando el plan TIENE pasos Tool/RAG previos y ninguno dejó un resultado
+    /// utilizable (falló, quedó vacío o devolvió un marcador de "sin datos"). Un plan sin
+    /// Tool/RAG (p. ej.answered puramente documental) NO se corta: el agente debe responder.
+    /// </summary>
+    internal static async Task<bool> SinDatosPreviosAsync(
+        IServiceProvider sp, Plan plan, PlanStep paso, CancellationToken ct)
+    {
+        try
+        {
+            var stepRepo = sp.GetRequiredService<IPlanStepRepository>();
+            var previos = (await stepRepo.GetByPlanAsync(plan.IdPlan, ct, true))
+                .Where(p => p.Orden < paso.Orden && (p.Tipo == "Tool" || p.Tipo == "RAG"))
+                .ToList();
+
+            // Sin Tool/RAG previos no hay nada que entregar: deja responder al agente.
+            if (previos.Count == 0) return false;
+
+            return !previos.Any(p => p.Estado == "Completado"
+                                     && !string.IsNullOrWhiteSpace(p.Resultado)
+                                     && !(p.Tipo == "RAG" && EsMarcadorSinDatosRag(p.Resultado))
+                                     && !(p.Tipo == "Tool" && EsMarcadorSinDatosTool(p.Resultado)));
+        }
+        catch (Exception ex)
+        {
+            // Ante cualquier duda se deja pasar al LLM (no bloquear la entrega).
+            sp.GetService<ILogger<AgentOrchestrator>>()
+              ?.LogWarning(ex, "Orchestrator: no se pudo verificar si hay datos previos del plan {IdPlan}.", plan.IdPlan);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Entrega estructurada sin LLM para contextos con marcadores propios pero sin
+    /// reporte consolidado (plan mixto sin paso de informe, #9066). Reutiliza el
+    /// formateador determinista de ReportTool: totales SQL exactos + RAG verbatim.
+    /// Null si no hay marcadores (conversación libre → LLM como antes).
+    /// </summary>
+    internal static string? EntregaEstructuradaDeterminista(string? contexto)
+    {
+        if (string.IsNullOrWhiteSpace(contexto)) return null;
+        if (!ReportTool.EsResultadoEstructurado(contexto)) return null;
+        var md = SanearEntrega(ReportTool.GenerarResumenEjecutivo(contexto, "Resultado final"));
+        return string.IsNullOrWhiteSpace(md) ? null : md;
+    }
+
+    /// <summary>
+    /// Reporte consolidado dentro del contexto previo: ReportTool.GenerarResumenEjecutivo
+    /// siempre emite "# {titulo}" seguido de "_Generado: ...". Se devuelve desde el ÚLTIMO
+    /// encabezado (lo más reciente = consolidado). Sin ese contrato, null (usar LLM).
+    /// Criterio estructural (formato propio), sin inspeccionar lenguaje del usuario.
+    /// </summary>
+    internal static string? ExtraerReporteConsolidado(string? contexto)
+    {
+        if (string.IsNullOrWhiteSpace(contexto)) return null;
+        var lineas = contexto.Split('\n');
+        var inicio = -1;
+        for (var i = 0; i < lineas.Length; i++)
+        {
+            if (!lineas[i].StartsWith("# ", StringComparison.Ordinal)) continue;
+            for (var j = i + 1; j < Math.Min(i + 4, lineas.Length); j++)
+            {
+                if (lineas[j].Contains("_Generado:", StringComparison.Ordinal)) { inicio = i; break; }
+            }
+        }
+        if (inicio < 0) return null;
+        var reporte = SanearEntrega(string.Join("\n", lineas.Skip(inicio)).Trim());
+        if (string.IsNullOrWhiteSpace(reporte)) return null;
+        // Compuerta de sustancia: un "reporte" sin datos (ReportTool con insumo vacío
+        // que ecoa la pregunta, #7056) no debe atajar al LLM: la entrega por LLM con
+        // el contexto completo sí incluye lo documental. Marcadores estructurales
+        // propios: tablas '|', desgloses '- ', totales o fuentes RAG.
+        var tieneSustancia = reporte.Contains('|')
+            || reporte.Contains("\n- ", StringComparison.Ordinal)
+            || reporte.Contains("Total", StringComparison.OrdinalIgnoreCase)
+            || reporte.Contains("[Fuente:", StringComparison.Ordinal)
+            || reporte.Contains("Desglose", StringComparison.OrdinalIgnoreCase);
+        if (!tieneSustancia) return null;
+        return reporte;
+    }
+
+    /// <summary>¿Es un paso de clasificación de riesgo? Plantilla propia del
+    /// PlanBuilder ("Clasificar por nivel de riesgo"), igual que ExtraerModoPaso:
+    /// se deriva de nombres que el propio sistema genera, nunca del lenguaje
+    /// del usuario.</summary>
+    internal static bool EsPasoDeRiesgo(string? nombre)
+        => !string.IsNullOrWhiteSpace(nombre)
+            && nombre.Contains("riesgo", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Presupuesto de espera para la clasificación de riesgo. deepseek-r1:7b sin
+    /// GPU tarda 80-150 s, así que un MaxTiempoTotalMs corto (60 s) cortaba la
+    /// llamada y el paso caía al determinista repitiendo el informe (#1007, #1008):
+    /// se observaba "Timeout al comunicarse con Ollama" y luego
+    /// "entrega estructurada determinista". Se toma el MAYOR entre el presupuesto
+    /// configurado y un piso de 5 min, con techo en 10 min para no pasarse del
+    /// CTS de 15 min del plan.
+    /// </summary>
+    internal static int CalcularPresupuestoClasificacion(int timeoutMs)
+        => timeoutMs >= 600000 ? timeoutMs : Math.Max(timeoutMs, 300000);
+
+    /// <summary>
+    /// Clasifica por nivel cada hallazgo del contexto previo usando el LLM, con
+    /// salida estructurada y grounding estricto. Devuelve null si no hay datos
+    /// o si el modelo falla/excede el tiempo: en ese caso el llamador sigue al
+    /// camino determinista. Sin vocabulario de dominio: el prompt pide niveles
+    /// y motivos a partir de lo que el contexto ya trae.
+    /// </summary>
+    private async Task<string?> ClasificarRiesgoAsync(
+        IServiceProvider sp, Plan plan, PlanStep paso,
+        string? contextoPrevio, string? datoPrevio, int idUsuario,
+        int timeoutMs, CancellationToken ct)
+    {
+        try
+        {
+            var contexto = !string.IsNullOrWhiteSpace(datoPrevio) ? datoPrevio : contextoPrevio;
+            if (string.IsNullOrWhiteSpace(contexto)) return null;
+            var chatService = sp.GetRequiredService<IChatService>();
+            var espera = CalcularPresupuestoClasificacion(timeoutMs);
+            var respTask = chatService.ProcesarMensajeAsync(new MensajeRequest
+            {
+                IdAsistente = paso.IdAsistente,
+                Mensaje = "CLASIFICACIÓN DE RIESGOS: a partir UNICAMENTE de los datos del contexto, "
+                    + "lista cada riesgo en una línea con este formato exacto: '- [ALTO|MEDIO|BAJO] hecho: motivo en una línea'. "
+                    + "REGLAS OBLIGATORIAS: "
+                    + "(1) Copia los valores exactamente como aparecen en el contexto; prohibido inventar o redondear cifras. "
+                    + "(2) Si comparas dos valores de la misma fila, declara riesgo SOLO si el primero es numéricamente MENOR "
+                    + "que el segundo; si es mayor o igual, NO lo reportes como riesgo. "
+                    + "(3) No menciones entidades, campos, categorías ni relaciones que no aparezcan literalmente en el contexto "
+                    + "(por ejemplo, nada de proveedores, responsables ni plazos si el contexto no los da). "
+                    + "(4) Un solo riesgo por línea y sin repetir el mismo dato en varias líneas. "
+                    + "Si ningún dato cumple esas reglas, responde exactamente 'Sin riesgos evidentes en los datos.'. "
+                    + "No describas pasos futuros ni planes de acción. Objetivo original: " + plan.Objetivo,
+                UsuarioPropietario = idUsuario,
+                EsEjecucionPlan = true,
+                ContextoAgente = contexto.Length > 6000 ? contexto[^6000..] : contexto
+            }, ct);
+            var completed = await Task.WhenAny(respTask, Task.Delay(espera, ct));
+            if (completed != respTask)
+            {
+                _logger.LogWarning(
+                    "Orchestrator: la clasificación de riesgo del paso '{Paso}' no respondió en {Espera} ms; se sigue al camino determinista.",
+                    paso.Nombre, espera);
+                return null;
+            }
+            var resp = await respTask;
+            if (resp == null || !resp.Exitoso || string.IsNullOrWhiteSpace(resp.Respuesta))
+            {
+                _logger.LogWarning(
+                    "Orchestrator: la clasificación de riesgo del paso '{Paso}' no devolvió salida utilizable (Exitoso={Exitoso}); se sigue al camino determinista.",
+                    paso.Nombre, resp?.Exitoso ?? false);
+                return null;
+            }
+
+            // Filtro determinista de groundaje (#1009): deepseek-r1:7b declaraba
+            // "stock por debajo del mínimo" con 25 vs 10, es decir comparando al revés.
+            // El prompt de arriba lo pide, pero el modelo no siempre obedece, así que
+            // además se descarta toda línea cuya afirmación no sea verificable contra
+            // el contexto. Sin vocabulario de dominio: el contraste es textual/numérico.
+            var filtrada = ValidarGroundajeRiesgo(SanearEntrega(resp.Respuesta), contexto);
+            if (string.IsNullOrWhiteSpace(filtrada))
+            {
+                _logger.LogWarning(
+                    "Orchestrator: la clasificación de riesgo del paso '{Paso}' no superó el control de groundaje; se sigue al camino determinista.",
+                    paso.Nombre);
+                return null;
+            }
+            return filtrada;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Orchestrator: clasificación de riesgo falló para el paso '{Paso}'; se sigue determinista.", paso.Nombre);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Control de groundaje para la clasificación de riesgo. Es puramente
+    /// estructural: no mira el significado de las palabras, solo que cada línea
+    /// (a) tenga el formato '- [NIVEL] ...', (b) NO afirme que un número es menor
+    /// que otro cuando en el contexto ese mismo par aparece con el primero mayor o
+    /// igual, y (c) no contenga cifras ausentes del contexto.
+    /// Así se corta la comparación invertida que producía el modelo 7B (#1009)
+    /// sin introducir reglas de negocio ni vocabulario del dominio.
+    /// Si todo se descarta devuelve cadena vacía para que el llamador use el
+    /// camino determinista.
+    /// </summary>
+    internal static string ValidarGroundajeRiesgo(string? respuesta, string? contexto)
+    {
+        if (string.IsNullOrWhiteSpace(respuesta)) return string.Empty;
+        var ctx = contexto ?? string.Empty;
+
+        // Cifras presentes en el contexto (normalizando separadores de miles).
+        var cifrasCtx = new HashSet<string>(
+            Regex.Matches(NormalizarCifras(ctx), @"\d+(?:\.\d+)?").Select(m => m.Value),
+            StringComparer.Ordinal);
+
+        var lineas = new List<string>();
+        foreach (var raw in respuesta.Split('\n'))
+        {
+            var linea = raw.Trim();
+            if (linea.Length == 0) continue;
+            if (!linea.StartsWith("- [", StringComparison.Ordinal)) continue;
+            if (!Regex.IsMatch(linea, @"^-\s*\[(ALTO|MEDIO|BAJO)\]", RegexOptions.IgnoreCase)) continue;
+
+            // (c) ninguna cifra inventada
+            var cifrasLinea = Regex.Matches(NormalizarCifras(linea), @"\d+(?:\.\d+)?")
+                               .Select(m => m.Value).Distinct(StringComparer.Ordinal).ToList();
+            if (cifrasLinea.Any(c => !cifrasCtx.Contains(c))) continue;
+
+            // (b) comparación invertida: "X (a) Y" donde el modelo afirma inferioridad
+            var m = Regex.Match(linea, @"(\d+(?:\.\d+)?)\s*(?:<|<=|menor que|por debajo de|inferior a)\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+            if (m.Success
+                && double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var izq)
+                && double.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var der)
+                && izq >= der)
+                continue;
+
+            lineas.Add(linea);
+        }
+
+        // Una sola línea por riesgo: si el mismo par de cifras ya fue reportado, se
+        // descarta el duplicado (el modelo repitió el mismo hallazgo 3 veces en #1009).
+        var vistas = new HashSet<string>(StringComparer.Ordinal);
+        var únicas = new List<string>();
+        foreach (var l in lineas)
+        {
+            var cifras = string.Join(",", Regex.Matches(NormalizarCifras(l), @"\d+(?:\.\d+)?").Select(x => x.Value));
+            if (vistas.Add(cifras)) únicas.Add(l);
+        }
+
+        if (únicas.Count == 0)
+            return respuesta.Contains("Sin riesgos evidentes", StringComparison.OrdinalIgnoreCase)
+                ? "Sin riesgos evidentes en los datos."
+                : string.Empty;
+
+        return "**Clasificación de riesgos**\n\n" + string.Join("\n", únicas);
+    }
+
+    /// <summary>Quita separadores de miles y el símbolo de moneda para comparar
+    /// cifras entre el contexto y la respuesta del LLM (4,50 -> 4.50; 2,723.50 -> 2723.50).</summary>
+    private static string NormalizarCifras(string texto)
+        => Regex.Replace(texto, @"(?<=\d),(?=\d{3}\b)", string.Empty);
+
+    /// <summary>
+    /// Quita líneas de instrucciones internas que el LLM a veces ecoa en su respuesta
+    /// (fuga de prompt del plan #6051). Son marcadores propios del sistema, nunca datos
+    /// de BD, así que filtrarlos no altera cifras.
+    /// </summary>
+    internal static string SanearEntrega(string? texto)
+    {
+        if (string.IsNullOrEmpty(texto)) return texto ?? string.Empty;
+        string[] marcadores =
+        [
+            "INSTRUCCIONES OBLIGATORIAS",
+            "CONTEXT DE DATOS REALES",
+            "IMPORTANTE: El Motor de Herramientas",
+            "Instrucciones OBLIGATORIAS de transcripción",
+            "## RESULTADO DE HERRAMIENTA DEL MOTOR",
+            "## CONTEXT DE DATOS"
+        ];
+        var limpias = texto.Split('\n')
+            .Where(l => !marcadores.Any(m => l.Contains(m, StringComparison.OrdinalIgnoreCase)));
+        return string.Join("\n", limpias).Trim();
+    }
+
+    /// <summary>
+    /// Recorta el contexto previo por la COLA (lo más reciente primero). El reporte
+    /// consolidado va al final y ya contiene totales + filas, así que nada se pierde.
+    /// El corte cae en un salto de línea, nunca a media palabra: con varias capas SQL
+    /// el bloque literal empezaba en "lumna decimal 631650.00)" (plan #12197).
+    /// </summary>
+    internal static string? RecortarContexto(string? contexto, int maxChars)
+    {
+        if (string.IsNullOrEmpty(contexto) || contexto.Length <= maxChars) return contexto;
+        var cola = contexto[^maxChars..];
+        var corte = cola.IndexOf('\n');
+        // Si el resto no cabe ni tras saltar la línea parcial, se entrega igual:
+        // preferimos texto truncado a perder el contexto por completo.
+        if (corte >= 0 && corte < cola.Length - 1) cola = cola[(corte + 1)..];
+        return "[contexto recortado: se conserva lo más reciente]\n" + cola;
+    }
+
+    /// <summary>
+    /// Extrae la parte documental de una solicitud mixta por comprensión semántica
+    /// (micro-LLM genérico, sin listas): lo que pregunta por documentos o contenido
+    /// documentado. Si todo es documental o el LLM falla, devuelve el objetivo
+    /// íntegro. Nunca inspecciona palabras concretas.
+    /// </summary>
+    internal static async Task<string> ExtraerParteDocumentalAsync(
+        IOllamaService? ollama, string objetivo, CancellationToken ct)
+    {
+        if (ollama == null || string.IsNullOrWhiteSpace(objetivo))
+            return objetivo;
+        try
+        {
+            var historial = new List<Mensaje>
+            {
+                new Mensaje
+                {
+                    Rol = RolMensaje.User,
+                    Contenido = "La solicitud mezcla una pregunta sobre documentos con otra sobre datos. " +
+                        "Extrae SOLO la parte que pregunta por documentos o contenido documentado, " +
+                        "copiándola casi literal. Responde SOLO este JSON: {\"documental\":\"...\"}. " +
+                        "Si toda la solicitud es documental, repítela completa. Solicitud: " + objetivo
+                }
+            };
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+            var respuesta = await ollama.SendMessageAsync(historial, null, null, 0.0, 200, cts.Token);
+            if (!string.IsNullOrWhiteSpace(respuesta))
+            {
+                var inicio = respuesta.IndexOf('{');
+                var fin = respuesta.LastIndexOf('}');
+                if (inicio >= 0 && fin > inicio)
+                {
+                    var doc = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
+                        respuesta[inicio..(fin + 1)],
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (doc != null && doc.TryGetValue("documental", out var parte)
+                        && !string.IsNullOrWhiteSpace(parte) && parte.Length >= 8)
+                        return parte.Trim();
+                }
+            }
+        }
+        catch { /* respaldo: objetivo íntegro */ }
+        return objetivo;
+    }
+
+    /// <summary>
+    /// Parte de DATOS de una solicitud mixta (micro-LLM genérico, sin listas):
+    /// lo que pregunta por registros, cantidades, filtros o cifras de la base.
+    /// Simétrico a ExtraerParteDocumentalAsync: cada rama (SQL y RAG) trabaja con
+    /// su mitad para que los números de una no contaminen los filtros de la otra
+    /// (plan #9152). Si todo es de datos o el LLM falla, devuelve el texto íntegro.
+    /// </summary>
+    internal static async Task<string> ExtraerParteDatosAsync(
+        IOllamaService? ollama, string texto, CancellationToken ct)
+    {
+        if (ollama == null || string.IsNullOrWhiteSpace(texto))
+            return texto;
+        // Los pasos CONSULTA + ANALISIS de un mismo plan comparten texto: sin caché
+        // se pagaría el micro-LLM dos veces (CPU, NUM_PARALLEL=1). Clave estructural.
+        var clave = System.Text.RegularExpressions.Regex.Replace(
+            texto.ToLowerInvariant().Trim(), @"\s+", " ");
+        if (_cacheParteDatos.TryGetValue(clave, out var hit) && hit.Expira > DateTime.UtcNow)
+            return hit.Parte;
+        try
+        {
+            var historial = new List<Mensaje>
+            {
+                new Mensaje
+                {
+                    Rol = RolMensaje.User,
+                    Contenido = "La solicitud mezcla una pregunta sobre datos con otra sobre documentos. " +
+                        "Extrae SOLO la parte que pregunta por datos (registros, cantidades, filtros, cifras), " +
+                        "copiándola casi literal. Responde SOLO este JSON: {\"datos\":\"...\"}. " +
+                        "Si toda la solicitud es de datos, repítela completa. Solicitud: " + texto
+                }
+            };
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+            var respuesta = await ollama.SendMessageAsync(historial, null, null, 0.0, 200, cts.Token);
+            if (!string.IsNullOrWhiteSpace(respuesta))
+            {
+                var inicio = respuesta.IndexOf('{');
+                var fin = respuesta.LastIndexOf('}');
+                if (inicio >= 0 && fin > inicio)
+                {
+                    var doc = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
+                        respuesta[inicio..(fin + 1)],
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (doc != null && doc.TryGetValue("datos", out var parte)
+                        && !string.IsNullOrWhiteSpace(parte) && parte.Length >= 8)
+                    {
+                        var recorte = parte.Trim();
+                        _cacheParteDatos[clave] = (DateTime.UtcNow.AddMinutes(10), recorte);
+                        return recorte;
+                    }
+                }
+            }
+        }
+        catch { /* respaldo: texto íntegro */ }
+        return texto;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Expira, string Parte)> _cacheParteDatos
+        = new(System.StringComparer.Ordinal);
+
+    /// <summary>
+    /// Rol estructural del paso SQL. Se deriva de plantillas propias del PlanBuilder
+    /// (nombres fijos "Consultar datos de ..."/"Analizar resultados...") o del tag
+    /// "MODO=" en Descripcion. No inspecciona el lenguaje del usuario: cero keywords.
+    /// Planes antiguos sin tag ni plantilla devuelven "AUTO".
+    /// </summary>
+    private static string ExtraerModoPaso(string? descripcion, string? nombre)
+    {
+        if (!string.IsNullOrWhiteSpace(descripcion))
+        {
+            var d = descripcion.TrimStart();
+            if (d.StartsWith("MODO=CONSULTA", StringComparison.OrdinalIgnoreCase)) return "CONSULTA";
+            if (d.StartsWith("MODO=ANALISIS", StringComparison.OrdinalIgnoreCase)) return "ANALISIS";
+        }
+        if (!string.IsNullOrWhiteSpace(nombre))
+        {
+            if (nombre.StartsWith("Consultar datos de ", StringComparison.OrdinalIgnoreCase)) return "CONSULTA";
+            // El Planner puede sufijar la tabla ("... indicadores [Activos]") en
+            // planes multi-tabla: el prefijo manda, no el nombre exacto.
+            if (nombre.StartsWith("Analizar resultados y calcular indicadores", StringComparison.OrdinalIgnoreCase)) return "ANALISIS";
+        }
+        return "AUTO";
+    }
+
+    /// <summary>
+    /// Entrada de un paso Tool: o texto plano (sub-pregunta de una rama o nada →
+    /// objetivo del plan) o contrato JSON {"tabla","pregunta"} del Planner. La
+    /// tabla viaja aparte para no contaminar la pregunta con JSON.
+    /// </summary>
+    /// <summary>Lee el código de documento del contrato {"documento":"..."}.
+/// Devuelve null si no es ese contrato; nunca lanza.</summary>
+    private static string? ExtraerDocumentoDeEntrada(string? entrada)
+    {
+        if (string.IsNullOrWhiteSpace(entrada)) return null;
+        var texto = entrada.Trim();
+        if (!texto.StartsWith('{')) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(texto);
+            if (doc.RootElement.TryGetProperty("documento", out var d))
+                return d.GetString();
+        }
+        catch { }
+        return null;
+    }
+
+    private static (string Pregunta, string? Tabla) ExtraerPreguntaYTabla(string? entrada, string objetivo)
+    {
+        if (string.IsNullOrWhiteSpace(entrada)) return (objetivo, null);
+        var texto = entrada.Trim();
+        if (texto.StartsWith('{'))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(texto);
+                var raiz = doc.RootElement;
+                var pregunta = raiz.TryGetProperty("pregunta", out var p) ? p.GetString() : null;
+                var tabla = raiz.TryGetProperty("tabla", out var t) ? t.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(pregunta))
+                    return (pregunta, string.IsNullOrWhiteSpace(tabla) ? null : tabla);
+            }
+            catch { /* no es JSON: texto plano */ }
+        }
+        return (entrada, null);
+    }
+
+    /// <summary>
+    /// Documento preferido de un paso RAG, si el Planner lo resolvió por mención
+    /// (contrato {"documento":"..."}). Texto plano o null en planes viejos →
+    /// null y la herramienta decide por similitud.
+    /// </summary>
+    internal static string? ExtraerDocumentoPreferido(string? entrada)
+    {
+        if (string.IsNullOrWhiteSpace(entrada)) return null;
+        var texto = entrada.Trim();
+        if (!texto.StartsWith('{')) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(texto);
+            if (doc.RootElement.TryGetProperty("documento", out var d))
+            {
+                var codigo = d.GetString();
+                if (!string.IsNullOrWhiteSpace(codigo)) return codigo.Trim();
+            }
+        }
+        catch { /* no es JSON: sin preferencia */ }
+        return null;
+    }
+
+    /// <summary>
+    /// Datos para el reporte: concatena los resultados de TODOS los pasos Tool/RAG
+    /// previos (filas + totales), no solo el inmediato anterior. Criterio puramente
+    /// estructural (Orden y Tipo): sin inspeccionar lenguaje, sin keywords.
+    /// Excluye pasos RAG que devolvieron marcadores de "sin datos" SOLO cuando hay
+    /// pasos Tool (SQL) con datos disponibles. Si no hay datos SQL, se incluye RAG
+    /// aunque esté vacío para que el reporte falle correctamente.
+    /// Tope de 4000 caracteres para no saturar el PDF ni el contexto posterior.
+    /// </summary>
+    private async Task<string> RecopilarDatosPreviosAsync(
+        IServiceProvider sp, Plan plan, PlanStep paso, string? datoPrevio, CancellationToken ct)
+    {
+        try
+        {
+            var stepRepo = sp.GetRequiredService<IPlanStepRepository>();
+            var todosPrevios = (await stepRepo.GetByPlanAsync(plan.IdPlan, ct, true))
+                .Where(p => p.Orden < paso.Orden && (p.Tipo == "Tool" || p.Tipo == "RAG") && !string.IsNullOrWhiteSpace(p.Resultado))
+                .ToList();
+
+            // DEBUG: Log para ver qué pasos se encontraron
+            _logger.LogInformation("RecopilarDatosPrevios: encontrados {Count} pasos previos", todosPrevios.Count);
+            foreach (var p in todosPrevios)
+            {
+                _logger.LogInformation("  Paso {Orden} ({Tipo}): {Nombre} - EsMarcadorTool={EsTool}, EsMarcadorRag={EsRag}",
+                    p.Orden, p.Tipo, p.Nombre,
+                    p.Tipo == "Tool" ? EsMarcadorSinDatosTool(p.Resultado) : false,
+                    p.Tipo == "RAG" ? EsMarcadorSinDatosRag(p.Resultado) : false);
+            }
+
+            // Solo excluimos RAG vacío si hay datos SQL disponibles
+            var tieneDatosSql = todosPrevios.Any(p => p.Tipo == "Tool" && !EsMarcadorSinDatosTool(p.Resultado));
+            _logger.LogInformation("RecopilarDatosPrevios: tieneDatosSql={Tiene}", tieneDatosSql);
+
+            var previos = todosPrevios
+                .Where(p => !(p.Tipo == "RAG" && EsMarcadorSinDatosRag(p.Resultado) && tieneDatosSql))
+                .OrderBy(p => p.Orden)
+                .Select(p => $"[Paso {p.Orden}: {p.Nombre}]\n{p.Resultado}")
+                .ToList();
+
+            _logger.LogInformation("RecopilarDatosPrevios: después de filtrar, {Count} pasos para reporte", previos.Count);
+
+            if (previos.Count > 0)
+            {
+                var combinado = string.Join("\n", previos);
+                const int max = 4000;
+                if (combinado.Length > max)
+                    combinado = combinado[..max] + "\n… (datos truncados)";
+                return combinado;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Orchestrator: no se pudieron recopilar datos previos para el reporte.");
+        }
+        return datoPrevio ?? plan.Objetivo;
+    }
+
+    /// <summary>
+    /// Detecta marcadores de "sin datos" específicos de RAG para excluirlos del reporte.
+    /// Solo aplica a pasos RAG; los pasos Tool con datos reales no se filtran.
+    /// </summary>
+    /// <summary>
+    /// ¿Un paso RAG trajo datos? Se decide por el CONTRATO compartido, no por la frase
+    /// del mensaje: comparar el texto del error es frágil (depende del wording) y esa
+    /// lista se desincronizaba entre componentes.
+    /// </summary>
+    private static bool EsMarcadorSinDatosRag(string resultado)
+        => ContratoResultado.TodosSonSinDatos(resultado);
+
+    /// <summary>
+    /// ¿Un paso Tool (SQL) trajo datos? Mismo contrato. Antes comparaba contra cuatro
+    /// frases concretas ("no se pudo determinar", "consulta rechazada"...): si un mensaje
+    /// de error cambiaba de redacción, el paso se tomaba por datos válidos y el agente
+    /// final entregaba una tabla inventada encima.
+    /// </summary>
+    private static bool EsMarcadorSinDatosTool(string resultado)
+        => ContratoResultado.TodosSonSinDatos(resultado);
 
     private static string GenerarTextoCoordinacion(Plan plan)
     {
@@ -449,15 +1155,13 @@ public class AgentOrchestrator : IAgentOrchestrator
         var idNodo = 1;
         foreach (var c in candidatos.Take(limite))
         {
-            // Cada colaborador recibe la pregunta con instruccion de su rol: sin esto todos
-            // responden lo mismo (el primer short-circuit determinista) y el duplicado se elimina.
-            var preguntaPorRol = c.Rol switch
-            {
-                "RAG" => "Responde ÚNICAMENTE la parte documental (políticas, manuales, procedimientos) de la siguiente solicitud. Ignora cualquier pedido de datos numéricos o de sistemas.\nSolicitud: " + request.Pregunta,
-                "SQL" => "Responde ÚNICAMENTE con datos de la base de datos para la siguiente solicitud. Ignora lo documental.\nSolicitud: " + request.Pregunta,
-                "Reporte" => "Elabora un resumen ejecutivo de la siguiente solicitud.\nSolicitud: " + request.Pregunta,
-                _ => string.IsNullOrWhiteSpace(c.Objetivo) ? request.Pregunta : c.Objetivo,
-            };
+            // Cada colaborador recibe la pregunta con la instrucción de SU capacidad,
+            // que viene de Herramientas.Descripcion (configuración), no de una plantilla
+            // escrita en código por tipo de rol. Así una capacidad nueva —o una base de
+            // datos nueva— no requiere añadir un caso aquí: su descripción ES la
+            // instrucción. Sin esto todos responden lo mismo (el primer short-circuit
+            // determinista) y el duplicado no se elimina.
+            var preguntaPorRol = ConstruirInstruccionRol(c, request.Pregunta);
             grafo.Nodos.Add(new ExecutionNode
             {
                 IdNodo = idNodo++,
@@ -465,11 +1169,43 @@ public class AgentOrchestrator : IAgentOrchestrator
                 NombreAgente = c.Nombre,
                 Accion = $"Colaborar ({c.Rol})",
                 PreguntaAsignada = preguntaPorRol,
+                Alcance = c.Alcance,
                 DependeDe = c.DependeDe.Contains(principal.IdAsistente) ? new List<int> { 0 } : new List<int>()
             });
         }
 
         return grafo;
+    }
+
+    /// <summary>
+    /// Instrucción de un colaborador, sin vocabulario fijo por rol: usa la descripción de
+    /// la herramienta que motivó su selección (dato de configuración) y, si no hay, el
+    /// objetivo configurado del agente. Nunca se decide por palabras del texto.
+    /// </summary>
+    private static string ConstruirInstruccionRol(AgentCandidate c, string pregunta)
+    {
+        if (!string.IsNullOrWhiteSpace(c.InstruccionRol))
+            return $"Capacidad asignada: {c.InstruccionRol.Trim()}\nSolicitud: {pregunta}";
+        if (!string.IsNullOrWhiteSpace(c.Objetivo))
+            return $"{c.Objetivo}\nSolicitud: {pregunta}";
+        return pregunta;
+    }
+
+    /// <summary>
+    /// Ejecuta UN nodo con aislamiento total: construye el contexto y corre el nodo
+    /// usando ÚNICAMENTE los servicios de ESTA instancia (resuelta por llamada desde
+    /// un scope propio por rama). Permite nodos en paralelo sin compartir DbContext.
+    /// </summary>
+    public async Task EjecutarNodoAisladoAsync(
+        AgentExecution execution, ExecutionNode nodo, SharedContext contextoGlobal,
+        string? contextoPrevioPlan, int[] ordenWrap, ConfiguracionOrchestrator? config,
+        CancellationToken cancellationToken = default)
+    {
+        var ctxAgente = await _contextManager.BuildContextForAgentAsync(
+            nodo.IdAgente, contextoGlobal, cancellationToken);
+        // Igual que el camino secuencial: el contexto previo del plan manda.
+        ctxAgente.ContextoPrevio = contextoPrevioPlan;
+        await EjecutarNodoAsync(execution, nodo, ctxAgente, ordenWrap, config, cancellationToken);
     }
 
     private async Task EjecutarNodoAsync(
@@ -502,8 +1238,9 @@ public class AgentOrchestrator : IAgentOrchestrator
                 IdAsistente = nodo.IdAgente,
                 Mensaje = nodo.PreguntaAsignada,
                 UsuarioPropietario = execution.IdUsuario,
-                // Alcance por rol: el nodo RAG no dispara SQL y el nodo SQL no recupera documentos.
-                Alcance = nodo.Accion.Contains("(RAG)") ? "documental" : nodo.Accion.Contains("(SQL)") ? "datos" : null,
+                // Alcance por capacidad (dato del nodo, no texto parseado): el nodo
+                // documental no dispara SQL y el de datos no recupera documentos.
+                Alcance = nodo.Alcance,
                 // Solo se omite RAG/contexto empresarial (modo plan rapido) cuando hay
                 // contexto previo con datos reales. Sin el, el nodo debe recuperar solo
                 // o alucina (nombres/filas inventadas).
