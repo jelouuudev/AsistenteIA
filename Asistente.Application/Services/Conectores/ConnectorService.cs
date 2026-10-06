@@ -6,60 +6,10 @@ using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
+using Asistente.Shared;
 
 namespace Asistente.Application.Services.Conectores;
 
-public class CrearConectorRequest
-{
-    public string Codigo { get; set; } = string.Empty;
-    public string Nombre { get; set; } = string.Empty;
-    public string Tipo { get; set; } = "REST";
-    public string? Descripcion { get; set; }
-    public bool RequierePermiso { get; set; } = true;
-    public Dictionary<string, string> Configuracion { get; set; } = new();
-    public CrearCredencialRequest? Credencial { get; set; }
-    public CrearPoliticaRequest? Politica { get; set; }
-}
-
-public class CrearCredencialRequest
-{
-    public string Tipo { get; set; } = "None";
-    public string? NombreUsuario { get; set; }
-    /// <summary>Secreto en claro SOLO en tránsito: se cifra antes de persistir.</summary>
-    public string? Secreto { get; set; }
-    public Dictionary<string, string> Parametros { get; set; } = new();
-}
-
-public class CrearPoliticaRequest
-{
-    public int TimeoutSegundos { get; set; } = 30;
-    public int MaxReintentos { get; set; } = 2;
-    public int IntervaloReintentoMs { get; set; } = 1000;
-    public int RateLimitPorMinuto { get; set; } = 60;
-    public int CircuitBreakerUmbralFallos { get; set; } = 5;
-    public int CircuitBreakerSegundosAbierto { get; set; } = 60;
-}
-
-public class ConectorDto
-{
-    public int IdConnector { get; set; }
-    public string Codigo { get; set; } = string.Empty;
-    public string Nombre { get; set; } = string.Empty;
-    public string Tipo { get; set; } = string.Empty;
-    public bool Activo { get; set; }
-    public bool RequierePermiso { get; set; }
-    public Dictionary<string, string> Configuracion { get; set; } = new();
-    /// <summary>Las credenciales NUNCA se devuelven: solo su tipo y si existen.</summary>
-    public string? TipoCredencial { get; set; }
-    public bool TieneCredencial { get; set; }
-    public CrearPoliticaRequest? Politica { get; set; }
-}
-
-/// <summary>
-/// Administración de conectores (ETAPA 20): registrar, configurar, habilitar y
-/// deshabilitar sin recompilar. Los secretos se cifran al guardar y jamás se
-/// devuelven en lectura (ni siquiera al administrador).
-/// </summary>
 public class ConnectorService
 {
     private readonly IConnectorRepository _repo;

@@ -288,4 +288,13 @@ public interface IApiService
     Task<JsonElement> GetBandejaAprobacionesAsync(int currentUserId, string ip);
     Task<JsonElement> DecidirAprobacionAsync(int id, string decision, string? comentario, int currentUserId, string ip);
     Task<JsonElement> DelegarAprobacionAsync(int id, int idUsuarioDestino, string? comentario, int currentUserId, string ip);
+
+    // API Gateway Empresarial y Conectores (ETAPA 20)
+    Task<IEnumerable<ConectorDto>> GetConectoresAsync(int currentUserId, string ip);
+    Task<ConectorDto?> GetConectorAsync(string codigo, int currentUserId, string ip);
+    Task<ConectorDto> RegistrarConectorAsync(CrearConectorRequest request, int currentUserId, string ip);
+    Task<(bool Ok, string? Error)> ProbarConectorAsync(string codigo, int currentUserId, string ip);
+    Task CambiarEstadoConectorAsync(string codigo, bool activo, int currentUserId, string ip);
+    Task<ConnectorMetricas> GetConectorMetricasAsync(int id, int currentUserId, string ip);
+    Task<IEnumerable<ConectorEjecucionDto>> GetConectorAuditoriaAsync(int id, int currentUserId, string ip);
 }

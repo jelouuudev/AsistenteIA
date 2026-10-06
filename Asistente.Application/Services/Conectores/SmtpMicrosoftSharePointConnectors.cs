@@ -31,7 +31,7 @@ public class SmtpConnector : IConnector
     {
         var host = Config(conector, "Host");
         if (string.IsNullOrWhiteSpace(host))
-            return Task.FromResult((false, "Falta la configuración 'Host'."));
+            return Task.FromResult((false, (string?)"Falta la configuración 'Host'."));
         if (!string.IsNullOrWhiteSpace(Config(conector, "PickupDirectory")))
             return Task.FromResult((true, (string?)null));
         try
@@ -42,7 +42,7 @@ public class SmtpConnector : IConnector
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "SmtpConnector: fallo la prueba de conexión del conector '{Codigo}'.", conector.Codigo);
-            return Task.FromResult((false, ex.Message));
+            return Task.FromResult((false, (string?)ex.Message));
         }
     }
 

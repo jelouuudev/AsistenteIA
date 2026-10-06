@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Infrastructure.Data;
+using Asistente.Shared;
 using Microsoft.EntityFrameworkCore;
 
 namespace Asistente.Infrastructure.Repositories;

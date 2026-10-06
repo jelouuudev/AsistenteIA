@@ -1,0 +1,90 @@
+@model Asistente.Shared.CrearConectorRequest
+@{
+    ViewData["Title"] = "Registrar conector";
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Registrar conector</h4>
+    <p class="text-secondary small mb-0">Los secretos se cifran al guardar y nunca se muestran.</p>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+}
+
+<form asp-action="Crear" method="post" class="card border-0 p-4" style="background:rgba(255,255,255,0.03);border-radius:16px;max-width:720px;">
+    @Html.AntiForgeryToken()
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label text-secondary">Código *</label>
+            <input asp-for="Codigo" class="form-control" placeholder="CRM_DEMO" required />
+        </div>
+        <div class="col-md-6">
+            <label class="form-label text-secondary">Tipo *</label>
+            <select asp-for="Tipo" class="form-select">
+                <option>REST</option>
+                <option>SOAP</option>
+                <option>SMTP</option>
+                <option>Webhook</option>
+                <option>Microsoft365</option>
+                <option>SharePoint</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Nombre *</label>
+            <input asp-for="Nombre" class="form-control" required />
+        </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Descripción</label>
+            <input asp-for="Descripcion" class="form-control" />
+        </div>
+        <div class="col-12 form-check ms-2">
+            <input asp-for="RequierePermiso" class="form-check-input" checked />
+            <label class="form-check-label text-secondary">Requiere permiso CONNECTOR:{código}</label>
+        </div>
+        <div class="col-12"><hr class="border-secondary" /><h6 class="text-white">Conexión</h6></div>
+        <div class="col-12">
+            <label class="form-label text-secondary">BaseUrl / Endpoint / SiteUrl / Url / Host</label>
+            <input name="baseUrl" class="form-control" placeholder="https://api.ejemplo.local (según tipo: BaseUrl)" />
+            <div class="form-text">Para REST: BaseUrl. SOAP: Endpoint. SharePoint: SiteUrl. Webhook: Url. SMTP: Host.</div>
+        </div>
+        <div class="col-md-8">
+            <label class="form-label text-secondary">Recurso por defecto</label>
+            <input name="recursoDefecto" class="form-control" placeholder="api/health" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Método</label>
+            <select name="metodoDefecto" class="form-select">
+                <option>GET</option>
+                <option>POST</option>
+                <option>PUT</option>
+                <option>PATCH</option>
+                <option>DELETE</option>
+            </select>
+        </div>
+        <div class="col-12"><hr class="border-secondary" /><h6 class="text-white">Credencial</h6></div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Tipo</label>
+            <select name="tipoCredencial" class="form-select">
+                <option>None</option>
+                <option>ApiKey</option>
+                <option>Basic</option>
+                <option>Bearer</option>
+                <option>OAuth2</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Usuario / ClientId</label>
+            <input name="nombreUsuario" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Secreto</label>
+            <input name="secreto" type="password" class="form-control" autocomplete="new-password" />
+        </div>
+        <div class="col-12 mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Registrar</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
+        </div>
+    </div>
+</form>

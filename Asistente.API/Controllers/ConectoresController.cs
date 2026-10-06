@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Application.Services.Conectores;
 using Asistente.Domain.Interfaces;
+using Asistente.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -115,17 +116,23 @@ public class ConectoresController : ControllerBase
 
     [HttpGet("{id:int}/auditoria")]
     public async Task<ActionResult> Auditoria(int id, [FromQuery] int tope = 100, CancellationToken ct = default)
-        => Ok(await _service.AuditoriaAsync(id, tope, ct));
-}
-
-/// <summary>Cuerpo para POST api/conectores/{codigo}/ejecutar.</summary>
-public class EjecutarConectorRequest
-{
-    public string? Operacion { get; set; }
-    public string? Recurso { get; set; }
-    public string? Metodo { get; set; }
-    public string? Cuerpo { get; set; }
-    public string? TipoContenido { get; set; }
-    public System.Collections.Generic.Dictionary<string, string>? Cabeceras { get; set; }
-    public System.Collections.Generic.Dictionary<string, string>? Parametros { get; set; }
+    {
+        var filas = await _service.AuditoriaAsync(id, tope, ct);
+        return Ok(filas.Select(e => new ConectorEjecucionDto
+        {
+            IdEjecucion = e.IdEjecucion,
+            IdConnector = e.IdConnector,
+            IdUsuario = e.IdUsuario,
+            IdAsistente = e.IdAsistente,
+            Operacion = e.Operacion,
+            Destino = e.Destino,
+            Estado = e.Estado,
+            CodigoRespuesta = e.CodigoRespuesta,
+            LatenciaMs = e.LatenciaMs,
+            Reintentos = e.Reintentos,
+            Error = e.Error,
+            RespuestaResumen = e.RespuestaResumen,
+            Fecha = e.Fecha
+        }));
+    }
 }

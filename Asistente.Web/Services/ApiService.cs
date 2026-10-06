@@ -1534,4 +1534,48 @@ public class ApiService : IApiService
     public async Task<JsonElement> DelegarAprobacionAsync(int id, int idUsuarioDestino, string? comentario, int currentUserId, string ip)
         => await EnviarYLeerAsync<JsonElement>(CrearRequest(HttpMethod.Post, $"/api/aprobaciones/{id}/delegar",
             new { idUsuarioDestino, comentario }, currentUserId, ip));
+
+    // API Gateway Empresarial y Conectores (ETAPA 20)
+    public async Task<IEnumerable<ConectorDto>> GetConectoresAsync(int currentUserId, string ip)
+        => await EnviarYLeerAsync<IEnumerable<ConectorDto>>(
+            CrearRequest(HttpMethod.Get, "/api/conectores", null, currentUserId, ip));
+
+    public async Task<ConectorDto?> GetConectorAsync(string codigo, int currentUserId, string ip)
+    {
+        try
+        {
+            return await EnviarYLeerAsync<ConectorDto>(
+                CrearRequest(HttpMethod.Get, $"/api/conectores/{codigo}", null, currentUserId, ip));
+        }
+        catch { return null; }
+    }
+
+    public async Task<ConectorDto> RegistrarConectorAsync(CrearConectorRequest request, int currentUserId, string ip)
+        => await EnviarYLeerAsync<ConectorDto>(
+            CrearRequest(HttpMethod.Post, "/api/conectores", request, currentUserId, ip));
+
+    public async Task<(bool Ok, string? Error)> ProbarConectorAsync(string codigo, int currentUserId, string ip)
+    {
+        var json = await EnviarYLeerAsync<JsonElement>(
+            CrearRequest(HttpMethod.Post, $"/api/conectores/{codigo}/probar", null, currentUserId, ip));
+        var ok = json.TryGetProperty("ok", out var pOk) && pOk.ValueKind == JsonValueKind.True;
+        string? error = json.TryGetProperty("error", out var pErr) && pErr.ValueKind == JsonValueKind.String
+            ? pErr.GetString() : null;
+        return (ok, error);
+    }
+
+    public async Task CambiarEstadoConectorAsync(string codigo, bool activo, int currentUserId, string ip)
+    {
+        var accion = activo ? "habilitar" : "deshabilitar";
+        await EnviarSinRetornoAsync(
+            CrearRequest(HttpMethod.Post, $"/api/conectores/{codigo}/{accion}", null, currentUserId, ip));
+    }
+
+    public async Task<ConnectorMetricas> GetConectorMetricasAsync(int id, int currentUserId, string ip)
+        => await EnviarYLeerAsync<ConnectorMetricas>(
+            CrearRequest(HttpMethod.Get, $"/api/conectores/{id}/metricas", null, currentUserId, ip));
+
+    public async Task<IEnumerable<ConectorEjecucionDto>> GetConectorAuditoriaAsync(int id, int currentUserId, string ip)
+        => await EnviarYLeerAsync<IEnumerable<ConectorEjecucionDto>>(
+            CrearRequest(HttpMethod.Get, $"/api/conectores/{id}/auditoria?tope=100", null, currentUserId, ip));
 }
