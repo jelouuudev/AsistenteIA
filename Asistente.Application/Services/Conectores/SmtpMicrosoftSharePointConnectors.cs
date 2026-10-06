@@ -67,6 +67,25 @@ public class SmtpConnector : IConnector
             foreach (var destino in para.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                 mensaje.To.Add(destino);
 
+            // Adjuntos: rutas DEL SERVIDOR separadas por ';' (p. ej. PDFs generados por
+            // ReportTool). Solo archivos existentes y con extensiones seguras: nunca se
+            // aceptan rutas fuera de las carpetas de documentos/reportes del servidor.
+            if (request.Parametros.TryGetValue("Adjuntos", out var adjuntos) && !string.IsNullOrWhiteSpace(adjuntos))
+            {
+                foreach (var ruta in adjuntos.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var rutaNormal = ruta.Replace('/', Path.DirectorySeparatorChar);
+                    if (!EsRutaAdjuntoPermitida(rutaNormal) || !File.Exists(rutaNormal))
+                        return new ConnectorResult
+                        {
+                            Exitoso = false,
+                            Error = $"Adjunto no permitido o inexistente: {ruta}.",
+                            LatenciaMs = (long)(DateTime.UtcNow - inicio).TotalMilliseconds
+                        };
+                    mensaje.Attachments.Add(new Attachment(rutaNormal));
+                }
+            }
+
             using var cliente = CrearCliente(conector);
             await cliente.SendMailAsync(mensaje, ct);
             return new ConnectorResult
@@ -112,6 +131,33 @@ public class SmtpConnector : IConnector
     private static string Config(Connector conector, string clave, string defecto = "")
         => conector.Configuraciones.FirstOrDefault(c =>
                c.Clave.Equals(clave, StringComparison.OrdinalIgnoreCase))?.Valor ?? defecto;
+
+    /// <summary>
+    /// Solo se admiten adjuntos que ya existen en el servidor, dentro de las
+    /// carpetas de documentos/reportes y con extensión segura. Estructural, sin
+    /// listas de negocio: evita path traversal y envío de binarios arbitrarios.
+    /// </summary>
+    internal static bool EsRutaAdjuntoPermitida(string ruta)
+    {
+        string? completa;
+        try { completa = Path.GetFullPath(ruta); }
+        catch { return false; }
+        var ext = Path.GetExtension(completa).ToLowerInvariant();
+        if (ext is not (".pdf" or ".txt" or ".csv" or ".md" or ".json"))
+            return false;
+        var nombre = Path.GetFileName(completa);
+        if (nombre.StartsWith('.') || ruta.Contains("..", StringComparison.Ordinal))
+            return false;
+        var permitidas = new[]
+        {
+            Path.GetFullPath("/AsistenteIA_Documentos"),
+            Path.GetFullPath(Path.GetTempPath())
+        };
+        return permitidas
+            .Select(b => b.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            .Any(base_ =>
+                completa.StartsWith(base_ + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 /// <summary>Conector Microsoft 365: OAuth2 client_credentials + Microsoft Graph.</summary>

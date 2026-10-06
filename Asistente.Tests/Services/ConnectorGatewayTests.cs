@@ -472,6 +472,47 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public void SmtpConnector_RutaAdjunto_SoloCarpetasPermitidasYExtensionSegura()
+    {
+        Assert.False(SmtpConnector.EsRutaAdjuntoPermitida("/etc/passwd"));
+        Assert.False(SmtpConnector.EsRutaAdjuntoPermitida("/AsistenteIA_Documentos/../../etc/passwd"));
+        Assert.False(SmtpConnector.EsRutaAdjuntoPermitida("/AsistenteIA_Documentos/reporte.exe"));
+        Assert.False(SmtpConnector.EsRutaAdjuntoPermitida("C:\\Windows\\System32\\cmd.exe"));
+        Assert.True(SmtpConnector.EsRutaAdjuntoPermitida(
+            Path.Combine(Path.GetTempPath(), "reporte.pdf")));
+    }
+
+    [Fact]
+    public async Task SmtpConnector_AdjuntoInexistente_RechazaSinEnviar()
+    {
+        var raiz = Path.Combine(Path.GetTempPath(), "smtp-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(raiz);
+        try
+        {
+            var cifrador = CifradorPrueba();
+            var smtp = new SmtpConnector(cifrador, NullLogger<SmtpConnector>.Instance);
+            var conector = ConectorRest("SMTP2");
+            conector.Tipo = "SMTP";
+            conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+                { Clave = "PickupDirectory", Valor = raiz });
+
+            var r = await smtp.EjecutarAsync(conector, new ConnectorRequest
+            {
+                CodigoConector = "SMTP2",
+                Recurso = "a@demo.local",
+                Cuerpo = "x",
+                Parametros = new Dictionary<string, string>
+                    { ["Adjuntos"] = Path.Combine(raiz, "no-existe.pdf") }
+            });
+
+            Assert.False(r.Exitoso);
+            Assert.Contains("Adjunto", r.Error);
+            Assert.Empty(Directory.GetFiles(raiz));
+        }
+        finally { Directory.Delete(raiz, true); }
+    }
+
+    [Fact]
     public async Task SharePointConnector_ConstruyeUrlApi()
     {
         var cifrador = CifradorPrueba();
