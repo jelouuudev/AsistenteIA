@@ -801,18 +801,25 @@ public class PlannerEngine : IPlannerEngine
                 if (resWf.Exito)
                 {
                     await PersistirPasoAsync(stepRepo, paso, "Completado", resWf.Resultado, ct);
+                    // Sin este evento el paso Workflow se completaba pero no dejaba
+                    // rastro: en una aceptación no se podía evidenciar que el
+                    // workflow se ejecutó como paso del plan.
+                    await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoWorkflowEjecutado",
+                        $"Workflow '{paso.Nombre}' ejecutado en {resWf.TiempoMs} ms.", ct);
                 }
                 else
                 {
                     await PersistirPasoAsync(stepRepo, paso, "Error",
                         resWf.Error ?? "El workflow no devolvió resultado.", ct);
+                    await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoWorkflowError",
+                        $"Workflow '{paso.Nombre}' falló: {resWf.Error ?? "El workflow no devolvió resultado."}", ct);
                 }
             }
             catch (OperationCanceledException)
             {
                 try
                 {
-                    await PersistirPasoAsync(stepRepo, paso, "Cancelado", "Ejecución cancelada o timeout", ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Cancelado", "Ejecución cancelada o timeout", CancellationToken.None);
                 }
                 catch { }
             }
@@ -820,7 +827,7 @@ public class PlannerEngine : IPlannerEngine
             {
                 try
                 {
-                    await PersistirPasoAsync(stepRepo, paso, "Error", $"Error: {ex.Message}", ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Error", $"Error: {ex.Message}", CancellationToken.None);
                 }
                 catch { }
             }
@@ -871,8 +878,11 @@ public class PlannerEngine : IPlannerEngine
             }
             catch (OperationCanceledException)
             {
+                // Token SIN cancelar para persistir: si se usa el token ya cancelado la
+                // escritura se aborta y el paso se queda en Pendiente, dejando a medias
+                // la evidencia de que la cancelacion detuvo ese nodo (#1016).
                 try {
-                    await PersistirPasoAsync(stepRepo, paso, "Cancelado", "Ejecución cancelada o timeout", ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Cancelado", "Ejecución cancelada o timeout", CancellationToken.None);
                 } catch { }
                 await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoAgentCancelado",
                     $"'{paso.Nombre}' cancelado o excedió el tiempo.", CancellationToken.None);
@@ -880,7 +890,7 @@ public class PlannerEngine : IPlannerEngine
             catch (Exception ex)
             {
                 try {
-                    await PersistirPasoAsync(stepRepo, paso, "Error", $"Error: {ex.Message}", ct);
+                    await PersistirPasoAsync(stepRepo, paso, "Error", $"Error: {ex.Message}", CancellationToken.None);
                 } catch { }
                 await RegistrarLogAsync(plan.IdPlan, paso.IdStep, "PasoAgentError",
                     $"'{paso.Nombre}' falló: {ex.Message}", CancellationToken.None);
