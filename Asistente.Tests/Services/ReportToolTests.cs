@@ -272,4 +272,43 @@ public class ReportToolTotalesPorTablaTests
 
         Assert.DoesNotContain("## Datos obtenidos", r);
     }
+
+    [Fact]
+    public void ResumenJson_Objeto_ListaClaveValor()
+    {
+        // El informe de un conector REST (#2011) salía con el JSON crudo.
+        var r = ReportTool.FormatearResumenJson(
+            System.Text.Json.JsonDocument.Parse(
+                """{"status":"ok","checks":{"database":"ok","ollama":"ok"}}""").RootElement,
+            "Informe");
+
+        Assert.Contains("## Datos obtenidos", r);
+        Assert.Contains("- status: ok", r);
+        Assert.Contains("- checks:", r);
+        Assert.Contains("database: ok", r);
+        Assert.DoesNotContain("{", r.Split("## Datos obtenidos")[1]);
+    }
+
+    [Fact]
+    public void ResumenJson_ArregloDeObjetos_Tabla()
+    {
+        var r = ReportTool.FormatearResumenJson(
+            System.Text.Json.JsonDocument.Parse(
+                """[{"id":"1","nombre":"Ana"},{"id":"2","nombre":"Luis"}]""").RootElement,
+            "Informe");
+
+        Assert.Contains("| id | nombre |", r);
+        Assert.Contains("Ana", r);
+        Assert.Contains("Luis", r);
+    }
+
+    [Fact]
+    public void ResumenEjecutivo_JsonCrudo_NoLoEchaLiteral()
+    {
+        var r = ReportTool.GenerarResumenEjecutivo(
+            """{"status":"ok","timestamp":"2026-10-06T22:19:17Z"}""", "Informe");
+
+        Assert.Contains("## Datos obtenidos", r);
+        Assert.Contains("- status: ok", r);
+    }
 }

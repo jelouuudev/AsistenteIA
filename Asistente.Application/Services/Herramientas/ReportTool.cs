@@ -183,6 +183,13 @@ public class ReportTool : ITool
         if (EsContenidoDocumental(datos))
             return FormatearResumenDocumental(datos, titulo);
 
+        // JSON estructurado (p. ej. respuesta de un conector REST vía Gateway):
+        // antes caía al eco literal y el informe mostraba el JSON crudo (#2011).
+        // Se renderiza como lista/tabla legible, sin inventar nada: solo reordena.
+        var json = TryExtraerJson(datos);
+        if (json.HasValue)
+            return FormatearResumenJson(json.Value, titulo);
+
         var lineas = datos.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(l => l.Trim())
             .Where(l => !l.StartsWith("Datos obtenidos") && !l.StartsWith("==") && l.Contains(':'))
@@ -763,6 +770,116 @@ public class ReportTool : ITool
         if (filas.Count > maxFilas)
             sb.AppendLine($"… ({filas.Count - maxFilas} fila(s) más…)");
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Extrae un objeto o arreglo JSON del texto (tolerando ruido alrededor).
+    /// Null si no hay JSON válido: el llamador sigue a los otros formatos.
+    /// </summary>
+    internal static System.Text.Json.JsonElement? TryExtraerJson(string datos)
+    {
+        if (string.IsNullOrWhiteSpace(datos)) return null;
+        var texto = datos.Trim();
+        var inicioObj = texto.IndexOf('{');
+        var inicioArr = texto.IndexOf('[');
+        int inicio;
+        if (inicioObj < 0 && inicioArr < 0) return null;
+        inicio = inicioObj < 0 ? inicioArr : inicioArr < 0 ? inicioObj : Math.Min(inicioObj, inicioArr);
+        var finObj = texto.LastIndexOf('}');
+        var finArr = texto.LastIndexOf(']');
+        var fin = Math.Max(finObj, finArr);
+        if (fin <= inicio) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(texto[inicio..(fin + 1)]);
+            return doc.RootElement.Clone();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Renderiza un JSON como informe legible: objeto → lista clave/valor (un
+    /// nivel de anidación como sub-lista); arreglo de objetos → tabla; resto →
+    /// lista. Valores verbatim recortados; tope 12 filas/ítems como las tablas SQL.
+    /// </summary>
+    internal static string FormatearResumenJson(System.Text.Json.JsonElement json, string titulo)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"# {titulo}");
+        sb.AppendLine();
+        sb.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
+        sb.AppendLine();
+        sb.AppendLine("## Datos obtenidos");
+        sb.AppendLine();
+
+        if (json.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            var items = json.EnumerateArray().ToList();
+            var objetos = items.Where(i => i.ValueKind == System.Text.Json.JsonValueKind.Object).ToList();
+            if (objetos.Count == items.Count && objetos.Count > 0)
+            {
+                var columnas = objetos.SelectMany(o => o.EnumerateObject().Select(p => p.Name))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                sb.AppendLine("| " + string.Join(" | ", columnas) + " |");
+                sb.AppendLine("| " + string.Join(" | ", columnas.Select(_ => "---")) + " |");
+                foreach (var o in objetos.Take(12))
+                    sb.AppendLine("| " + string.Join(" | ", columnas.Select(c =>
+                        o.TryGetProperty(c, out var v) ? ValorJsonPlano(v) : string.Empty)) + " |");
+                if (objetos.Count > 12)
+                    sb.AppendLine($"… ({objetos.Count - 12} fila(s) más…)");
+            }
+            else
+            {
+                foreach (var item in items.Take(12))
+                    sb.AppendLine($"- {ValorJsonPlano(item)}");
+                if (items.Count > 12)
+                    sb.AppendLine($"… ({items.Count - 12} ítem(s) más…)");
+            }
+            sb.AppendLine();
+            return sb.ToString();
+        }
+
+        if (json.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var prop in json.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    sb.AppendLine($"- {prop.Name}:");
+                    foreach (var sub in prop.Value.EnumerateObject())
+                        sb.AppendLine($"  - {sub.Name}: {ValorJsonPlano(sub.Value)}");
+                }
+                else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    var arr = prop.Value.EnumerateArray().Select(ValorJsonPlano).Take(12).ToList();
+                    sb.AppendLine($"- {prop.Name}: {string.Join(", ", arr)}");
+                }
+                else
+                {
+                    sb.AppendLine($"- {prop.Name}: {ValorJsonPlano(prop.Value)}");
+                }
+            }
+            sb.AppendLine();
+            return sb.ToString();
+        }
+
+        sb.AppendLine($"- {ValorJsonPlano(json)}");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    private static string ValorJsonPlano(System.Text.Json.JsonElement valor)
+    {
+        var texto = valor.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => valor.GetString() ?? string.Empty,
+            System.Text.Json.JsonValueKind.Number => valor.GetRawText(),
+            System.Text.Json.JsonValueKind.True => "true",
+            System.Text.Json.JsonValueKind.False => "false",
+            System.Text.Json.JsonValueKind.Null => "-",
+            _ => valor.GetRawText()
+        };
+        return texto.Length > 200 ? texto[..200] + "…" : texto;
     }
 
     /// <summary>
