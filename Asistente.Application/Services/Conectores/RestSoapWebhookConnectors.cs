@@ -70,7 +70,7 @@ public class RestConnector : HttpConnectorBase
         await AplicarAutenticacionAsync(conector, mensaje, ct);
         foreach (var h in request.Cabeceras)
             mensaje.Headers.TryAddWithoutValidation(h.Key, h.Value);
-        if (!string.IsNullOrEmpty(request.Cuerpo) && metodo != HttpMethod.Get && metodo != HttpMethod.Delete)
+        if (!string.IsNullOrEmpty(request.Cuerpo) && metodo != HttpMethod.Get)
             mensaje.Content = new StringContent(request.Cuerpo, Encoding.UTF8,
                 string.IsNullOrWhiteSpace(request.TipoContenido) ? "application/json" : request.TipoContenido);
 

@@ -165,7 +165,27 @@ public class ConnectorService
         var impl = _conectores.FirstOrDefault(c =>
             c.Tipo.Equals(conector.Tipo, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"No hay implementación para el tipo '{conector.Tipo}'.");
-        return await impl.ProbarConexionAsync(conector, ct);
+        var inicio = DateTime.UtcNow;
+        var (ok, error) = await impl.ProbarConexionAsync(conector, ct);
+
+        // El diagnóstico también se audita (evento ProbarConexion): "toda
+        // ejecución queda auditada". No consume presupuesto de RateLimit ni
+        // toca el CircuitBreaker: es lectura de salud, no llamada de datos.
+        try
+        {
+            await _execRepo.AddAsync(new ConnectorExecution
+            {
+                IdConnector = conector.IdConnector,
+                Operacion = "ProbarConexion",
+                Destino = conector.Tipo,
+                Estado = ok ? "Exitoso" : "Error",
+                LatenciaMs = (long)(DateTime.UtcNow - inicio).TotalMilliseconds,
+                Error = error,
+                Fecha = DateTime.UtcNow
+            }, ct);
+        }
+        catch { /* la auditoría nunca tumba el diagnóstico */ }
+        return (ok, error);
     }
 
     public Task<ConnectorMetricas> MetricasAsync(int idConnector, CancellationToken ct = default)

@@ -537,6 +537,31 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task ConnectorService_ProbarConexion_QuedaAuditado()
+    {
+        var repo = new RepoMemoria();
+        var exec = new ExecMemoria();
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var fake = new FakeHttpHandler();
+        fake.Encolar(HttpStatusCode.OK, "{}");
+        var servicio = new ConnectorService(repo, exec, cifrador,
+            new IConnector[] { new RestConnector(estado, cifrador, NullLogger<RestConnector>.Instance, fake) });
+        await servicio.RegistrarAsync(new CrearConectorRequest
+        {
+            Codigo = "P", Nombre = "P", Tipo = "REST",
+            Configuracion = new Dictionary<string, string> { ["BaseUrl"] = "https://x" }
+        });
+
+        var (ok, _) = await servicio.ProbarConexionAsync("P");
+
+        Assert.True(ok);
+        var log = Assert.Single(exec.Logs);
+        Assert.Equal("ProbarConexion", log.Operacion);
+        Assert.Equal("Exitoso", log.Estado);
+    }
+
+    [Fact]
     public async Task ConnectorService_Registrar_ValidaTipoYCifraSecreto()
     {
         var repo = new RepoMemoria();
