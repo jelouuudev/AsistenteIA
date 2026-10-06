@@ -182,10 +182,37 @@ public static class DbInitializer
                     Activa = true,
                     RequierePermiso = false,
                     FechaRegistro = DateTime.UtcNow
+                },
+                new Herramienta
+                {
+                    Nombre = "Conector via Gateway",
+                    Codigo = "GatewayConnectorTool",
+                    Descripcion = "Consume un sistema externo (ERP, CRM, correo, SharePoint, API REST/SOAP) a través del API Gateway Empresarial. Parámetros: conector (código registrado), operacion, recurso (ruta o destinatario), metodo (GET/POST/PUT/DELETE/PATCH), cuerpo.",
+                    Categoria = "Integracion",
+                    Activa = true,
+                    RequierePermiso = true,
+                    FechaRegistro = DateTime.UtcNow
                 }
             };
 
             await context.Herramientas.AddRangeAsync(herramientas);
+            await context.SaveChangesAsync();
+        }
+
+        // ETAPA 20: la herramienta del Gateway debe existir aunque la tabla ya
+        // tenga filas (el seed de arriba solo corre con tabla vacía).
+        if (!await context.Herramientas.AnyAsync(h => h.Codigo == "GatewayConnectorTool"))
+        {
+            await context.Herramientas.AddAsync(new Herramienta
+            {
+                Nombre = "Conector via Gateway",
+                Codigo = "GatewayConnectorTool",
+                Descripcion = "Consume un sistema externo (ERP, CRM, correo, SharePoint, API REST/SOAP) a través del API Gateway Empresarial. Parámetros: conector (código registrado), operacion, recurso (ruta o destinatario), metodo (GET/POST/PUT/DELETE/PATCH), cuerpo.",
+                Categoria = "Integracion",
+                Activa = true,
+                RequierePermiso = true,
+                FechaRegistro = DateTime.UtcNow
+            });
             await context.SaveChangesAsync();
         }
 

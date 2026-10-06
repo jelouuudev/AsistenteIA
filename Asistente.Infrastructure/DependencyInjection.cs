@@ -97,6 +97,10 @@ public static class DependencyInjection
         services.AddScoped<IConsultaPlantillaRepository, ConsultaPlantillaRepository>();
         services.AddScoped<IConfiguracionMotorConsultasRepository, ConfiguracionMotorConsultasRepository>();
         services.AddScoped<IConexionCifrador, ConexionCifrador>();
+        // API Gateway Empresarial y Conectores Externos (ETAPA 20)
+        services.AddScoped<ICredencialCifrador, CredencialCifrador>();
+        services.AddScoped<IConnectorRepository, ConnectorRepository>();
+        services.AddScoped<IConnectorExecutionRepository, ConnectorExecutionRepository>();
         services.AddScoped<ISqlQueryExecutor, SqlQueryExecutor>();
         services.AddScoped<ISchemaDiscoveryService, SchemaDiscoveryService>();
 

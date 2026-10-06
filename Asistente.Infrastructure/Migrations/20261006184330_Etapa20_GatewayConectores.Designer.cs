@@ -4,6 +4,7 @@ using Asistente.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Asistente.Infrastructure.Migrations
 {
     [DbContext(typeof(AsistenteDbContext))]
-    partial class AsistenteDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261006184330_Etapa20_GatewayConectores")]
+    partial class Etapa20_GatewayConectores
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

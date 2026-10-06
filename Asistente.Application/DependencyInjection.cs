@@ -58,6 +58,18 @@ public static class DependencyInjection
         services.AddScoped<ITool, CalculatorTool>();
         services.AddScoped<ITool, DateTimeTool>();
         services.AddScoped<ITool, ReportTool>();
+        // API Gateway Empresarial y Conectores Externos (ETAPA 20).
+        // Los repositorios y el cifrador se registran en Infrastructure.
+        services.AddScoped<ITool, GatewayConnectorTool>();
+        services.AddSingleton<Services.Conectores.ConnectorPolicyState>();
+        services.AddScoped<Services.Conectores.ConnectorService>();
+        services.AddScoped<IConnectorGateway, Services.Conectores.ConnectorGateway>();
+        services.AddScoped<IConnector, Services.Conectores.RestConnector>();
+        services.AddScoped<IConnector, Services.Conectores.SoapConnector>();
+        services.AddScoped<IConnector, Services.Conectores.SmtpConnector>();
+        services.AddScoped<IConnector, Services.Conectores.WebhookConnector>();
+        services.AddScoped<IConnector, Services.Conectores.Microsoft365Connector>();
+        services.AddScoped<IConnector, Services.Conectores.SharePointConnector>();
 
         // Agent Orchestrator (ETAPA 17)
         services.AddScoped<IAgentSelector, AgentSelector>();

@@ -92,6 +92,13 @@ public class AsistenteDbContext : DbContext, IUnitOfWork
     public DbSet<MetricasIA> MetricasIA => Set<MetricasIA>();
     public DbSet<AuditoriaActividad> AuditoriaActividad => Set<AuditoriaActividad>();
 
+    // ETAPA 20: API Gateway Empresarial y Framework de Conectores Externos.
+    public DbSet<Connector> Connectors => Set<Connector>();
+    public DbSet<Domain.Entities.ConnectorConfiguration> ConnectorConfiguraciones => Set<Domain.Entities.ConnectorConfiguration>();
+    public DbSet<ConnectorCredential> ConnectorCredenciales => Set<ConnectorCredential>();
+    public DbSet<ConnectorPolicy> ConnectorPoliticas => Set<ConnectorPolicy>();
+    public DbSet<ConnectorExecution> ConnectorEjecuciones => Set<ConnectorExecution>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AsistenteDbContext).Assembly);
