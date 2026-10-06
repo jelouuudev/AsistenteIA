@@ -67,6 +67,23 @@ class Manejador(BaseHTTPRequestHandler):
         if auth != "Bearer stub-token-demo":
             self._json(401, {"error": "falta Bearer stub-token-demo"})
             return
+        # ---- Microsoft Graph (simulado, misma forma) ----
+        if ruta in ("/v1.0/users", "/v1.0/users/"):
+            self._json(200, {"value": [
+                {"id": "u1", "displayName": "Maria Johnson",
+                 "mail": "emailmaria@demo.local", "jobTitle": "Gerencia"},
+                {"id": "u2", "displayName": "Brian Halligan",
+                 "mail": "bh@demo.local", "jobTitle": "Operaciones"},
+            ]})
+            return
+        if ruta in ("/v1.0/me/messages", "/v1.0/me/messages/"):
+            self._json(200, {"value": [
+                {"id": "m1", "subject": "Reporte de insumos",
+                 "from": {"emailAddress": {"address": "emailmaria@demo.local"}},
+                 "receivedDateTime": "2026-10-06T00:00:00Z"},
+            ]})
+            return
+        # ---- SharePoint REST (simulado, misma forma) ----
         if ruta.endswith("/_api/web/lists"):
             self._json(200, {"d": {"results": [
                 {"Id": k, "Title": v["Title"], "ItemCount": v["ItemCount"]}
