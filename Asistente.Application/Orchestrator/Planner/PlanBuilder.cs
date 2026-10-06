@@ -27,6 +27,7 @@ public class PlanBuilder
     private readonly IConexionCifrador? _cifrador;
     private readonly ISqlQueryExecutor? _executor;
     private readonly IDocumentoRepository? _documentoRepo;
+    private readonly IConnectorRepository? _conectorRepo;
 
     public PlanBuilder(
         IAsistenteRepository asistenteRepo,
@@ -37,7 +38,8 @@ public class PlanBuilder
         IEmbeddingProvider? embeddingProvider = null,
         IConexionCifrador? cifrador = null,
         ISqlQueryExecutor? executor = null,
-        IDocumentoRepository? documentoRepo = null)
+        IDocumentoRepository? documentoRepo = null,
+        IConnectorRepository? conectorRepo = null)
     {
         _asistenteRepo = asistenteRepo;
         _ollama = ollama;
@@ -48,6 +50,7 @@ public class PlanBuilder
         _cifrador = cifrador;
         _executor = executor;
         _documentoRepo = documentoRepo;
+        _conectorRepo = conectorRepo;
     }
 
     public async Task<Plan> ConstruirAsync(string objetivo, int idUsuario, CancellationToken ct)
@@ -84,6 +87,7 @@ public class PlanBuilder
         List<string> subconsultas = new();
         bool quiereRag = false, quiereReporte = false, quiereRiesgo = false;
         bool quiereWorkflow = false, quiereAgregacion = false, requiereAprobacion = false;
+        bool quiereConector = false;
 
         var semantica = await ClasificarIntencionesConLLMAsync(objetivo, catalogoTablas, tablasAutorizadas, ct);
         if (semantica != null)
@@ -94,6 +98,7 @@ public class PlanBuilder
             quiereWorkflow = semantica.Workflow;
             quiereAgregacion = semantica.Agregacion;
             requiereAprobacion = semantica.Aprobacion;
+            quiereConector = semantica.Conector;
 
             if (semantica.Tablas != null && semantica.Tablas.Any())
             {
@@ -119,9 +124,9 @@ public class PlanBuilder
                 }
             }
 
-            _logger.LogInformation("Planner: intenciones semánticas (LLM) para '{Objetivo}': tablas=[{Tablas}] rag={Rag} reporte={Reporte} riesgo={Riesgo} wf={Wf} agr={Agr} apr={Apr}.",
+            _logger.LogInformation("Planner: intenciones semánticas (LLM) para '{Objetivo}': tablas=[{Tablas}] rag={Rag} reporte={Reporte} riesgo={Riesgo} wf={Wf} agr={Agr} apr={Apr} con={Con}.",
                 objetivo, string.Join(",", tablasMencionadas),
-                quiereRag, quiereReporte, quiereRiesgo, quiereWorkflow, quiereAgregacion, requiereAprobacion);
+                quiereRag, quiereReporte, quiereRiesgo, quiereWorkflow, quiereAgregacion, requiereAprobacion, quiereConector);
 
             // Sub-consultas paralelas (sin keywords: las define el LLM por significado).
             // 0-1 = indivisible (un solo paso con el objetivo). Tope 4 ramas.
@@ -501,6 +506,52 @@ public class PlanBuilder
             _logger.LogInformation("Planner: objetivo menciona flujo pero ningún workflow activo coincide; se omite el paso Workflow.");
         }
 
+        // Paso 3b: Conector externo vía Gateway (ETAPA 20). Doble vía, igual que
+        // RAG y workflows, sin vocabulario fijo:
+        // (a) mención determinista del CÓDIGO registrado ("usa el conector
+        //     API_DEMO") → ese conector, garantizado;
+        // (b) si no hay mención, el mejor por similitud SEMÁNTICA contra la firma
+        //     viva (código+nombre+descripción), con doble señal como workflows:
+        //     similitud FUERTE (>= 0.75) basta sola; en banda media (>= 0.60) se
+        //     exige ADEMÁS el flag conector del LLM.
+        // El paso lleva SOLO el código resuelto; el recurso/método salen de los
+        // defectos del conector (RecursoDefecto/MetodoDefecto) para no inventar rutas.
+        var (conectorSim, simCon) = await BuscarConectorPorObjetivoAsync(objetivo, ct);
+        string? codigoConector = null;
+        if (conectorSim != null)
+        {
+            if (simCon >= UmbralSimilitudWorkflowFuerte
+                || (simCon >= UmbralSimilitudWorkflow && quiereConector))
+                codigoConector = conectorSim.Codigo;
+            else
+                _logger.LogInformation("Planner: conector '{Con}' similar ({Sim:F3}) pero sin señal suficiente (flag={Flag}); se omite el paso.",
+                    conectorSim.Codigo, simCon, quiereConector);
+        }
+        var conectorMencionado = await ConectorMencionadoAsync(objetivo, ct);
+        if (conectorMencionado != null)
+        {
+            if (!string.Equals(codigoConector, conectorMencionado, StringComparison.OrdinalIgnoreCase))
+                _logger.LogInformation("Planner: conector mencionado '{Con}' manda sobre el similar '{Sim}'.",
+                    conectorMencionado, codigoConector ?? "(ninguno)");
+            codigoConector = conectorMencionado;
+        }
+        if (codigoConector != null)
+        {
+            var conectores = _conectorRepo != null
+                ? await _conectorRepo.GetAllAsync(ct)
+                : new List<Connector>();
+            var elegido = conectores.FirstOrDefault(c =>
+                c.Codigo.Equals(codigoConector, StringComparison.OrdinalIgnoreCase));
+            pasos.Add(Paso(ref orden, "Tool", $"Consumir sistema externo: {elegido?.Nombre ?? codigoConector}", principal.IdAsistente,
+                principal.Nombre, $"Consume el sistema externo '{codigoConector}' a través del API Gateway.",
+                codigoHerramienta: "GatewayConnectorTool",
+                entrada: EntradaConector(codigoConector, objetivo)));
+        }
+        else if (quiereConector)
+        {
+            _logger.LogInformation("Planner: objetivo pide sistema externo pero ningún conector activo coincide; se omite el paso.");
+        }
+
         // Paso 4: Análisis de indicadores (depende del SQL). Un análisis por tabla
         // cuando hay varias: cada uno agrega sobre su tabla con el mismo contrato
         // {"tabla","pregunta"} para no re-adivinar. El rol (ANALISIS) lo deriva el
@@ -600,6 +651,24 @@ public class PlanBuilder
                     plan.Dependencias.Add(new PlanDependency
                     {
                         StepOrigen = ragPaso.Orden,
+                        StepDestino = paso.Orden
+                    });
+                }
+            }
+
+            // Conector externo → Reporte/Entrega: consolidan también lo externo. Sin
+            // esta arista correrían en la misma capa y el informe/entrega saldría sin
+            // su contenido. Lado origen por CÓDIGO de herramienta (GatewayConnectorTool),
+            // no por palabras: vale para cualquier conector registrado.
+            if (paso.Nombre.Contains("Generar") || paso.Nombre.Contains("Entregar"))
+            {
+                foreach (var con in pasos.Where(p =>
+                    string.Equals(p.CodigoHerramienta, "GatewayConnectorTool", StringComparison.OrdinalIgnoreCase)
+                    && p.Orden != paso.Orden))
+                {
+                    plan.Dependencias.Add(new PlanDependency
+                    {
+                        StepOrigen = con.Orden,
                         StepDestino = paso.Orden
                     });
                 }
@@ -710,6 +779,96 @@ public class PlanBuilder
         return (null, double.NegativeInfinity);
     }
 
+    /// <summary>
+    /// Resuelve el conector externo que pide el objetivo (ETAPA 20), espejando la
+    /// selección de workflows: coincidencia SEMÁNTICA contra la firma viva del
+    /// conector (código + nombre + descripción + tipo registrados), nunca contra
+    /// el texto con listas fijas. Gana el mejor puntaje entre los ACTIVOS.
+    /// Null si no hay repo, no hay conectores o ninguno supera el umbral.
+    /// </summary>
+    private async Task<(Connector? Conector, double Sim)> BuscarConectorPorObjetivoAsync(
+        string objetivo, CancellationToken ct)
+    {
+        if (_conectorRepo == null || _embeddingProvider == null) return (null, double.NegativeInfinity);
+        try
+        {
+            var conectores = (await _conectorRepo.GetAllAsync(ct))
+                .Where(c => c.Activo).ToList();
+            if (conectores.Count == 0) return (null, double.NegativeInfinity);
+
+            var embObjetivos = await EmbeddingsDeConsultaAsync(objetivo, ct);
+            Connector? mejor = null;
+            var mejorSim = double.NegativeInfinity;
+            foreach (var con in conectores)
+            {
+                var firma = string.Join(" ",
+                    new[] { con.Codigo, con.Nombre, con.Descripcion, con.Tipo }
+                        .Where(s => !string.IsNullOrWhiteSpace(s)));
+                if (string.IsNullOrWhiteSpace(firma)) continue;
+                var embFirma = await EmbeddingCacheadoAsync(firma, ct);
+                var sim = embObjetivos.Max(e => Asistente.Application.Services.Herramientas
+                    .SeleccionHerramientaSemantica.Coseno(e, embFirma));
+                if (sim >= UmbralSimilitudWorkflow && sim > mejorSim)
+                {
+                    mejor = con;
+                    mejorSim = sim;
+                }
+            }
+            return (mejor, mejorSim);
+        }
+        catch { return (null, double.NegativeInfinity); }
+    }
+
+    /// <summary>
+    /// ¿El objetivo referencia a un conector Activo registrado por su CÓDIGO o
+    /// NOMBRE? Espeja el rescate RAG por catálogo vivo: los códigos de conector
+    /// son identificadores del sistema (como los códigos de documento), no
+    /// vocabulario de dominio. Garantiza el paso cuando el usuario nombra el
+    /// conector, aunque el LLM no haya marcado la intención.
+    /// </summary>
+    private async Task<string?> ConectorMencionadoAsync(string objetivo, CancellationToken ct)
+    {
+        if (_conectorRepo == null) return null;
+        try
+        {
+            var objetivoNorm = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(objetivo);
+            if (objetivoNorm.Length < 4) return null;
+            var palabras = Asistente.Application.Services.Herramientas.FiltroSemantico.Palabras(objetivo);
+            if (palabras.Count == 0) return null;
+            var conjuntoPalabras = new HashSet<string>(palabras, StringComparer.Ordinal);
+            var conectores = (await _conectorRepo.GetAllAsync(ct)).Where(c => c.Activo).ToList();
+            foreach (var con in conectores)
+            {
+                var codigo = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(con.Codigo ?? string.Empty);
+                if (codigo.Length >= 4 && conjuntoPalabras.Contains(codigo)) return con.Codigo;
+                var nombre = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(con.Nombre ?? string.Empty);
+                if (nombre.Length >= 8 && objetivoNorm.Contains(nombre, StringComparison.Ordinal)) return con.Codigo;
+            }
+            return null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Contrato máquina-máquina para un paso de conector externo: el código del
+    /// conector que el plan ya resolvió (por similitud o mención) + el objetivo
+    /// para la operación. El recurso/método los resuelve la herramienta desde
+    /// los defectos del conector (RecursoDefecto/MetodoDefecto/OperacionDefecto):
+    /// el planner nunca inventa rutas.
+    /// </summary>
+    internal static string EntradaConector(string codigoConector, string objetivo)
+    {
+        try
+        {
+            var operacion = objetivo.Length > 900 ? objetivo[..900] : objetivo;
+            return System.Text.Json.JsonSerializer.Serialize(new { conector = codigoConector, operacion });
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     private static bool ContainsWord(string texto, string palabra)
     {
         var palabras = palabra.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -768,6 +927,12 @@ public class PlanBuilder
         public bool Workflow { get; set; }
         public bool Agregacion { get; set; }
         public bool Aprobacion { get; set; }
+        /// <summary>
+        /// La solicitud requiere un sistema externo (correo, CRM/ERP, SharePoint,
+        /// Microsoft 365 o servicio web). El CONECTOR concreto no lo decide el
+        /// texto: se empareja contra el catálogo vivo de conectores registrados.
+        /// </summary>
+        public bool Conector { get; set; }
         public List<string> Tablas { get; set; } = new();
         /// <summary>
         /// Sub-consultas independientes en que se divide el objetivo (ramas paralelas).
@@ -881,7 +1046,7 @@ public class PlanBuilder
                     Rol = RolMensaje.User,
                     Contenido = "Clasifica la siguiente solicitud por su SIGNIFICADO (no por palabras exactas). " +
                         "Responde SOLO este JSON, sin explicaciones: " +
-                        "{\"tablas\":[\"...\"],\"rag\":bool,\"reporte\":bool,\"riesgo\":bool,\"workflow\":bool,\"agregacion\":bool,\"aprobacion\":bool,\"subconsultas\":[\"...\"]}. " +
+                        "{\"tablas\":[\"...\"],\"rag\":bool,\"reporte\":bool,\"riesgo\":bool,\"workflow\":bool,\"agregacion\":bool,\"aprobacion\":bool,\"conector\":bool,\"subconsultas\":[\"...\"]}. " +
                         "Tablas disponibles en BD: [" + catalogo + "]. " +
                         "En 'tablas' lista SOLO nombres tomados del catálogo de arriba, elegidos por su significado o columnas (ej: si la consulta pide un conteo por cierta dimensión y una tabla del catálogo contiene una columna con esa dimensión, lista esa tabla). " +
                         "rag=true SOLO si pide consultar documentos, políticas, manuales, normativas o archivos de conocimiento (ej: 'resumen del documento interno' → true; 'según el documento cuáles son...' → true). " +
@@ -889,6 +1054,10 @@ public class PlanBuilder
                         "Un 'reporte/informe' sobre datos de la BD NO es documental: pon rag=false y reporte=true. " +
                         "reporte=true SI pide generar, crear, exportar, producir, obtener, hacer un reporte/informe/resumen/PDF/documento (ej: 'genera un informe con los datos' → true). " +
                         "riesgo=quiere análisis de riesgos. workflow=menciona un flujo o proceso automatizado. " +
+                        "conector=true SOLO si la solicitud requiere interactuar con un sistema externo a la plataforma: " +
+                        "enviar un correo, consultar o escribir en un CRM/ERP, leer o subir a SharePoint o Microsoft 365, " +
+                        "o llamar a un servicio web externo (ej: 'envíame el reporte por correo' → true; " +
+                        "'consulta el estado del servicio externo' → true; 'cuántos registros hay' → false). " +
                         "agregacion=pide cifra/cantidad/número/totales/métricas/conteos (ej: 'cuántos registros hay en total' → true). " +
                         "aprobacion=acción sensible o destructiva (eliminar, enviar, pagar, publicar, desactivar, aprobar algo). " +
                         "subconsultas=divide el objetivo en consultas independientes y autocontenidas que pueden ejecutarse en paralelo " +

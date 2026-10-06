@@ -376,7 +376,18 @@ public class AgentOrchestrator : IAgentOrchestrator
                 // Pregunta efectiva del paso (para PreguntaOriginal): por defecto el
                 // objetivo; la rama SqlQueryTool la puede refinar desde su Entrada.
                 var preguntaPaso = plan.Objetivo;
-                if (herramienta == "ReportTool")
+                if (herramienta == "GatewayConnectorTool")
+                {
+                    // Contrato máquina-máquina (PlanBuilder.EntradaConector):
+                    // {"conector","operacion"}. El recurso/método los resuelve la
+                    // herramienta desde los defectos del conector.
+                    var (codigoConector, operacionConector) = ExtraerConectorYOperacion(paso.Entrada);
+                    if (!string.IsNullOrWhiteSpace(codigoConector))
+                        parametros["conector"] = codigoConector;
+                    parametros["operacion"] = string.IsNullOrWhiteSpace(operacionConector)
+                        ? plan.Objetivo : operacionConector;
+                }
+                else if (herramienta == "ReportTool")
                 {
                     parametros["titulo"] = paso.Nombre;
                     // Handoff en memoria (datos ya combinados por el Planner) manda
@@ -1069,6 +1080,29 @@ public class AgentOrchestrator : IAgentOrchestrator
         }
         catch { /* no es JSON: sin preferencia */ }
         return null;
+    }
+
+    /// <summary>
+    /// Lee el contrato del paso conector (PlanBuilder.EntradaConector):
+    /// {"conector","operacion"}. Sin JSON o sin código devuelve nulos y la
+    /// herramienta informa el parámetro faltante (no se inventa nada).
+    /// </summary>
+    internal static (string? Codigo, string? Operacion) ExtraerConectorYOperacion(string? entrada)
+    {
+        if (string.IsNullOrWhiteSpace(entrada)) return (null, null);
+        var texto = entrada.Trim();
+        if (!texto.StartsWith('{')) return (null, null);
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(texto);
+            string? codigo = null, operacion = null;
+            if (doc.RootElement.TryGetProperty("conector", out var c))
+                codigo = c.GetString();
+            if (doc.RootElement.TryGetProperty("operacion", out var o))
+                operacion = o.GetString();
+            return (string.IsNullOrWhiteSpace(codigo) ? null : codigo.Trim(), operacion);
+        }
+        catch { return (null, null); }
     }
 
     /// <summary>

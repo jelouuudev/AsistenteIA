@@ -592,7 +592,7 @@ public class ConnectorGatewayTests
     public async Task GatewayConnectorTool_ExigeCodigoDeConector()
     {
         var gw = new Mock<IConnectorGateway>();
-        var tool = new GatewayConnectorTool(gw.Object);
+        var tool = new GatewayConnectorTool(gw.Object, new Mock<IConnectorRepository>().Object);
 
         var sinCodigo = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -606,13 +606,44 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task GatewayConnectorTool_UsaDefectosDelConector_SinInventarRutas()
+    {
+        // El planner solo manda {conector, operacion}: el recurso/método salen de
+        // los defectos declarados por el admin (RecursoDefecto/MetodoDefecto).
+        var repo = new Mock<IConnectorRepository>();
+        var conector = ConectorRest("API_DEMO");
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "RecursoDefecto", Valor = "api/health" });
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "MetodoDefecto", Valor = "GET" });
+        repo.Setup(r => r.GetByCodigoAsync("API_DEMO", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(conector);
+        var gw = new Mock<IConnectorGateway>();
+        gw.Setup(g => g.EjecutarAsync(It.IsAny<ConnectorRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConnectorResult { Exitoso = true, Contenido = "ok" });
+        var tool = new GatewayConnectorTool(gw.Object, repo.Object);
+
+        var r = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            HerramientaCodigo = "GatewayConnectorTool",
+            Parametros = new Dictionary<string, object?> { ["conector"] = "API_DEMO" },
+            IdUsuario = 1
+        });
+
+        Assert.True(r.Exitoso);
+        gw.Verify(g => g.EjecutarAsync(
+            It.Is<ConnectorRequest>(q => q.Recurso == "api/health" && q.Metodo == "GET"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task GatewayConnectorTool_DelegaEnElGateway()
     {
         var gw = new Mock<IConnectorGateway>();
         gw.Setup(g => g.EjecutarAsync(It.IsAny<ConnectorRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ConnectorResult
                 { Exitoso = true, CodigoRespuesta = 200, Contenido = "ok", LatenciaMs = 5 });
-        var tool = new GatewayConnectorTool(gw.Object);
+        var tool = new GatewayConnectorTool(gw.Object, new Mock<IConnectorRepository>().Object);
 
         var r = await tool.ExecuteAsync(new ToolExecutionRequest
         {
