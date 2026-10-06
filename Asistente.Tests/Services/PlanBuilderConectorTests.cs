@@ -184,6 +184,33 @@ public class PlanBuilderConectorTests
     }
 
     [Fact]
+    public async Task VariasMenciones_UnPasoPorConector()
+    {
+        // El caso de aceptación pide CRM + SharePoint + correo en el mismo plan.
+        var crm = ConectorDemo("CRM_HUBSPOT", "CRM HubSpot", "Clientes del CRM", "REST");
+        var sp = ConectorDemo("SP_STUB", "SharePoint demo", "Bibliotecas de documentos", "SharePoint");
+        var smtp = ConectorDemo("SMTP_DEMO", "SMTP demo", "Correo de salida", "SMTP");
+        var builder = Crear(RepoConectores(crm, sp, smtp), OllamaCon(false), null);
+
+        var plan = await builder.ConstruirAsync(
+            "consulta el CRM_HUBSPOT, busca en SP_STUB y avisa por SMTP_DEMO", 1, CancellationToken.None);
+
+        var pasos = plan.Pasos.Where(p =>
+            string.Equals(p.CodigoHerramienta, "GatewayConnectorTool", StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.Equal(3, pasos.Count);
+        var codigos = pasos.Select(p =>
+            JsonDocument.Parse(p.Entrada!).RootElement.GetProperty("conector").GetString()).ToList();
+        Assert.Contains("CRM_HUBSPOT", codigos);
+        Assert.Contains("SP_STUB", codigos);
+        Assert.Contains("SMTP_DEMO", codigos);
+        // Los tres alimentan la entrega (dependencias por código de herramienta).
+        var entrega = plan.Pasos.First(p => p.Nombre.Contains("Entregar"));
+        foreach (var paso in pasos)
+            Assert.Contains(plan.Dependencias, d =>
+                d.StepOrigen == paso.Orden && d.StepDestino == entrega.Orden);
+    }
+
+    [Fact]
     public void EntradaConector_LlevaSoloCodigoYOperacion()
     {
         using var doc = JsonDocument.Parse(PlanBuilder.EntradaConector("X", "haz algo"));

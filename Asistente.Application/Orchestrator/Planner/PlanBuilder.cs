@@ -527,25 +527,37 @@ public class PlanBuilder
                 _logger.LogInformation("Planner: conector '{Con}' similar ({Sim:F3}) pero sin señal suficiente (flag={Flag}); se omite el paso.",
                     conectorSim.Codigo, simCon, quiereConector);
         }
-        var conectorMencionado = await ConectorMencionadoAsync(objetivo, ct);
-        if (conectorMencionado != null)
+        // Menciones deterministas (pueden ser VARIAS: el caso de aceptación pide
+        // CRM + SharePoint + SMTP en el mismo plan). Cada código mencionado genera
+        // su propio paso; si además había uno por similitud y coincide, no se duplica.
+        var codigosMencionados = await ConectoresMencionadosAsync(objetivo, ct);
+        var codigosPaso = new List<string>();
+        if (codigosMencionados.Count > 0)
         {
-            if (!string.Equals(codigoConector, conectorMencionado, StringComparison.OrdinalIgnoreCase))
-                _logger.LogInformation("Planner: conector mencionado '{Con}' manda sobre el similar '{Sim}'.",
-                    conectorMencionado, codigoConector ?? "(ninguno)");
-            codigoConector = conectorMencionado;
+            codigosPaso.AddRange(codigosMencionados);
+            if (codigoConector != null && !codigosPaso.Any(c =>
+                    c.Equals(codigoConector, StringComparison.OrdinalIgnoreCase)))
+                _logger.LogInformation("Planner: conector similar '{Sim}' ignorado; mandan los mencionados [{Mencionados}].",
+                    codigoConector, string.Join(",", codigosPaso));
         }
-        if (codigoConector != null)
+        else if (codigoConector != null)
+        {
+            codigosPaso.Add(codigoConector);
+        }
+        if (codigosPaso.Count > 0)
         {
             var conectores = _conectorRepo != null
                 ? await _conectorRepo.GetAllAsync(ct)
                 : new List<Connector>();
-            var elegido = conectores.FirstOrDefault(c =>
-                c.Codigo.Equals(codigoConector, StringComparison.OrdinalIgnoreCase));
-            pasos.Add(Paso(ref orden, "Tool", $"Consumir sistema externo: {elegido?.Nombre ?? codigoConector}", principal.IdAsistente,
-                principal.Nombre, $"Consume el sistema externo '{codigoConector}' a través del API Gateway.",
-                codigoHerramienta: "GatewayConnectorTool",
-                entrada: EntradaConector(codigoConector, objetivo)));
+            foreach (var codigo in codigosPaso)
+            {
+                var elegido = conectores.FirstOrDefault(c =>
+                    c.Codigo.Equals(codigo, StringComparison.OrdinalIgnoreCase));
+                pasos.Add(Paso(ref orden, "Tool", $"Consumir sistema externo: {elegido?.Nombre ?? codigo}", principal.IdAsistente,
+                    principal.Nombre, $"Consume el sistema externo '{codigo}' a través del API Gateway.",
+                    codigoHerramienta: "GatewayConnectorTool",
+                    entrada: EntradaConector(codigo, objetivo)));
+            }
         }
         else if (quiereConector)
         {
@@ -820,6 +832,41 @@ public class PlanBuilder
     }
 
     /// <summary>
+    /// ¿El objetivo referencia conectores Activos registrados por su CÓDIGO o
+    /// NOMBRE? Devuelve TODOS los mencionados (un plan puede pedir CRM +
+    /// SharePoint + SMTP). Espeja el rescate RAG por catálogo vivo: los códigos
+    /// son identificadores del sistema, no vocabulario de dominio.
+    /// </summary>
+    private async Task<List<string>> ConectoresMencionadosAsync(string objetivo, CancellationToken ct)
+    {
+        var hallados = new List<string>();
+        if (_conectorRepo == null) return hallados;
+        try
+        {
+            var objetivoNorm = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(objetivo);
+            if (objetivoNorm.Length < 4) return hallados;
+            var palabras = Asistente.Application.Services.Herramientas.FiltroSemantico.Palabras(objetivo);
+            if (palabras.Count == 0) return hallados;
+            var conjuntoPalabras = new HashSet<string>(palabras, StringComparer.Ordinal);
+            var conectores = (await _conectorRepo.GetAllAsync(ct)).Where(c => c.Activo).ToList();
+            foreach (var con in conectores)
+            {
+                var codigo = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(con.Codigo ?? string.Empty);
+                bool menciona = codigo.Length >= 4 && conjuntoPalabras.Contains(codigo);
+                if (!menciona)
+                {
+                    var nombre = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(con.Nombre ?? string.Empty);
+                    menciona = nombre.Length >= 8 && objetivoNorm.Contains(nombre, StringComparison.Ordinal);
+                }
+                if (menciona && !hallados.Any(h => h.Equals(con.Codigo, StringComparison.OrdinalIgnoreCase)))
+                    hallados.Add(con.Codigo);
+            }
+            return hallados;
+        }
+        catch { return hallados; }
+    }
+
+    /// <summary>
     /// ¿El objetivo referencia a un conector Activo registrado por su CÓDIGO o
     /// NOMBRE? Espeja el rescate RAG por catálogo vivo: los códigos de conector
     /// son identificadores del sistema (como los códigos de documento), no
@@ -827,27 +874,7 @@ public class PlanBuilder
     /// conector, aunque el LLM no haya marcado la intención.
     /// </summary>
     private async Task<string?> ConectorMencionadoAsync(string objetivo, CancellationToken ct)
-    {
-        if (_conectorRepo == null) return null;
-        try
-        {
-            var objetivoNorm = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(objetivo);
-            if (objetivoNorm.Length < 4) return null;
-            var palabras = Asistente.Application.Services.Herramientas.FiltroSemantico.Palabras(objetivo);
-            if (palabras.Count == 0) return null;
-            var conjuntoPalabras = new HashSet<string>(palabras, StringComparer.Ordinal);
-            var conectores = (await _conectorRepo.GetAllAsync(ct)).Where(c => c.Activo).ToList();
-            foreach (var con in conectores)
-            {
-                var codigo = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(con.Codigo ?? string.Empty);
-                if (codigo.Length >= 4 && conjuntoPalabras.Contains(codigo)) return con.Codigo;
-                var nombre = Asistente.Application.Services.Herramientas.FiltroSemantico.Normalizar(con.Nombre ?? string.Empty);
-                if (nombre.Length >= 8 && objetivoNorm.Contains(nombre, StringComparison.Ordinal)) return con.Codigo;
-            }
-            return null;
-        }
-        catch { return null; }
-    }
+        => (await ConectoresMencionadosAsync(objetivo, ct)).FirstOrDefault();
 
     /// <summary>
     /// Contrato máquina-máquina para un paso de conector externo: el código del
