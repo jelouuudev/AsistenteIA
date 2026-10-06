@@ -562,6 +562,35 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task ConnectorService_ActualizarCredencial_RotaElSecretoSinExponerlo()
+    {
+        var repo = new RepoMemoria();
+        var exec = new ExecMemoria();
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var servicio = new ConnectorService(repo, exec, cifrador,
+            new IConnector[] { new RestConnector(estado, cifrador, NullLogger<RestConnector>.Instance) });
+        await servicio.RegistrarAsync(new CrearConectorRequest
+        {
+            Codigo = "ROT", Nombre = "ROT", Tipo = "REST",
+            Credencial = new CrearCredencialRequest { Tipo = "ApiKey", Secreto = "vieja" }
+        });
+
+        var dto = await servicio.ActualizarCredencialAsync("ROT",
+            new CrearCredencialRequest { Tipo = "ApiKey", Secreto = "nueva" });
+
+        Assert.True(dto.TieneCredencial);
+        var guardado = await repo.GetByCodigoAsync("ROT");
+        var cred = Assert.Single(guardado!.Credenciales);
+        Assert.Equal("nueva", cifrador.Descifrar(cred.ValorCifrado));
+        var serializado = System.Text.Json.JsonSerializer.Serialize(dto);
+        Assert.DoesNotContain("nueva", serializado);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            servicio.ActualizarCredencialAsync("NO_EXISTE",
+                new CrearCredencialRequest { Tipo = "ApiKey", Secreto = "x" }));
+    }
+
+    [Fact]
     public async Task ConnectorService_Registrar_ValidaTipoYCifraSecreto()
     {
         var repo = new RepoMemoria();
