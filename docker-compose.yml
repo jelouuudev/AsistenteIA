@@ -114,6 +114,22 @@ services:
       - C:\AsistenteIA_Documentos:/AsistenteIA_Documentos
     restart: always
 
+  # ETAPA 20 (demo): stub local con forma SharePoint REST + Graph.
+  # SIMULADO: solo para demo sin tenant; lo único simulado es el servidor.
+  # Arranca solo con el stack (restart: always) para no levantarlo a mano.
+  # El puerto publicado conserva las URLs ya registradas en los conectores
+  # (host.docker.internal:8899).
+  stub-sharepoint:
+    image: python:3.14-alpine
+    container_name: asistentestubsp
+    profiles: ["dev", "test", "prod"]
+    volumes:
+      - ./scripts/stub_sharepoint.py:/stub/stub_sharepoint.py:ro
+    command: ["python", "/stub/stub_sharepoint.py"]
+    ports:
+      - "8899:8899"
+    restart: always
+
 volumes:
   chroma_data:
   sql_data:
