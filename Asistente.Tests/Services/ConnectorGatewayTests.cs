@@ -333,6 +333,28 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task RestConnector_Probar_UsaRecursoDefecto_EnVezDeLaRaiz()
+    {
+        // Muchas APIs (incluida la nuestra) devuelven 404 en "/": el probe usa el
+        // RecursoDefecto si existe, que es la llamada real del conector.
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var fake = new FakeHttpHandler();
+        fake.Encolar(HttpStatusCode.OK, "{}");
+        var rest = new RestConnector(estado, cifrador, NullLogger<RestConnector>.Instance, fake);
+
+        var conector = ConectorRest();
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "RecursoDefecto", Valor = "api/health" });
+
+        var (ok, error) = await rest.ProbarConexionAsync(conector);
+
+        Assert.True(ok, error);
+        Assert.EndsWith("/api/health",
+            Assert.Single(fake.Recibidas).RequestUri?.ToString());
+    }
+
+    [Fact]
     public async Task RestConnector_AplicaApiKeyEnCabecera()
     {
         var cifrador = CifradorPrueba();

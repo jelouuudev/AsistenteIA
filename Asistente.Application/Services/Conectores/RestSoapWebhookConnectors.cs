@@ -27,8 +27,15 @@ public class RestConnector : HttpConnectorBase
             var baseUrl = Config(conector, "BaseUrl");
             if (string.IsNullOrWhiteSpace(baseUrl))
                 return (false, "Falta la configuración 'BaseUrl'.");
+            // La raíz (/) de muchas APIs no existe (la nuestra devuelve 404):
+            // se prueba el RecursoDefecto si el admin lo declaró, que es la
+            // llamada real que hará el conector.
+            var recurso = Config(conector, "RecursoDefecto");
+            var url = string.IsNullOrWhiteSpace(recurso)
+                ? baseUrl
+                : baseUrl.TrimEnd('/') + "/" + recurso.TrimStart('/');
             using var cliente = CrearCliente();
-            using var mensaje = new HttpRequestMessage(HttpMethod.Get, baseUrl);
+            using var mensaje = new HttpRequestMessage(HttpMethod.Get, url);
             await AplicarAutenticacionAsync(conector, mensaje, ct);
             using var resp = await cliente.SendAsync(mensaje, HttpCompletionOption.ResponseHeadersRead, ct);
             return resp.IsSuccessStatusCode
