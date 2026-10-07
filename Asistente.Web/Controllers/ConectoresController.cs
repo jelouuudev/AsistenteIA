@@ -140,42 +140,4 @@ public class ConectoresController : Controller
         catch (System.Exception ex) { TempData["ErrorMessage"] = $"Error: {ex.Message}"; }
         return RedirectToAction(nameof(Detalle), new { id });
     }
-
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Ejecutar(string id, string? operacion, string? recurso,
-        string? metodo, string? cuerpo, string? parametros)
-    {
-        try
-        {
-            var request = new EjecutarConectorRequest
-            {
-                Operacion = operacion,
-                Recurso = recurso,
-                Metodo = string.IsNullOrWhiteSpace(metodo) ? "GET" : metodo,
-                Cuerpo = cuerpo,
-                Parametros = new System.Collections.Generic.Dictionary<string, string>()
-            };
-            // Líneas "clave=valor" (una por línea) para parámetros del conector
-            // (p. ej. Asunto del correo, Adjuntos con rutas del servidor).
-            if (!string.IsNullOrWhiteSpace(parametros))
-            {
-                foreach (var linea in parametros.Split('\n'))
-                {
-                    var i = linea.IndexOf('=');
-                    if (i > 0)
-                        request.Parametros[linea[..i].Trim()] = linea[(i + 1)..].Trim();
-                }
-            }
-            var resultado = await _apiService.EjecutarConectorAsync(id, request, UsuarioId(), Ip());
-            var exitoso = resultado.TryGetProperty("exitoso", out var p) && p.ValueKind == System.Text.Json.JsonValueKind.True;
-            string? error = resultado.TryGetProperty("error", out var pErr) && pErr.ValueKind == System.Text.Json.JsonValueKind.String
-                ? pErr.GetString() : null;
-            TempData[exitoso ? "OkMessage" : "ErrorMessage"] = exitoso
-                ? "Ejecución exitosa: revisa la auditoría abajo."
-                : $"Falló la ejecución: {error}";
-        }
-        catch (System.Exception ex) { TempData["ErrorMessage"] = $"Error: {ex.Message}"; }
-        return RedirectToAction(nameof(Detalle), new { id });
-    }
 }
