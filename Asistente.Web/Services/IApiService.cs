@@ -297,4 +297,6 @@ public interface IApiService
     Task CambiarEstadoConectorAsync(string codigo, bool activo, int currentUserId, string ip);
     Task<ConnectorMetricas> GetConectorMetricasAsync(int id, int currentUserId, string ip);
     Task<IEnumerable<ConectorEjecucionDto>> GetConectorAuditoriaAsync(int id, int currentUserId, string ip);
+
+    Task<JsonElement> EjecutarConectorAsync(string codigo, EjecutarConectorRequest request, int currentUserId, string ip);
 }

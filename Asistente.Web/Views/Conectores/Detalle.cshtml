@@ -91,6 +91,39 @@
     </div>
 </div>
 
+<div class="card border-0 mb-4" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+    <div class="card-body">
+        <h6 class="text-white mb-3"><i class="bi bi-play me-2"></i>Ejecutar llamada</h6>
+        <form asp-action="Ejecutar" asp-route-id="@Model.Codigo" method="post" class="row g-2">
+            @Html.AntiForgeryToken()
+            <div class="col-md-4">
+                <input name="operacion" class="form-control form-control-sm" placeholder="Operación (ej. Aviso demo)" />
+            </div>
+            <div class="col-md-4">
+                <input name="recurso" class="form-control form-control-sm" placeholder="Recurso o destinatario" />
+            </div>
+            <div class="col-md-2">
+                <select name="metodo" class="form-select form-select-sm">
+                    <option>GET</option>
+                    <option>POST</option>
+                    <option>PUT</option>
+                    <option>PATCH</option>
+                    <option>DELETE</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-play-fill me-1"></i>Ejecutar</button>
+            </div>
+            <div class="col-md-6">
+                <textarea name="cuerpo" class="form-control form-control-sm" rows="2" placeholder="Cuerpo (texto o JSON)"></textarea>
+            </div>
+            <div class="col-md-6">
+                <textarea name="parametros" class="form-control form-control-sm" rows="2" placeholder="Parámetros, uno por línea: clave=valor (ej. Asunto=Reporte)"></textarea>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="card border-0" style="background:rgba(255,255,255,0.03);border-radius:16px;">
     <div class="card-body p-0">
         <h6 class="text-white p-3 mb-0"><i class="bi bi-journal-text me-2"></i>Auditoría (últimas @auditoria.Count())</h6>

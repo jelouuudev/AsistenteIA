@@ -111,6 +111,12 @@ public class SmtpConnector : IConnector
     private SmtpClient CrearCliente(Connector conector)
     {
         var pickup = Config(conector, "PickupDirectory");
+        if (!string.IsNullOrWhiteSpace(pickup))
+        {
+            // El directorio se pierde en cada reinicio del contenedor: crearlo
+            // si falta, o todo envío falla con "Failure sending mail".
+            try { Directory.CreateDirectory(pickup); } catch { }
+        }
         var cliente = new SmtpClient
         {
             DeliveryMethod = string.IsNullOrWhiteSpace(pickup)
