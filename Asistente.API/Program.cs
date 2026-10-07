@@ -123,7 +123,11 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-if (app.Environment.IsDevelopment())
+// Swagger solo en Development por defecto. Para el stack local de demo y el
+// video de aceptación se puede encender con Swagger__Habilitado=true (ver
+// docker-compose.yml): los endpoints siguen exigiendo JWT igual.
+var swaggerHabilitado = builder.Configuration.GetValue<bool>("Swagger:Habilitado", false);
+if (app.Environment.IsDevelopment() || swaggerHabilitado)
 {
     app.UseSwagger();
     app.UseSwaggerUI();

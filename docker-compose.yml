@@ -91,6 +91,7 @@ services:
       - JwtSettings__SecretKey=${JWT_SECRET}
       - TZ=America/Lima
       - ApiBaseUrl=http://api:5298
+      - Swagger__Habilitado=true
     volumes:
       - C:\AsistenteIA_Documentos:/AsistenteIA_Documentos
     restart: always
