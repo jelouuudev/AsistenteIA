@@ -88,6 +88,7 @@ public class PlanBuilder
         bool quiereRag = false, quiereReporte = false, quiereRiesgo = false;
         bool quiereWorkflow = false, quiereAgregacion = false, requiereAprobacion = false;
         bool quiereConector = false;
+        string? metodoConectorSugerido = null;
 
         var semantica = await ClasificarIntencionesConLLMAsync(objetivo, catalogoTablas, tablasAutorizadas, ct);
         if (semantica != null)
@@ -99,6 +100,7 @@ public class PlanBuilder
             quiereAgregacion = semantica.Agregacion;
             requiereAprobacion = semantica.Aprobacion;
             quiereConector = semantica.Conector;
+            metodoConectorSugerido = semantica.MetodoConector;
 
             if (semantica.Tablas != null && semantica.Tablas.Any())
             {
@@ -549,6 +551,10 @@ public class PlanBuilder
             var conectores = _conectorRepo != null
                 ? await _conectorRepo.GetAllAsync(ct)
                 : new List<Connector>();
+            // El verbo mencionado manda sobre el sugerido por el LLM; ambos pasan
+            // por el set cerrado de EntradaConector.
+            var metodoMencionado = DetectarVerboMencionado(objetivo);
+            var metodoPaso = metodoMencionado ?? metodoConectorSugerido;
             foreach (var codigo in codigosPaso)
             {
                 var elegido = conectores.FirstOrDefault(c =>
@@ -556,7 +562,7 @@ public class PlanBuilder
                 pasos.Add(Paso(ref orden, "Tool", $"Consumir sistema externo: {elegido?.Nombre ?? codigo}", principal.IdAsistente,
                     principal.Nombre, $"Consume el sistema externo '{codigo}' a través del API Gateway.",
                     codigoHerramienta: "GatewayConnectorTool",
-                    entrada: EntradaConector(codigo, objetivo)));
+                    entrada: EntradaConector(codigo, objetivo, metodoPaso)));
             }
         }
         else if (quiereConector)
@@ -881,19 +887,47 @@ public class PlanBuilder
     /// conector que el plan ya resolvió (por similitud o mención) + el objetivo
     /// para la operación. El recurso/método los resuelve la herramienta desde
     /// los defectos del conector (RecursoDefecto/MetodoDefecto/OperacionDefecto):
-    /// el planner nunca inventa rutas.
+    /// el planner nunca inventa rutas. El método sugerido por el LLM solo entra
+    /// si pertenece al set cerrado (GET/POST/PUT/PATCH/DELETE); cualquier otro
+    /// valor se ignora y manda el defecto.
     /// </summary>
-    internal static string EntradaConector(string codigoConector, string objetivo)
+    internal static string EntradaConector(string codigoConector, string objetivo, string? metodoSugerido = null)
     {
         try
         {
             var operacion = objetivo.Length > 900 ? objetivo[..900] : objetivo;
-            return System.Text.Json.JsonSerializer.Serialize(new { conector = codigoConector, operacion });
+            var metodo = MetodosSoportados.Contains((metodoSugerido ?? string.Empty).Trim().ToUpperInvariant())
+                ? metodoSugerido!.Trim().ToUpperInvariant()
+                : null;
+            return metodo == null
+                ? System.Text.Json.JsonSerializer.Serialize(new { conector = codigoConector, operacion })
+                : System.Text.Json.JsonSerializer.Serialize(new { conector = codigoConector, operacion, metodo });
         }
         catch
         {
             return string.Empty;
         }
+    }
+
+    private static readonly HashSet<string> MetodosSoportados = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "GET", "POST", "PUT", "PATCH", "DELETE"
+    };
+
+    /// <summary>
+    /// ¿El objetivo nombra un verbo HTTP como palabra completa ("prueba el verbo
+    /// post")? Set cerrado de PROTOCOLO (5 valores), no vocabulario de dominio:
+    /// igual que los códigos de conector, son tokens del sistema. Manda sobre la
+    /// sugerencia del LLM. "postre" o "posterior" no matchean (\bPOST\b exige
+    /// palabra completa).
+    /// </summary>
+    internal static string? DetectarVerboMencionado(string? objetivo)
+    {
+        if (string.IsNullOrWhiteSpace(objetivo)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(
+            objetivo, @"\b(GET|POST|PUT|PATCH|DELETE)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success ? m.Value.ToUpperInvariant() : null;
     }
 
     private static bool ContainsWord(string texto, string palabra)
@@ -960,6 +994,12 @@ public class PlanBuilder
         /// texto: se empareja contra el catálogo vivo de conectores registrados.
         /// </summary>
         public bool Conector { get; set; }
+        /// <summary>
+        /// Verbo HTTP que sugiere la solicitud para el paso conector, SOLO de este
+        /// set cerrado (GET/POST/PUT/PATCH/DELETE) o null. Se valida al emitir:
+        /// cualquier otro valor se ignora y manda el defecto del conector.
+        /// </summary>
+        public string? MetodoConector { get; set; }
         public List<string> Tablas { get; set; } = new();
         /// <summary>
         /// Sub-consultas independientes en que se divide el objetivo (ramas paralelas).
@@ -1073,7 +1113,7 @@ public class PlanBuilder
                     Rol = RolMensaje.User,
                     Contenido = "Clasifica la siguiente solicitud por su SIGNIFICADO (no por palabras exactas). " +
                         "Responde SOLO este JSON, sin explicaciones: " +
-                        "{\"tablas\":[\"...\"],\"rag\":bool,\"reporte\":bool,\"riesgo\":bool,\"workflow\":bool,\"agregacion\":bool,\"aprobacion\":bool,\"conector\":bool,\"subconsultas\":[\"...\"]}. " +
+                        "{\"tablas\":[\"...\"],\"rag\":bool,\"reporte\":bool,\"riesgo\":bool,\"workflow\":bool,\"agregacion\":bool,\"aprobacion\":bool,\"conector\":bool,\"metodoConector\":\"GET|POST|PUT|PATCH|DELETE|null\",\"subconsultas\":[\"...\"]}. " +
                         "Tablas disponibles en BD: [" + catalogo + "]. " +
                         "En 'tablas' lista SOLO nombres tomados del catálogo de arriba, elegidos por su significado o columnas (ej: si la consulta pide un conteo por cierta dimensión y una tabla del catálogo contiene una columna con esa dimensión, lista esa tabla). " +
                         "rag=true SOLO si pide consultar documentos, políticas, manuales, normativas o archivos de conocimiento (ej: 'resumen del documento interno' → true; 'según el documento cuáles son...' → true). " +
@@ -1085,6 +1125,10 @@ public class PlanBuilder
                         "enviar un correo, consultar o escribir en un CRM/ERP, leer o subir a SharePoint o Microsoft 365, " +
                         "o llamar a un servicio web externo (ej: 'envíame el reporte por correo' → true; " +
                         "'consulta el estado del servicio externo' → true; 'cuántos registros hay' → false). " +
+                        "metodoConector: SOLO si conector=true y la solicitud implica el verbo: " +
+                        "enviar/crear/publicar → POST; actualizar o modificar → PUT (o PATCH si es parcial); " +
+                        "eliminar/borrar → DELETE; consultar/leer/probar → GET o null. " +
+                        "Cualquier otro valor se ignora. Ej: 'prueba el verbo post' → \"POST\". " +
                         "agregacion=pide cifra/cantidad/número/totales/métricas/conteos (ej: 'cuántos registros hay en total' → true). " +
                         "aprobacion=acción sensible o destructiva (eliminar, enviar, pagar, publicar, desactivar, aprobar algo). " +
                         "subconsultas=divide el objetivo en consultas independientes y autocontenidas que pueden ejecutarse en paralelo " +

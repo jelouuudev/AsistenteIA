@@ -48,8 +48,11 @@ public class GatewayConnectorTool : ITool
             string? Defecto(string clave) => conector?.Configuraciones
                 .FirstOrDefault(c => c.Clave.Equals(clave, StringComparison.OrdinalIgnoreCase))?.Valor;
             operacion ??= Defecto("OperacionDefecto");
-            recurso ??= Defecto("RecursoDefecto");
             metodo ??= Defecto("MetodoDefecto") ?? "GET";
+            // Recurso por verbo (RecursoDefecto_POST, ...): un mismo conector
+            // expone rutas distintas por verbo (httpbin: /get vs /post). Sin
+            // clave específica manda el genérico; el planner nunca inventa rutas.
+            recurso ??= Defecto($"RecursoDefecto_{metodo}") ?? Defecto("RecursoDefecto");
             cuerpo ??= Defecto("CuerpoDefecto");
         }
 

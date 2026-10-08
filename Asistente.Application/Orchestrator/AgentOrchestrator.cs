@@ -379,13 +379,16 @@ public class AgentOrchestrator : IAgentOrchestrator
                 if (herramienta == "GatewayConnectorTool")
                 {
                     // Contrato máquina-máquina (PlanBuilder.EntradaConector):
-                    // {"conector","operacion"}. El recurso/método los resuelve la
-                    // herramienta desde los defectos del conector.
-                    var (codigoConector, operacionConector) = ExtraerConectorYOperacion(paso.Entrada);
+                    // {"conector","operacion"} + "metodo" opcional del set cerrado.
+                    // El recurso/método ausentes los resuelve la herramienta desde
+                    // los defectos del conector.
+                    var (codigoConector, operacionConector, metodoConector) = ExtraerConectorOperacionYMetodo(paso.Entrada);
                     if (!string.IsNullOrWhiteSpace(codigoConector))
                         parametros["conector"] = codigoConector;
                     parametros["operacion"] = string.IsNullOrWhiteSpace(operacionConector)
                         ? plan.Objetivo : operacionConector;
+                    if (!string.IsNullOrWhiteSpace(metodoConector))
+                        parametros["metodo"] = metodoConector;
                 }
                 else if (herramienta == "ReportTool")
                 {
@@ -1110,25 +1113,28 @@ public class AgentOrchestrator : IAgentOrchestrator
 
     /// <summary>
     /// Lee el contrato del paso conector (PlanBuilder.EntradaConector):
-    /// {"conector","operacion"}. Sin JSON o sin código devuelve nulos y la
-    /// herramienta informa el parámetro faltante (no se inventa nada).
+    /// {"conector","operacion"} más "metodo" opcional del set cerrado. Sin JSON
+    /// o sin código devuelve nulos y la herramienta informa el parámetro
+    /// faltante (no se inventa nada).
     /// </summary>
-    internal static (string? Codigo, string? Operacion) ExtraerConectorYOperacion(string? entrada)
+    internal static (string? Codigo, string? Operacion, string? Metodo) ExtraerConectorOperacionYMetodo(string? entrada)
     {
-        if (string.IsNullOrWhiteSpace(entrada)) return (null, null);
+        if (string.IsNullOrWhiteSpace(entrada)) return (null, null, null);
         var texto = entrada.Trim();
-        if (!texto.StartsWith('{')) return (null, null);
+        if (!texto.StartsWith('{')) return (null, null, null);
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(texto);
-            string? codigo = null, operacion = null;
+            string? codigo = null, operacion = null, metodo = null;
             if (doc.RootElement.TryGetProperty("conector", out var c))
                 codigo = c.GetString();
             if (doc.RootElement.TryGetProperty("operacion", out var o))
                 operacion = o.GetString();
-            return (string.IsNullOrWhiteSpace(codigo) ? null : codigo.Trim(), operacion);
+            if (doc.RootElement.TryGetProperty("metodo", out var m))
+                metodo = m.GetString();
+            return (string.IsNullOrWhiteSpace(codigo) ? null : codigo.Trim(), operacion, metodo);
         }
-        catch { return (null, null); }
+        catch { return (null, null, null); }
     }
 
     /// <summary>

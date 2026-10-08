@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Application.Orchestrator;
 using Asistente.Application.Orchestrator.Planner;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
@@ -218,5 +219,40 @@ public class PlanBuilderConectorTests
         Assert.Equal("X", doc.RootElement.GetProperty("conector").GetString());
         Assert.Contains("haz algo", doc.RootElement.GetProperty("operacion").GetString());
         Assert.False(doc.RootElement.TryGetProperty("recurso", out _));
+        Assert.False(doc.RootElement.TryGetProperty("metodo", out _));
+    }
+
+    [Fact]
+    public void EntradaConector_MetodoSoloDelSetCerrado()
+    {
+        using var post = JsonDocument.Parse(PlanBuilder.EntradaConector("X", "prueba el verbo post", "POST"));
+        Assert.Equal("POST", post.RootElement.GetProperty("metodo").GetString());
+
+        // Cualquier otro valor se ignora: manda el defecto del conector.
+        using var raro = JsonDocument.Parse(PlanBuilder.EntradaConector("X", "haz algo", "PURGE"));
+        Assert.False(raro.RootElement.TryGetProperty("metodo", out _));
+        using var nulo = JsonDocument.Parse(PlanBuilder.EntradaConector("X", "haz algo", null));
+        Assert.False(nulo.RootElement.TryGetProperty("metodo", out _));
+    }
+
+    [Fact]
+    public void DetectarVerboMencionado_SoloPalabraCompletaDelSet()
+    {
+        Assert.Equal("POST", PlanBuilder.DetectarVerboMencionado("prueba el verbo post usando HTTPBIN"));
+        Assert.Equal("DELETE", PlanBuilder.DetectarVerboMencionado("elimina con delete el registro"));
+        Assert.Null(PlanBuilder.DetectarVerboMencionado("cuentame del postre de hoy"));
+        Assert.Null(PlanBuilder.DetectarVerboMencionado("consulta el estado"));
+        Assert.Null(PlanBuilder.DetectarVerboMencionado(null));
+    }
+
+    [Fact]
+    public void ExtraerConectorOperacionYMetodo_LeeElContrato()
+    {
+        var (codigo, operacion, metodo) = AgentOrchestrator.ExtraerConectorOperacionYMetodo(
+            """{"conector":"HTTPBIN","operacion":"probar post","metodo":"POST"}""");
+
+        Assert.Equal("HTTPBIN", codigo);
+        Assert.Equal("probar post", operacion);
+        Assert.Equal("POST", metodo);
     }
 }

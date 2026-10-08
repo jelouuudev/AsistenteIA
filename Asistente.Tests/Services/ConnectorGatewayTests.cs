@@ -716,6 +716,35 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task GatewayConnectorTool_RecursoPorVerbo_MandaSobreElGenerico()
+    {
+        var repo = new Mock<IConnectorRepository>();
+        var conector = ConectorRest("H");
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "RecursoDefecto", Valor = "get" });
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "RecursoDefecto_POST", Valor = "post" });
+        repo.Setup(r => r.GetByCodigoAsync("H", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(conector);
+        var gw = new Mock<IConnectorGateway>();
+        gw.Setup(g => g.EjecutarAsync(It.IsAny<ConnectorRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConnectorResult { Exitoso = true, Contenido = "ok" });
+        var tool = new GatewayConnectorTool(gw.Object, repo.Object);
+
+        await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            HerramientaCodigo = "GatewayConnectorTool",
+            Parametros = new Dictionary<string, object?>
+                { ["conector"] = "H", ["metodo"] = "POST" },
+            IdUsuario = 1
+        });
+
+        gw.Verify(g => g.EjecutarAsync(
+            It.Is<ConnectorRequest>(q => q.Recurso == "post" && q.Metodo == "POST"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task GatewayConnectorTool_DelegaEnElGateway()
     {
         var gw = new Mock<IConnectorGateway>();
