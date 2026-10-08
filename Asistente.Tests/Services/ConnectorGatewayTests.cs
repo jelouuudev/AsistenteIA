@@ -692,6 +692,8 @@ public class ConnectorGatewayTests
             { Clave = "RecursoDefecto", Valor = "api/health" });
         conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
             { Clave = "MetodoDefecto", Valor = "GET" });
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "CuerpoDefecto", Valor = """{"ping":true}""" });
         repo.Setup(r => r.GetByCodigoAsync("API_DEMO", It.IsAny<CancellationToken>()))
             .ReturnsAsync(conector);
         var gw = new Mock<IConnectorGateway>();
@@ -708,7 +710,8 @@ public class ConnectorGatewayTests
 
         Assert.True(r.Exitoso);
         gw.Verify(g => g.EjecutarAsync(
-            It.Is<ConnectorRequest>(q => q.Recurso == "api/health" && q.Metodo == "GET"),
+            It.Is<ConnectorRequest>(q => q.Recurso == "api/health" && q.Metodo == "GET"
+                && q.Cuerpo == """{"ping":true}"""),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

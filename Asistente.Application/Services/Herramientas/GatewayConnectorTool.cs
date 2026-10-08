@@ -41,7 +41,8 @@ public class GatewayConnectorTool : ITool
         var operacion = Valor(parametros, "operacion");
         var recurso = Valor(parametros, "recurso");
         var metodo = Valor(parametros, "metodo");
-        if (string.IsNullOrWhiteSpace(recurso) || string.IsNullOrWhiteSpace(metodo) || string.IsNullOrWhiteSpace(operacion))
+        var cuerpo = Valor(parametros, "cuerpo");
+        if (string.IsNullOrWhiteSpace(recurso) || string.IsNullOrWhiteSpace(metodo) || string.IsNullOrWhiteSpace(operacion) || string.IsNullOrWhiteSpace(cuerpo))
         {
             var conector = await _repo.GetByCodigoAsync(codigo, cancellationToken);
             string? Defecto(string clave) => conector?.Configuraciones
@@ -49,6 +50,7 @@ public class GatewayConnectorTool : ITool
             operacion ??= Defecto("OperacionDefecto");
             recurso ??= Defecto("RecursoDefecto");
             metodo ??= Defecto("MetodoDefecto") ?? "GET";
+            cuerpo ??= Defecto("CuerpoDefecto");
         }
 
         var resultado = await _gateway.EjecutarAsync(new ConnectorRequest
@@ -57,7 +59,7 @@ public class GatewayConnectorTool : ITool
             Operacion = operacion ?? string.Empty,
             Recurso = recurso,
             Metodo = metodo ?? "GET",
-            Cuerpo = Valor(parametros, "cuerpo"),
+            Cuerpo = cuerpo,
             TipoContenido = Valor(parametros, "tipoContenido"),
             IdUsuario = request.IdUsuario,
             IdAsistente = request.IdAsistente
