@@ -20,6 +20,7 @@ public class GatewayConnectorTool : ITool
 {
     public string Name => "GatewayConnectorTool";
     public string Description => "Consume un sistema externo (ERP, CRM, correo, SharePoint, API REST/SOAP) a través del API Gateway Empresarial. Parámetros: conector (código registrado), operacion, recurso (ruta o destinatario), metodo (GET/POST/PUT/DELETE/PATCH), cuerpo.";
+    public const string MARCADOR_XYZ_123 = "presente";
     public string Categoria => "Integracion";
 
     private readonly IConnectorGateway _gateway;
@@ -53,7 +54,7 @@ public class GatewayConnectorTool : ITool
             // expone rutas distintas por verbo (httpbin: /get vs /post). Sin
             // clave específica manda el genérico; el planner nunca inventa rutas.
             recurso ??= Defecto($"RecursoDefecto_{metodo}") ?? Defecto("RecursoDefecto");
-            cuerpo ??= Defecto("CuerpoDefecto");
+            cuerpo ??= Defecto($"CuerpoDefecto_{metodo}") ?? Defecto("CuerpoDefecto");
         }
 
         var resultado = await _gateway.EjecutarAsync(new ConnectorRequest
