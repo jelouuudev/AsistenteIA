@@ -311,4 +311,24 @@ public class ReportToolTotalesPorTablaTests
         Assert.Contains("## Datos obtenidos", r);
         Assert.Contains("- status: ok", r);
     }
+
+    [Fact]
+    public void ResumenDocumental_JsonEntremezclado_SeRenderizaComoDatos()
+    {
+        // Plan #2015: prosa RAG + JSON del conector en el mismo insumo. El JSON
+        // salía pegado en crudo al final; ahora va como "## Datos obtenidos".
+        var datos = string.Join("\n", new[]
+        {
+            "Según **ejemplo** (ejemplo):",
+            "Un documento PDF puede contener elementos interactivos. [Fuente: ejemplo]",
+            "{\"status\":\"ok\",\"checks\":{\"database\":\"ok\"}}"
+        });
+
+        var r = ReportTool.GenerarResumenEjecutivo(datos, "Resultado final");
+
+        Assert.Contains("## Datos obtenidos", r);
+        Assert.Contains("- status: ok", r);
+        Assert.Contains("database: ok", r);
+        Assert.DoesNotContain("{\"status\":\"ok\"", r);
+    }
 }

@@ -541,6 +541,24 @@ public class AgentOrchestrator : IAgentOrchestrator
                 return new ResultadoPasoOrquestado { Exito = true, Resultado = entregaEstructurada, TiempoMs = Transcurrido() };
             }
 
+            // ENTREGA DETERMINISTA DE JSON (plan #2014): si el paso es la entrega
+            // final y el contexto trae un JSON sustantivo (p. ej. la respuesta de
+            // un conector), se presenta tal cual con FormatearResumenJson en vez
+            // de pedirle al LLM que lo presente: el modelo pequeño se negaba
+            // ("no se dispone de información detallada...") teniendo los datos en
+            // la mano. Solo para la entrega (plantilla propia "Entregar..."): los
+            // demás pasos Agent siguen al LLM para no cortocircuitar análisis.
+            if (EsPasoEntrega(paso.Nombre))
+            {
+                var jsonEntrega = ReportTool.TryExtraerJson(contextoPrevio ?? string.Empty);
+                if (jsonEntrega.HasValue && ReportTool.EsJsonSustantivo(jsonEntrega.Value))
+                {
+                    var entregaJson = ReportTool.FormatearResumenJson(jsonEntrega.Value, "Resultado final");
+                    _logger.LogInformation("Orchestrator: entrega JSON determinista sin LLM ({Len} caracteres).", entregaJson.Length);
+                    return new ResultadoPasoOrquestado { Exito = true, Resultado = entregaJson, TiempoMs = Transcurrido() };
+                }
+            }
+
             // El contexto previo acumula todos los pasos (filas + reportes) y en CPU
             // el thinking supera el timeout. Se conserva la COLA (lo más reciente =
             // el reporte consolidado, que ya incluye totales y filas): estructural,
@@ -669,6 +687,14 @@ public class AgentOrchestrator : IAgentOrchestrator
         if (!tieneSustancia) return null;
         return reporte;
     }
+
+    /// <summary>¿Es el paso de entrega final? Plantilla propia del PlanBuilder
+    /// ("Entregar resultado final al usuario"), igual que EsPasoDeRiesgo: se
+    /// deriva del nombre que el propio sistema genera, nunca del lenguaje
+    /// del usuario.</summary>
+    internal static bool EsPasoEntrega(string? nombre)
+        => !string.IsNullOrWhiteSpace(nombre)
+            && nombre.Contains("entregar", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>¿Es un paso de clasificación de riesgo? Plantilla propia del
     /// PlanBuilder ("Clasificar por nivel de riesgo"), igual que ExtraerModoPaso:

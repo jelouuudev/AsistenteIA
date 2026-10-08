@@ -1,4 +1,5 @@
-﻿using Asistente.Application.Orchestrator;
+using Asistente.Application.Orchestrator;
+using Asistente.Application.Services.Herramientas;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Moq;
@@ -361,5 +362,41 @@ public class GroundajeRiesgoTests
             "- [ALTO] hecho: 2,723.50 comprometida en un solo pago", ctx);
 
         Assert.Contains("2,723.50", r);
+    }
+}
+/// <summary>
+/// La entrega final no debe negarse teniendo datos (#2014: el LLM dijo "no se
+/// dispone de información" con el JSON del conector en el contexto). Solo la
+/// plantilla propia de entrega usa la vía determinista; el resto sigue al LLM.
+/// </summary>
+public class PasoEntregaTests
+{
+    [Theory]
+    [InlineData("Entregar resultado final al usuario", true)]
+    [InlineData("ENTREGAR RESULTADO FINAL AL USUARIO", true)]
+    [InlineData("Clasificar por nivel de riesgo", false)]
+    [InlineData("Analizar resultados y calcular indicadores", false)]
+    [InlineData(null, false)]
+    public void EsPasoEntrega_SoloPlantillaPropia(string? nombre, bool esperado)
+    {
+        Assert.Equal(esperado, AgentOrchestrator.EsPasoEntrega(nombre));
+    }
+
+    [Fact]
+    public void EsJsonSustantivo_ObjetoConDatos()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse("""{"status":"ok"}""");
+        Assert.True(ReportTool.EsJsonSustantivo(doc.RootElement));
+    }
+
+    [Fact]
+    public void EsJsonSustantivo_Vacio_NoSustantivo()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse("""{"a":{}}""");
+        Assert.True(ReportTool.EsJsonSustantivo(doc.RootElement));
+        using var vacio = System.Text.Json.JsonDocument.Parse("""{}""");
+        Assert.False(ReportTool.EsJsonSustantivo(vacio.RootElement));
+        using var arr = System.Text.Json.JsonDocument.Parse("""[]""");
+        Assert.False(ReportTool.EsJsonSustantivo(arr.RootElement));
     }
 }

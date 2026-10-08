@@ -809,6 +809,18 @@ public class ReportTool : ITool
         sb.AppendLine();
         sb.AppendLine($"_Generado: {DateTime.Now:dd/MM/yyyy HH:mm}_");
         sb.AppendLine();
+        sb.Append(FormatearCuerpoJson(json));
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Cuerpo reutilizable ("## Datos obtenidos" + contenido) para incrustar un
+    /// JSON dentro de otro resumen (p. ej. el documental cuando el insumo trae
+    /// prosa RAG + respuesta de conector, plan #2015).
+    /// </summary>
+    internal static string FormatearCuerpoJson(System.Text.Json.JsonElement json)
+    {
+        var sb = new System.Text.StringBuilder();
         sb.AppendLine("## Datos obtenidos");
         sb.AppendLine();
 
@@ -881,6 +893,18 @@ public class ReportTool : ITool
         };
         return texto.Length > 200 ? texto[..200] + "…" : texto;
     }
+
+    /// <summary>
+    /// ¿El JSON trae contenido sustantivo (objeto con propiedades o arreglo no
+    /// vacío)? Evita presentar un "{}" o "[]" como si fuera un resultado.
+    /// </summary>
+    internal static bool EsJsonSustantivo(System.Text.Json.JsonElement json)
+        => json.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.Object => json.EnumerateObject().Any(),
+            System.Text.Json.JsonValueKind.Array => json.GetArrayLength() > 0,
+            _ => false
+        };
 
     /// <summary>
     /// ¿El texto trae marcadores propios de resultados (SQL, RAG o contrato)?
@@ -980,10 +1004,23 @@ public class ReportTool : ITool
         }
 
         var sinDatos = false;
+        // JSON de conectores entremezclado con la prosa (plan #2015: RAG + health
+        // en el mismo insumo): no es prosa documental y pegarlo en crudo al final
+        // arruina el informe. Se aparta y se renderiza como datos al cierre.
+        string? lineaJson = null;
         foreach (var raw in datos.Split('\n'))
         {
             var linea = raw.TrimEnd();
             var t = linea.Trim();
+            if ((t.StartsWith('{') || t.StartsWith('[')) && lineaJson == null)
+            {
+                var posible = TryExtraerJson(t);
+                if (posible.HasValue && EsJsonSustantivo(posible.Value))
+                {
+                    lineaJson = t;
+                    continue;
+                }
+            }
             if (t.StartsWith(ContratoResultado.PrefijoSinDatos, StringComparison.Ordinal)) { sinDatos = true; continue; }
             if (t.StartsWith("===") || t.StartsWith("INSTRUCCIÓN:")
                 || t.StartsWith("- Copia") || t.StartsWith("- NO")
@@ -991,6 +1028,11 @@ public class ReportTool : ITool
                 || t.StartsWith("Sección detectada:")) continue;
             if (t == "---") { sb.AppendLine(); continue; }
             sb.AppendLine(linea);
+        }
+        if (lineaJson != null && TryExtraerJson(lineaJson) is { } jsonSustantivo)
+        {
+            sb.AppendLine();
+            sb.Append(FormatearCuerpoJson(jsonSustantivo));
         }
         if (sinDatos)
         {
