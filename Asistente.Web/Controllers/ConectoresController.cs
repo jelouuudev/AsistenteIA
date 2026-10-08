@@ -76,7 +76,7 @@ public class ConectoresController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Crear(CrearConectorRequest request,
         string? baseUrl, string? recursoDefecto, string? metodoDefecto, string? tipoCredencial,
-        string? nombreUsuario, string? secreto)
+        string? nombreUsuario, string? secreto, string? configExtra)
     {
         try
         {
@@ -96,6 +96,21 @@ public class ConectoresController : Controller
                 request.Configuracion["RecursoDefecto"] = recursoDefecto.Trim();
             if (!string.IsNullOrWhiteSpace(metodoDefecto))
                 request.Configuracion["MetodoDefecto"] = metodoDefecto.Trim();
+            // Claves libres (una por línea "Clave=Valor"): recursos/cuerpos por
+            // verbo y demás claves propias del tipo. Pisan si repiten clave.
+            if (!string.IsNullOrWhiteSpace(configExtra))
+            {
+                foreach (var linea in configExtra.Split('\n'))
+                {
+                    var i = linea.IndexOf('=');
+                    if (i > 0)
+                    {
+                        var clave = linea[..i].Trim();
+                        if (!string.IsNullOrEmpty(clave))
+                            request.Configuracion[clave] = linea[(i + 1)..].Trim();
+                    }
+                }
+            }
             if (!string.IsNullOrWhiteSpace(tipoCredencial) && tipoCredencial != "None")
                 request.Credencial = new CrearCredencialRequest
                 {

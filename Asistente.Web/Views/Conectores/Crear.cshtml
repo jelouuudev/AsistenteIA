@@ -63,6 +63,11 @@
                 <option>DELETE</option>
             </select>
         </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Configuración extra (una por línea: <code>Clave=Valor</code>)</label>
+            <textarea name="configExtra" class="form-control form-control-sm" rows="3" placeholder="RecursoDefecto_POST=post&#10;CuerpoDefecto_POST={&#34;demo&#34;:&#34;etapa20&#34;}"></textarea>
+            <div class="form-text">Para claves por verbo u otras propias del tipo (SoapActionPrefijo, SiteUrl, TokenUrl, ApiKeyHeader...). Pisan a los campos de arriba si repiten clave.</div>
+        </div>
         <div class="col-12"><hr class="border-secondary" /><h6 class="text-white">Credencial</h6></div>
         <div class="col-md-4">
             <label class="form-label text-secondary">Tipo</label>
