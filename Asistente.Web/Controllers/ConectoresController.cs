@@ -155,4 +155,45 @@ public class ConectoresController : Controller
         catch (System.Exception ex) { TempData["ErrorMessage"] = $"Error: {ex.Message}"; }
         return RedirectToAction(nameof(Detalle), new { id });
     }
+
+    [HttpGet]
+    public async Task<IActionResult> Editar(string id)
+    {
+        var conector = await _apiService.GetConectorAsync(id, UsuarioId(), Ip());
+        if (conector == null)
+        {
+            TempData["ErrorMessage"] = $"No existe el conector '{id}'.";
+            return RedirectToAction(nameof(Index));
+        }
+        ViewBag.ConfigTexto = string.Join("\n",
+            conector.Configuracion.Select(kv => $"{kv.Key}={kv.Value}"));
+        return View(conector);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Editar(string id, string? configTexto)
+    {
+        try
+        {
+            var dict = new System.Collections.Generic.Dictionary<string, string>();
+            if (!string.IsNullOrWhiteSpace(configTexto))
+            {
+                foreach (var linea in configTexto.Split('\n'))
+                {
+                    var i = linea.IndexOf('=');
+                    if (i > 0)
+                    {
+                        var clave = linea[..i].Trim();
+                        if (!string.IsNullOrEmpty(clave))
+                            dict[clave] = linea[(i + 1)..].Trim();
+                    }
+                }
+            }
+            await _apiService.ActualizarConfiguracionAsync(id, dict, UsuarioId(), Ip());
+            TempData["OkMessage"] = "Configuración actualizada. Rige para próximas ejecuciones.";
+        }
+        catch (System.Exception ex) { TempData["ErrorMessage"] = $"Error: {ex.Message}"; }
+        return RedirectToAction(nameof(Detalle), new { id });
+    }
 }

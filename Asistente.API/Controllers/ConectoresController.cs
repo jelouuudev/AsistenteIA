@@ -58,6 +58,15 @@ public class ConectoresController : ControllerBase
         catch (System.Exception ex) { return BadRequest(ex.Message); }
     }
 
+    [HttpPut("{codigo}/configuracion")]
+    public async Task<ActionResult> CambiarConfiguracion(string codigo,
+        [FromBody] System.Collections.Generic.Dictionary<string, string> configuracion, CancellationToken ct)
+    {
+        try { return Ok(await _service.ActualizarConfiguracionAsync(codigo, configuracion ?? new(), ct)); }
+        catch (System.Collections.Generic.KeyNotFoundException) { return NotFound($"No existe el conector '{codigo}'."); }
+        catch (System.Exception ex) { return BadRequest(ex.Message); }
+    }
+
     [HttpPost("{codigo}/habilitar")]
     public async Task<ActionResult> Habilitar(string codigo, CancellationToken ct)
     {

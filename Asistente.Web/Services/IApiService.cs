@@ -295,6 +295,7 @@ public interface IApiService
     Task<ConectorDto> RegistrarConectorAsync(CrearConectorRequest request, int currentUserId, string ip);
     Task<(bool Ok, string? Error)> ProbarConectorAsync(string codigo, int currentUserId, string ip);
     Task CambiarEstadoConectorAsync(string codigo, bool activo, int currentUserId, string ip);
+    Task ActualizarConfiguracionAsync(string codigo, Dictionary<string, string> configuracion, int currentUserId, string ip);
     Task<ConnectorMetricas> GetConectorMetricasAsync(int id, int currentUserId, string ip);
     Task<IEnumerable<ConectorEjecucionDto>> GetConectorAuditoriaAsync(int id, int currentUserId, string ip);
 

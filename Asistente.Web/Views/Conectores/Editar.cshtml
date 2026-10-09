@@ -1,0 +1,26 @@
+@model Asistente.Shared.ConectorDto
+@{
+    ViewData["Title"] = $"Editar {Model.Codigo}";
+    var configTexto = ViewBag.ConfigTexto as string ?? string.Empty;
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-pencil me-2" style="color:#818cf8;"></i>Editar configuración · <code>@Model.Codigo</code></h4>
+    <p class="text-secondary small mb-0">Mezcla por clave: lo enviado crea o reemplaza, lo demás queda intacto. Rige para próximas ejecuciones. Los secretos no están aquí (van por <em>cambiar credencial</em> en el API).</p>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+}
+
+<form asp-action="Editar" asp-route-id="@Model.Codigo" method="post" class="card border-0 p-4" style="background:rgba(255,255,255,0.03);border-radius:16px;max-width:720px;">
+    @Html.AntiForgeryToken()
+    <label class="form-label text-secondary">Configuración (una por línea: <code>Clave=Valor</code>)</label>
+    <textarea name="configTexto" class="form-control font-monospace" rows="12">@configTexto</textarea>
+    <div class="form-text mb-3">Ejemplos: <code>RecursoDefecto=posts/1</code>, <code>RecursoDefecto_POST=posts</code>, <code>CuerpoDefecto_POST={"demo":"etapa20"}</code>. Para quitar una clave hay que pedirlo (no se borra desde aquí).</div>
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <a asp-action="Detalle" asp-route-id="@Model.Codigo" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+</form>

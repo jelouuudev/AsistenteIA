@@ -1578,4 +1578,8 @@ public class ApiService : IApiService
     public async Task<IEnumerable<ConectorEjecucionDto>> GetConectorAuditoriaAsync(int id, int currentUserId, string ip)
         => await EnviarYLeerAsync<IEnumerable<ConectorEjecucionDto>>(
             CrearRequest(HttpMethod.Get, $"/api/conectores/{id}/auditoria?tope=100", null, currentUserId, ip));
+
+    public async Task ActualizarConfiguracionAsync(string codigo, Dictionary<string, string> configuracion, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(
+            CrearRequest(HttpMethod.Put, $"/api/conectores/{codigo}/configuracion", configuracion, currentUserId, ip));
 }

@@ -19,6 +19,7 @@
             @Html.AntiForgeryToken()
             <button type="submit" class="btn btn-outline-info btn-sm"><i class="bi bi-lightning me-1"></i>Probar conexión</button>
         </form>
+        <a asp-action="Editar" asp-route-id="@Model.Codigo" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil me-1"></i>Editar config</a>
         <form asp-action="CambiarEstado" asp-route-id="@Model.Codigo" method="post" class="d-inline">
             @Html.AntiForgeryToken()
             <input type="hidden" name="activo" value="@((!Model.Activo).ToString().ToLower())" />

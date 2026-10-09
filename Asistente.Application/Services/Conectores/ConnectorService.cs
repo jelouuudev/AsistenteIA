@@ -108,6 +108,38 @@ public class ConnectorService
         await _repo.UpdateAsync(conector, ct);
     }
 
+    /// <summary>
+    /// Actualiza la configuración no secreta por mezcla (upsert por clave): las
+    /// claves enviadas se crean o reemplazan, las demás quedan intactas. No toca
+    /// credenciales (van por ActualizarCredencialAsync) ni borra claves: para
+    /// quitar una se usa SQL. Todo cambio rige para próximas ejecuciones.
+    /// </summary>
+    public async Task<ConectorDto> ActualizarConfiguracionAsync(
+        string codigo, Dictionary<string, string> configuracion, CancellationToken ct = default)
+    {
+        var conector = await _repo.GetByCodigoAsync(codigo, ct)
+            ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'.");
+        foreach (var kv in configuracion)
+        {
+            if (string.IsNullOrWhiteSpace(kv.Key)) continue;
+            var clave = kv.Key.Trim();
+            var existente = conector.Configuraciones.FirstOrDefault(c =>
+                c.Clave.Equals(clave, StringComparison.OrdinalIgnoreCase));
+            if (existente != null)
+                existente.Valor = kv.Value;
+            else
+                conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+                {
+                    Clave = clave,
+                    Valor = kv.Value,
+                    FechaRegistro = DateTime.UtcNow
+                });
+        }
+        await _repo.UpdateAsync(conector, ct);
+        return ADto(await _repo.GetByCodigoAsync(codigo, ct)
+            ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'."));
+    }
+
     public async Task<(bool Ok, string? Error)> ProbarConexionAsync(string codigo, CancellationToken ct = default)
     {
         var conector = await _repo.GetByCodigoAsync(codigo, ct)

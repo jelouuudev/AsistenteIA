@@ -613,6 +613,36 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task ConnectorService_ActualizarConfiguracion_MezclaSinBorrar()
+    {
+        var repo = new RepoMemoria();
+        var exec = new ExecMemoria();
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var servicio = new ConnectorService(repo, exec, cifrador,
+            new IConnector[] { new RestConnector(estado, cifrador, NullLogger<RestConnector>.Instance) });
+        await servicio.RegistrarAsync(new CrearConectorRequest
+        {
+            Codigo = "CFG", Nombre = "CFG", Tipo = "REST",
+            Configuracion = new Dictionary<string, string>
+                { ["BaseUrl"] = "https://a", ["RecursoDefecto"] = "x" }
+        });
+
+        var dto = await servicio.ActualizarConfiguracionAsync("CFG",
+            new Dictionary<string, string>
+            {
+                ["RecursoDefecto"] = "y",
+                ["RecursoDefecto_POST"] = "z"
+            });
+
+        Assert.Equal("y", dto.Configuracion["RecursoDefecto"]);
+        Assert.Equal("z", dto.Configuracion["RecursoDefecto_POST"]);
+        Assert.Equal("https://a", dto.Configuracion["BaseUrl"]);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            servicio.ActualizarConfiguracionAsync("NOPE", new Dictionary<string, string>()));
+    }
+
+    [Fact]
     public async Task ConnectorService_Registrar_ValidaTipoYCifraSecreto()
     {
         var repo = new RepoMemoria();
