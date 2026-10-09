@@ -664,6 +664,33 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task ConnectorService_ActualizarCredencial_SinSecreto_ConservaYCambiaTipoUsuario()
+    {
+        // Bug real: cambiar solo usuario/tipo (secreto vacío) se ignoraba entero.
+        var repo = new RepoMemoria();
+        var exec = new ExecMemoria();
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var servicio = new ConnectorService(repo, exec, cifrador,
+            new IConnector[] { new RestConnector(estado, cifrador, NullLogger<RestConnector>.Instance) });
+        await servicio.RegistrarAsync(new CrearConectorRequest
+        {
+            Codigo = "CU", Nombre = "CU", Tipo = "REST",
+            Credencial = new CrearCredencialRequest
+                { Tipo = "Basic", NombreUsuario = "demo", Secreto = "clave123" }
+        });
+
+        var dto = await servicio.ActualizarCredencialAsync("CU",
+            new CrearCredencialRequest { Tipo = "Basic", NombreUsuario = "otro" });
+
+        var guardado = await repo.GetByCodigoAsync("CU");
+        var cred = Assert.Single(guardado!.Credenciales);
+        Assert.Equal("otro", cred.NombreUsuario);
+        Assert.Equal("clave123", cifrador.Descifrar(cred.ValorCifrado));
+        Assert.True(dto.TieneCredencial);
+    }
+
+    [Fact]
     public async Task ConnectorService_Registrar_ValidaTipoYCifraSecreto()
     {
         var repo = new RepoMemoria();

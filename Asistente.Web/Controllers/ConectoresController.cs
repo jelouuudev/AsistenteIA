@@ -225,8 +225,10 @@ public class ConectoresController : Controller
                 }
             }
             await _apiService.ActualizarConfiguracionAsync(id, dict, UsuarioId(), Ip());
-            // Credencial: solo si se escribió un secreto nuevo (vacío = no tocar).
-            if (!string.IsNullOrWhiteSpace(secreto) && !string.IsNullOrWhiteSpace(tipoCredencial) && tipoCredencial != "None")
+            // Credencial: se envía siempre que haya tipo distinto de None; con
+            // secreto vacío el servicio conserva el almacenado y solo cambia
+            // tipo/usuario.
+            if (!string.IsNullOrWhiteSpace(tipoCredencial) && tipoCredencial != "None")
                 await _apiService.ActualizarCredencialAsync(id, tipoCredencial, nombreUsuario, secreto, null, UsuarioId(), Ip());
             TempData["OkMessage"] = "Conector actualizado.";
         }

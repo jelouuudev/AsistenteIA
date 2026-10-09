@@ -93,8 +93,20 @@ public class ConnectorService
     {
         var conector = await _repo.GetByCodigoAsync(codigo, ct)
             ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'.");
-        conector.Credenciales.Clear();
-        conector.Credenciales.Add(CrearCredencial(request));
+        // Secreto vacío = conservar el almacenado (solo cambian tipo/usuario).
+        // Antes se ignoraba todo el cambio si no venía secreto nuevo.
+        if (string.IsNullOrWhiteSpace(request.Secreto))
+        {
+            var actual = conector.Credenciales.FirstOrDefault()
+                ?? throw new InvalidOperationException("El conector no tiene credencial que conservar.");
+            actual.Tipo = request.Tipo.Trim();
+            actual.NombreUsuario = request.NombreUsuario;
+        }
+        else
+        {
+            conector.Credenciales.Clear();
+            conector.Credenciales.Add(CrearCredencial(request));
+        }
         await _repo.UpdateAsync(conector, ct);
         return ADto(await _repo.GetByCodigoAsync(codigo, ct)
             ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'."));
