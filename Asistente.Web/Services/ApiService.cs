@@ -1582,4 +1582,14 @@ public class ApiService : IApiService
     public async Task ActualizarConfiguracionAsync(string codigo, Dictionary<string, string> configuracion, int currentUserId, string ip)
         => await EnviarSinRetornoAsync(
             CrearRequest(HttpMethod.Put, $"/api/conectores/{codigo}/configuracion", configuracion, currentUserId, ip));
+
+    public async Task ActualizarDatosConectorAsync(string codigo, string nombre, string? descripcion, bool requierePermiso, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(
+            CrearRequest(HttpMethod.Put, $"/api/conectores/{codigo}",
+                new { nombre, descripcion, requierePermiso }, currentUserId, ip));
+
+    public async Task ActualizarCredencialAsync(string codigo, string tipo, string? nombreUsuario, string? secreto, Dictionary<string, string>? parametros, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(
+            CrearRequest(HttpMethod.Put, $"/api/conectores/{codigo}/credencial",
+                new { tipo, nombreUsuario, secreto, parametros = parametros ?? new Dictionary<string, string>() }, currentUserId, ip));
 }

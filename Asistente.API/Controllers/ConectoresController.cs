@@ -58,6 +58,21 @@ public class ConectoresController : ControllerBase
         catch (System.Exception ex) { return BadRequest(ex.Message); }
     }
 
+    public class ActualizarConectorDatosRequest
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string? Descripcion { get; set; }
+        public bool RequierePermiso { get; set; } = true;
+    }
+
+    [HttpPut("{codigo}")]
+    public async Task<ActionResult> CambiarDatos(string codigo, [FromBody] ActualizarConectorDatosRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _service.ActualizarDatosAsync(codigo, request.Nombre, request.Descripcion, request.RequierePermiso, ct)); }
+        catch (System.Collections.Generic.KeyNotFoundException) { return NotFound($"No existe el conector '{codigo}'."); }
+        catch (System.Exception ex) { return BadRequest(ex.Message); }
+    }
+
     [HttpPut("{codigo}/configuracion")]
     public async Task<ActionResult> CambiarConfiguracion(string codigo,
         [FromBody] System.Collections.Generic.Dictionary<string, string> configuracion, CancellationToken ct)

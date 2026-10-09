@@ -296,6 +296,8 @@ public interface IApiService
     Task<(bool Ok, string? Error)> ProbarConectorAsync(string codigo, int currentUserId, string ip);
     Task CambiarEstadoConectorAsync(string codigo, bool activo, int currentUserId, string ip);
     Task ActualizarConfiguracionAsync(string codigo, Dictionary<string, string> configuracion, int currentUserId, string ip);
+    Task ActualizarDatosConectorAsync(string codigo, string nombre, string? descripcion, bool requierePermiso, int currentUserId, string ip);
+    Task ActualizarCredencialAsync(string codigo, string tipo, string? nombreUsuario, string? secreto, Dictionary<string, string>? parametros, int currentUserId, string ip);
     Task<ConnectorMetricas> GetConectorMetricasAsync(int id, int currentUserId, string ip);
     Task<IEnumerable<ConectorEjecucionDto>> GetConectorAuditoriaAsync(int id, int currentUserId, string ip);
 

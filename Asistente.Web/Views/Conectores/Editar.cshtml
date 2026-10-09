@@ -2,11 +2,17 @@
 @{
     ViewData["Title"] = $"Editar {Model.Codigo}";
     var configTexto = ViewBag.ConfigTexto as string ?? string.Empty;
+    var urlValor = ViewBag.UrlValor as string ?? string.Empty;
+    var recursoDefecto = ViewBag.RecursoDefecto as string ?? string.Empty;
+    var metodoDefecto = ViewBag.MetodoDefecto as string ?? "GET";
+    var tipoCredencial = ViewBag.TipoCredencial as string ?? "None";
+    var metodos = new[] { "GET", "POST", "PUT", "PATCH", "DELETE" };
+    var tiposCred = new[] { "None", "ApiKey", "Basic", "Bearer", "OAuth2" };
 }
 
 <div class="mb-4">
-    <h4 class="text-white fw-bold mb-0"><i class="bi bi-pencil me-2" style="color:#818cf8;"></i>Editar configuración · <code>@Model.Codigo</code></h4>
-    <p class="text-secondary small mb-0">Mezcla por clave: lo enviado crea o reemplaza, lo demás queda intacto. Rige para próximas ejecuciones. Los secretos no están aquí (van por <em>cambiar credencial</em> en el API).</p>
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-pencil me-2" style="color:#818cf8;"></i>Editar conector</h4>
+    <p class="text-secondary small mb-0">Mismo formulario que al crear, con los valores actuales. El código (<code>@Model.Codigo</code>) y el tipo (<code>@Model.Tipo</code>) no se cambian.</p>
 </div>
 
 @if (TempData["ErrorMessage"] != null)
@@ -16,11 +22,70 @@
 
 <form asp-action="Editar" asp-route-id="@Model.Codigo" method="post" class="card border-0 p-4" style="background:rgba(255,255,255,0.03);border-radius:16px;max-width:720px;">
     @Html.AntiForgeryToken()
-    <label class="form-label text-secondary">Configuración (una por línea: <code>Clave=Valor</code>)</label>
-    <textarea name="configTexto" class="form-control font-monospace" rows="12">@configTexto</textarea>
-    <div class="form-text mb-3">Ejemplos: <code>RecursoDefecto=posts/1</code>, <code>RecursoDefecto_POST=posts</code>, <code>CuerpoDefecto_POST={"demo":"etapa20"}</code>. Para quitar una clave hay que pedirlo (no se borra desde aquí).</div>
-    <div class="d-flex gap-2">
-        <button type="submit" class="btn btn-primary">Guardar</button>
-        <a asp-action="Detalle" asp-route-id="@Model.Codigo" class="btn btn-outline-secondary">Cancelar</a>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label text-secondary">Código (fijo)</label>
+            <input class="form-control" value="@Model.Codigo" disabled />
+        </div>
+        <div class="col-md-6">
+            <label class="form-label text-secondary">Tipo (fijo)</label>
+            <input class="form-control" value="@Model.Tipo" disabled />
+        </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Nombre *</label>
+            <input name="nombre" class="form-control" value="@Model.Nombre" required />
+        </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Descripción</label>
+            <input name="descripcion" class="form-control" value="@Model.Descripcion" />
+        </div>
+        <div class="col-12 form-check ms-2">
+            <input name="requierePermiso" type="checkbox" value="true" class="form-check-input" @(Model.RequierePermiso ? "checked" : "") />
+            <label class="form-check-label text-secondary">Requiere permiso CONNECTOR:@Model.Codigo</label>
+        </div>
+        <div class="col-12"><hr class="border-secondary" /><h6 class="text-white">Conexión</h6></div>
+        <div class="col-12">
+            <label class="form-label text-secondary">URL principal</label>
+            <input name="urlValor" class="form-control" value="@urlValor" />
+        </div>
+        <div class="col-md-8">
+            <label class="form-label text-secondary">Recurso por defecto</label>
+            <input name="recursoDefecto" class="form-control" value="@recursoDefecto" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Método</label>
+            <select name="metodoDefecto" class="form-select">
+                @foreach (var m in metodos)
+                {
+                    <option selected="@(m == metodoDefecto)">@m</option>
+                }
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Configuración extra (una por línea: <code>Clave=Valor</code>)</label>
+            <textarea name="configTexto" class="form-control font-monospace" rows="5">@configTexto</textarea>
+        </div>
+        <div class="col-12"><hr class="border-secondary" /><h6 class="text-white">Credencial (vacío = no tocar; actual: @(Model.TipoCredencial ?? "None"))</h6></div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Tipo</label>
+            <select name="tipoCredencial" class="form-select">
+                @foreach (var t in tiposCred)
+                {
+                    <option selected="@(t == tipoCredencial)">@t</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Usuario / ClientId</label>
+            <input name="nombreUsuario" class="form-control" autocomplete="off" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Secreto nuevo</label>
+            <input name="secreto" type="password" class="form-control" autocomplete="new-password" />
+        </div>
+        <div class="col-12 mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+            <a asp-action="Detalle" asp-route-id="@Model.Codigo" class="btn btn-outline-secondary">Cancelar</a>
+        </div>
     </div>
 </form>

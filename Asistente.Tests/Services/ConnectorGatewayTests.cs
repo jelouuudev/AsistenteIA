@@ -643,6 +643,27 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task ConnectorService_ActualizarDatos_CambiaNombreYPermiso()
+    {
+        var repo = new RepoMemoria();
+        var exec = new ExecMemoria();
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var servicio = new ConnectorService(repo, exec, cifrador,
+            new IConnector[] { new RestConnector(estado, cifrador, NullLogger<RestConnector>.Instance) });
+        await servicio.RegistrarAsync(new CrearConectorRequest
+            { Codigo = "D", Nombre = "Viejo", Tipo = "REST" });
+
+        var dto = await servicio.ActualizarDatosAsync("D", "Nuevo", "desc", false);
+
+        Assert.Equal("Nuevo", dto.Nombre);
+        Assert.Equal("desc", (await repo.GetByCodigoAsync("D"))!.Descripcion);
+        Assert.False((await repo.GetByCodigoAsync("D"))!.RequierePermiso);
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            servicio.ActualizarDatosAsync("D", "  ", null, false));
+    }
+
+    [Fact]
     public async Task ConnectorService_Registrar_ValidaTipoYCifraSecreto()
     {
         var repo = new RepoMemoria();

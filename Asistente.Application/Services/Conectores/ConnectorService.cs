@@ -109,6 +109,27 @@ public class ConnectorService
     }
 
     /// <summary>
+    /// Actualiza los datos básicos (nombre, descripción, permiso requerido).
+    /// No toca configuración (ActualizarConfiguracionAsync), credenciales
+    /// (ActualizarCredencialAsync), tipo ni código: esos identifican al conector.
+    /// </summary>
+    public async Task<ConectorDto> ActualizarDatosAsync(
+        string codigo, string nombre, string? descripcion, bool requierePermiso,
+        CancellationToken ct = default)
+    {
+        var conector = await _repo.GetByCodigoAsync(codigo, ct)
+            ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'.");
+        if (string.IsNullOrWhiteSpace(nombre))
+            throw new ArgumentException("El nombre es obligatorio.");
+        conector.Nombre = nombre.Trim();
+        conector.Descripcion = descripcion;
+        conector.RequierePermiso = requierePermiso;
+        await _repo.UpdateAsync(conector, ct);
+        return ADto(await _repo.GetByCodigoAsync(codigo, ct)
+            ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'."));
+    }
+
+    /// <summary>
     /// Actualiza la configuración no secreta por mezcla (upsert por clave): las
     /// claves enviadas se crean o reemplazan, las demás quedan intactas. No toca
     /// credenciales (van por ActualizarCredencialAsync) ni borra claves: para
@@ -202,6 +223,7 @@ public class ConnectorService
             Codigo = c.Codigo,
             Nombre = c.Nombre,
             Tipo = c.Tipo,
+            Descripcion = c.Descripcion,
             Activo = c.Activo,
             RequierePermiso = c.RequierePermiso,
             Configuracion = c.Configuraciones.ToDictionary(x => x.Clave, x => x.Valor),

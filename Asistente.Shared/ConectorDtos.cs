@@ -41,6 +41,7 @@ public class ConectorDto
     public string Codigo { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public string Tipo { get; set; } = string.Empty;
+    public string? Descripcion { get; set; }
     public bool Activo { get; set; }
     public bool RequierePermiso { get; set; }
     public Dictionary<string, string> Configuracion { get; set; } = new();

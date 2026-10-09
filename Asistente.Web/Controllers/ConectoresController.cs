@@ -165,18 +165,52 @@ public class ConectoresController : Controller
             TempData["ErrorMessage"] = $"No existe el conector '{id}'.";
             return RedirectToAction(nameof(Index));
         }
-        ViewBag.ConfigTexto = string.Join("\n",
-            conector.Configuracion.Select(kv => $"{kv.Key}={kv.Value}"));
+        // La URL principal según el tipo (misma regla que al crear) + el resto
+        // como texto libre. Los secretos jamás viajan a la vista.
+        string claveUrl = conector.Tipo switch
+        {
+            "SOAP" => "Endpoint",
+            "SharePoint" => "SiteUrl",
+            "Webhook" => "Url",
+            "SMTP" => "Host",
+            _ => "BaseUrl"
+        };
+        ViewBag.UrlValor = conector.Configuracion.TryGetValue(claveUrl, out var u) ? u : string.Empty;
+        ViewBag.RecursoDefecto = conector.Configuracion.TryGetValue("RecursoDefecto", out var r) ? r : string.Empty;
+        ViewBag.MetodoDefecto = conector.Configuracion.TryGetValue("MetodoDefecto", out var m) ? m : "GET";
+        ViewBag.TipoCredencial = conector.TipoCredencial ?? "None";
+        ViewBag.ConfigTexto = string.Join("\n", conector.Configuracion
+            .Where(kv => kv.Key != claveUrl && kv.Key != "RecursoDefecto" && kv.Key != "MetodoDefecto")
+            .Select(kv => $"{kv.Key}={kv.Value}"));
         return View(conector);
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Editar(string id, string? configTexto)
+    public async Task<IActionResult> Editar(string id, string nombre, string? descripcion,
+        bool requierePermiso, string? urlValor, string? recursoDefecto, string? metodoDefecto,
+        string? tipoCredencial, string? nombreUsuario, string? secreto, string? configTexto)
     {
         try
         {
+            var conector = await _apiService.GetConectorAsync(id, UsuarioId(), Ip());
+            if (conector == null) return NotFound($"No existe el conector '{id}'.");
+            await _apiService.ActualizarDatosConectorAsync(id, nombre, descripcion, requierePermiso, UsuarioId(), Ip());
+            string claveUrl = conector.Tipo switch
+            {
+                "SOAP" => "Endpoint",
+                "SharePoint" => "SiteUrl",
+                "Webhook" => "Url",
+                "SMTP" => "Host",
+                _ => "BaseUrl"
+            };
             var dict = new System.Collections.Generic.Dictionary<string, string>();
+            if (!string.IsNullOrWhiteSpace(urlValor))
+                dict[claveUrl] = urlValor.Trim();
+            if (!string.IsNullOrWhiteSpace(recursoDefecto))
+                dict["RecursoDefecto"] = recursoDefecto.Trim();
+            if (!string.IsNullOrWhiteSpace(metodoDefecto))
+                dict["MetodoDefecto"] = metodoDefecto.Trim();
             if (!string.IsNullOrWhiteSpace(configTexto))
             {
                 foreach (var linea in configTexto.Split('\n'))
@@ -191,7 +225,10 @@ public class ConectoresController : Controller
                 }
             }
             await _apiService.ActualizarConfiguracionAsync(id, dict, UsuarioId(), Ip());
-            TempData["OkMessage"] = "Configuración actualizada. Rige para próximas ejecuciones.";
+            // Credencial: solo si se escribió un secreto nuevo (vacío = no tocar).
+            if (!string.IsNullOrWhiteSpace(secreto) && !string.IsNullOrWhiteSpace(tipoCredencial) && tipoCredencial != "None")
+                await _apiService.ActualizarCredencialAsync(id, tipoCredencial, nombreUsuario, secreto, null, UsuarioId(), Ip());
+            TempData["OkMessage"] = "Conector actualizado.";
         }
         catch (System.Exception ex) { TempData["ErrorMessage"] = $"Error: {ex.Message}"; }
         return RedirectToAction(nameof(Detalle), new { id });
