@@ -236,6 +236,32 @@ public class PlanBuilderConectorTests
     }
 
     [Fact]
+    public async Task VerboEscritura_ExigeAprobacionDeterminista()
+    {
+        // Gobierno: un paso conector con verbo de escritura (POST/PUT/PATCH/
+        // DELETE) exige aprobación humana sin depender del flag del LLM.
+        var builder = Crear(RepoConectores(ConectorDemo()), OllamaCon(false), null);
+
+        var plan = await builder.ConstruirAsync(
+            "crea con el verbo post usando el conector API_DEMO", 1, CancellationToken.None);
+
+        Assert.True(plan.RequiereAprobacion);
+        Assert.Contains(plan.Pasos, p => p.Tipo == "Approval");
+    }
+
+    [Fact]
+    public async Task SoloLectura_NoExigeAprobacion()
+    {
+        var builder = Crear(RepoConectores(ConectorDemo()), OllamaCon(false), null);
+
+        var plan = await builder.ConstruirAsync(
+            "consulta con el verbo get usando el conector API_DEMO", 1, CancellationToken.None);
+
+        Assert.False(plan.RequiereAprobacion);
+        Assert.DoesNotContain(plan.Pasos, p => p.Tipo == "Approval");
+    }
+
+    [Fact]
     public void DetectarVerboMencionado_SoloPalabraCompletaDelSet()
     {
         Assert.Equal("POST", PlanBuilder.DetectarVerboMencionado("prueba el verbo post usando HTTPBIN"));

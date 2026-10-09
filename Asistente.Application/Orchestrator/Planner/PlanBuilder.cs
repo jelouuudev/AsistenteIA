@@ -563,6 +563,18 @@ public class PlanBuilder
                     principal.Nombre, $"Consume el sistema externo '{codigo}' a través del API Gateway.",
                     codigoHerramienta: "GatewayConnectorTool",
                     entrada: EntradaConector(codigo, objetivo, metodoPaso)));
+                // Gobierno: todo verbo de ESCRITURA exige aprobación humana,
+                // sin depender del humor del LLM. Leer (GET) no la pide.
+                var metodoEfectivo = !string.IsNullOrWhiteSpace(metodoPaso) ? metodoPaso
+                    : elegido?.Configuraciones.FirstOrDefault(c =>
+                        c.Clave.Equals("MetodoDefecto", StringComparison.OrdinalIgnoreCase))?.Valor;
+                if (!string.IsNullOrWhiteSpace(metodoEfectivo)
+                    && !metodoEfectivo.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                {
+                    requiereAprobacion = true;
+                    _logger.LogInformation("Planner: paso conector '{Con}' con verbo {Verbo}: requiere aprobación.",
+                        codigo, metodoEfectivo);
+                }
             }
         }
         else if (quiereConector)
