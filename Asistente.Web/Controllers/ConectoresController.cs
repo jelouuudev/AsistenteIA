@@ -205,6 +205,7 @@ public class ConectoresController : Controller
                 _ => "BaseUrl"
             };
             var dict = new System.Collections.Generic.Dictionary<string, string>();
+            int ignoradas = 0;
             if (!string.IsNullOrWhiteSpace(urlValor))
                 dict[claveUrl] = urlValor.Trim();
             if (!string.IsNullOrWhiteSpace(recursoDefecto))
@@ -215,13 +216,16 @@ public class ConectoresController : Controller
             {
                 foreach (var linea in configTexto.Split('\n'))
                 {
+                    if (string.IsNullOrWhiteSpace(linea)) continue;
                     var i = linea.IndexOf('=');
                     if (i > 0)
                     {
                         var clave = linea[..i].Trim();
                         if (!string.IsNullOrEmpty(clave))
                             dict[clave] = linea[(i + 1)..].Trim();
+                        else ignoradas++;
                     }
+                    else ignoradas++;
                 }
             }
             await _apiService.ActualizarConfiguracionAsync(id, dict, UsuarioId(), Ip());
@@ -230,7 +234,9 @@ public class ConectoresController : Controller
             // tipo/usuario.
             if (!string.IsNullOrWhiteSpace(tipoCredencial) && tipoCredencial != "None")
                 await _apiService.ActualizarCredencialAsync(id, tipoCredencial, nombreUsuario, secreto, null, UsuarioId(), Ip());
-            TempData["OkMessage"] = "Conector actualizado.";
+            TempData["OkMessage"] = ignoradas > 0
+                ? $"Conector actualizado. Ojo: {ignoradas} línea(s) sin formato Clave=Valor se ignoraron."
+                : "Conector actualizado.";
         }
         catch (System.Exception ex) { TempData["ErrorMessage"] = $"Error: {ex.Message}"; }
         return RedirectToAction(nameof(Detalle), new { id });
