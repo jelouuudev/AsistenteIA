@@ -216,6 +216,66 @@ public class ConnectorService
     public Task<ConnectorMetricas> MetricasAsync(int idConnector, CancellationToken ct = default)
         => _execRepo.GetMetricasAsync(idConnector, ct);
 
+    /// <summary>
+    /// Receptor entrante de webhooks (ETAPA 20): valida la firma HMAC del cuerpo
+    /// contra el secreto del conector y audita el resultado (Recibido o
+    /// FirmaInvalida). Comparación en tiempo constante para no filtrar por timing.
+    /// Cierra el círculo: nuestros propios envíos se pueden validar aquí.
+    /// </summary>
+    public async Task<(bool Valido, string? Error)> ValidarWebhookAsync(
+        string codigo, string cuerpo, string? firma, CancellationToken ct = default)
+    {
+        var conector = await _repo.GetByCodigoAsync(codigo, ct)
+            ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'.");
+        if (!conector.Tipo.Equals("Webhook", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"El conector '{codigo}' no es de tipo Webhook.");
+        if (!conector.Activo)
+            throw new InvalidOperationException($"El conector '{codigo}' está deshabilitado.");
+
+        string? error = null;
+        var cred = conector.Credenciales.FirstOrDefault();
+        if (cred == null || string.IsNullOrWhiteSpace(firma))
+        {
+            error = cred == null
+                ? "El conector no tiene secreto configurado para validar."
+                : "Falta la cabecera de firma.";
+        }
+        else
+        {
+            var esperado = FirmarHmacLocal(_cifrador.Descifrar(cred.ValorCifrado), cuerpo);
+            var a = System.Text.Encoding.UTF8.GetBytes(esperado);
+            var b = System.Text.Encoding.UTF8.GetBytes(firma.Trim().ToLowerInvariant());
+            if (a.Length != b.Length
+                || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(a, b))
+                error = "Firma inválida.";
+        }
+
+        try
+        {
+            await _execRepo.AddAsync(new ConnectorExecution
+            {
+                IdConnector = conector.IdConnector,
+                Operacion = "Webhook recibido",
+                Destino = "inbound",
+                Estado = error == null ? "Exitoso" : "FirmaInvalida",
+                LatenciaMs = 0,
+                Error = error,
+                RespuestaResumen = cuerpo.Length > 500 ? cuerpo[..500] : cuerpo,
+                Fecha = DateTime.UtcNow
+            }, ct);
+        }
+        catch { /* la auditoría nunca tumba la recepción */ }
+        return (error == null, error);
+    }
+
+    private static string FirmarHmacLocal(string secreto, string contenido)
+    {
+        using var hmac = new System.Security.Cryptography.HMACSHA256(
+            System.Text.Encoding.UTF8.GetBytes(secreto));
+        return Convert.ToHexString(hmac.ComputeHash(
+            System.Text.Encoding.UTF8.GetBytes(contenido))).ToLowerInvariant();
+    }
+
     public Task<List<ConnectorExecution>> AuditoriaAsync(int idConnector, int tope = 100, CancellationToken ct = default)
         => _execRepo.GetByConnectorAsync(idConnector, tope, ct);
 

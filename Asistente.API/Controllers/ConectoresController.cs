@@ -159,4 +159,26 @@ public class ConectoresController : ControllerBase
             Fecha = e.Fecha
         }));
     }
+
+    /// <summary>
+    /// Receptor entrante de webhooks (ETAPA 20): verifica la firma HMAC del cuerpo
+    /// contra el secreto del conector. SIN [Authorize]: lo llaman sistemas
+    /// externos; la autenticación ES la firma. Devuelve 200 válido / 401 inválido.
+    /// </summary>
+    [HttpPost("{codigo}/recibir")]
+    [AllowAnonymous]
+    public async Task<ActionResult> Recibir(string codigo, CancellationToken ct)
+    {
+        string cuerpo;
+        using (var lector = new System.IO.StreamReader(Request.Body))
+            cuerpo = await lector.ReadToEndAsync();
+        var firma = Request.Headers["X-Firma"].ToString();
+        try
+        {
+            var (valido, error) = await _service.ValidarWebhookAsync(codigo, cuerpo, firma, ct);
+            return valido ? Ok(new { valido = true }) : Unauthorized(new { valido = false, error });
+        }
+        catch (System.Collections.Generic.KeyNotFoundException) { return NotFound($"No existe el conector '{codigo}'."); }
+        catch (System.Exception ex) { return BadRequest(ex.Message); }
+    }
 }

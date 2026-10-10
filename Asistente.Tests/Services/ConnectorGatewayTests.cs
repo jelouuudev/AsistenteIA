@@ -714,6 +714,48 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task ConnectorService_ValidarWebhook_FirmaCorrectaEIncorrecta()
+    {
+        var repo = new RepoMemoria();
+        var exec = new ExecMemoria();
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var servicio = new ConnectorService(repo, exec, cifrador,
+            new IConnector[] { new WebhookConnector(estado, cifrador, NullLogger<WebhookConnector>.Instance) });
+        var conector = new Connector
+        {
+            IdConnector = 20, Codigo = "WH", Nombre = "WH", Tipo = "Webhook", Activo = true
+        };
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "Url", Valor = "https://x" });
+        conector.Credenciales.Add(new ConnectorCredential
+            { Tipo = "Bearer", ValorCifrado = cifrador.Cifrar("clave-compartida") });
+        repo.Agregar(conector);
+
+        const string cuerpo = """{"evento":"x"}""";
+        string Firma(string c)
+        {
+            using var hmac = new System.Security.Cryptography.HMACSHA256(
+                System.Text.Encoding.UTF8.GetBytes("clave-compartida"));
+            return Convert.ToHexString(hmac.ComputeHash(
+                System.Text.Encoding.UTF8.GetBytes(c))).ToLowerInvariant();
+        }
+
+        var (ok, errorOk) = await servicio.ValidarWebhookAsync("WH", cuerpo, Firma(cuerpo));
+        Assert.True(ok, errorOk);
+        var (mal, errorMal) = await servicio.ValidarWebhookAsync("WH", cuerpo, "firma-falsa");
+        Assert.False(mal);
+        Assert.Contains("inválida", errorMal);
+        var (sin, _) = await servicio.ValidarWebhookAsync("WH", cuerpo, null);
+        Assert.False(sin);
+        Assert.Equal(3, exec.Logs.Count);
+        Assert.Single(exec.Logs.Where(l => l.Operacion == "Webhook recibido" && l.Estado == "Exitoso"));
+        Assert.Equal(2, exec.Logs.Count(l => l.Operacion == "Webhook recibido" && l.Estado == "FirmaInvalida"));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            servicio.ValidarWebhookAsync("NOPE", cuerpo, "x"));
+    }
+
+    [Fact]
     public async Task ConnectorService_Registrar_ValidaTipoYCifraSecreto()
     {
         var repo = new RepoMemoria();
