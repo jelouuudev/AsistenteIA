@@ -2,11 +2,20 @@ using Asistente.Web.Handlers;
 using Asistente.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
+
+// Las claves de DataProtection (cookies de sesión + antiforgery) deben
+// sobrevivir reinicios del contenedor: con el llavero en memoria, cada
+// restart invalida las cookies vivas y TODOS los POST con
+// [ValidateAntiForgeryToken] empiezan a fallar con 400 hasta que el usuario
+// vuelve a loguearse. Se persisten en volumen (ver docker-compose.yml).
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo("/app/keys"));
 
 builder.Services.AddHttpContextAccessor();
 
