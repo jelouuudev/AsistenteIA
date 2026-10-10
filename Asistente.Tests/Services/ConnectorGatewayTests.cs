@@ -643,6 +643,29 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task ConnectorService_ActualizarConfiguracion_ValorVacio_Elimina()
+    {
+        var repo = new RepoMemoria();
+        var exec = new ExecMemoria();
+        var cifrador = CifradorPrueba();
+        var estado = new ConnectorPolicyState();
+        var servicio = new ConnectorService(repo, exec, cifrador,
+            new IConnector[] { new RestConnector(estado, cifrador, NullLogger<RestConnector>.Instance) });
+        await servicio.RegistrarAsync(new CrearConectorRequest
+        {
+            Codigo = "DEL", Nombre = "DEL", Tipo = "REST",
+            Configuracion = new Dictionary<string, string>
+                { ["BaseUrl"] = "https://a", ["PickupDirectory"] = "/tmp/x" }
+        });
+
+        var dto = await servicio.ActualizarConfiguracionAsync("DEL",
+            new Dictionary<string, string> { ["PickupDirectory"] = "" });
+
+        Assert.False(dto.Configuracion.ContainsKey("PickupDirectory"));
+        Assert.Equal("https://a", dto.Configuracion["BaseUrl"]);
+    }
+
+    [Fact]
     public async Task ConnectorService_ActualizarDatos_CambiaNombreYPermiso()
     {
         var repo = new RepoMemoria();

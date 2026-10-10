@@ -143,9 +143,10 @@ public class ConnectorService
 
     /// <summary>
     /// Actualiza la configuración no secreta por mezcla (upsert por clave): las
-    /// claves enviadas se crean o reemplazan, las demás quedan intactas. No toca
-    /// credenciales (van por ActualizarCredencialAsync) ni borra claves: para
-    /// quitar una se usa SQL. Todo cambio rige para próximas ejecuciones.
+    /// claves enviadas con valor se crean o reemplazan; las enviadas VACÍAS se
+    /// ELIMINAN (así la UI puede quitar claves sin SQL); las omitidas quedan
+    /// intactas. No toca credenciales (van por ActualizarCredencialAsync).
+    /// Todo cambio rige para próximas ejecuciones.
     /// </summary>
     public async Task<ConectorDto> ActualizarConfiguracionAsync(
         string codigo, Dictionary<string, string> configuracion, CancellationToken ct = default)
@@ -158,6 +159,12 @@ public class ConnectorService
             var clave = kv.Key.Trim();
             var existente = conector.Configuraciones.FirstOrDefault(c =>
                 c.Clave.Equals(clave, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(kv.Value))
+            {
+                if (existente != null)
+                    conector.Configuraciones.Remove(existente);
+                continue;
+            }
             if (existente != null)
                 existente.Valor = kv.Value;
             else

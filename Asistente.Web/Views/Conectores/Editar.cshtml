@@ -64,6 +64,7 @@
         <div class="col-12">
             <label class="form-label text-secondary">Configuración extra (una por línea: <code>Clave=Valor</code>)</label>
             <textarea name="configTexto" class="form-control font-monospace" rows="5">@configTexto</textarea>
+            <div class="form-text">Para quitar una clave, déjala con valor vacío (<code>PickupDirectory=</code>).</div>
         </div>
         <div class="col-12"><hr class="border-secondary" /><h6 class="text-white">Credencial (vacío = no tocar; actual: @(Model.TipoCredencial ?? "None"))</h6></div>
         <div class="col-md-4">
