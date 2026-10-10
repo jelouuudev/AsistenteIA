@@ -84,6 +84,7 @@ public class ConnectorGateway : IConnectorGateway
 
         var maxIntentos = Math.Max(politica.MaxReintentos, 0) + 1;
         Exception? ultimoError = null;
+        ConnectorResult? ultimoResultado = null;
 
         for (var intento = 1; intento <= maxIntentos; intento++)
         {
@@ -94,6 +95,7 @@ public class ConnectorGateway : IConnectorGateway
                 var resultado = await impl.EjecutarAsync(conector, request, ctsTimeout.Token);
                 resultado.Reintentos = reintentos;
                 resultado.LatenciaMs = inicio.ElapsedMilliseconds;
+                ultimoResultado = resultado;
 
                 if (resultado.Exitoso)
                 {
@@ -126,8 +128,11 @@ public class ConnectorGateway : IConnectorGateway
 
         _estado.RegistrarFallo(conector.IdConnector,
             politica.CircuitBreakerUmbralFallos, politica.CircuitBreakerSegundosAbierto);
-        return await AuditarAsync(conector, request, "Error", null,
-            ultimoError?.Message ?? "Error desconocido.", reintentos, inicio, CancellationToken.None);
+        // Se conserva el último resultado: sin él la auditoría perdía el código
+        // de respuesta y el resumen en todos los errores (siempre null).
+        return await AuditarAsync(conector, request, "Error", ultimoResultado?.CodigoRespuesta,
+            ultimoError?.Message ?? "Error desconocido.", reintentos, inicio, CancellationToken.None,
+            ultimoResultado);
     }
 
     private async Task<ConnectorResult> AuditarAsync(

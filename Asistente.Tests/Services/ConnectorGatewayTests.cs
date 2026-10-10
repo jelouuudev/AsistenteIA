@@ -783,6 +783,59 @@ public class ConnectorGatewayTests
     }
 
     [Fact]
+    public async Task Gateway_Error_ConservaCodigoYResumenEnAuditoria()
+    {
+        // Antes el fallo auditaba codigo y resumen en null: imposible diagnosticar.
+        var repo = new RepoMemoria();
+        repo.Agregar(ConectorRest(ajustar: c => c.Politicas.First().MaxReintentos = 0));
+        var exec = new ExecMemoria();
+        var fake = new FakeHttpHandler();
+        fake.Encolar(HttpStatusCode.InternalServerError, "detalle-del-fallo");
+        var gw = Gateway(repo, exec, handler: fake);
+
+        var r = await gw.EjecutarAsync(new ConnectorRequest
+            { CodigoConector = "CRM_DEMO", IdUsuario = 1 });
+
+        Assert.False(r.Exitoso);
+        var log = Assert.Single(exec.Logs);
+        Assert.Equal("Error", log.Estado);
+        Assert.Equal(500, log.CodigoRespuesta);
+        Assert.Contains("detalle-del-fallo", log.RespuestaResumen ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task GatewayConnectorTool_Etiqueta_NoPisaElDefecto()
+    {
+        // La etiqueta del planner (objetivo en texto libre) es solo auditoría:
+        // el OperacionDefecto manda para el protocolo (SOAPAction, #7021).
+        var repo = new Mock<IConnectorRepository>();
+        var conector = ConectorRest("CALC");
+        conector.Configuraciones.Add(new Domain.Entities.ConnectorConfiguration
+            { Clave = "OperacionDefecto", Valor = "Add" });
+        repo.Setup(s => s.GetByCodigoAsync("CALC", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(conector);
+        var gw = new Mock<IConnectorGateway>();
+        gw.Setup(g => g.EjecutarAsync(It.IsAny<ConnectorRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConnectorResult { Exitoso = true, Contenido = "ok" });
+        var tool = new GatewayConnectorTool(gw.Object, repo.Object);
+
+        await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            HerramientaCodigo = "GatewayConnectorTool",
+            Parametros = new Dictionary<string, object?>
+            {
+                ["conector"] = "CALC",
+                ["etiqueta"] = "suma con el conector CALC_SOAP"
+            },
+            IdUsuario = 1
+        });
+
+        gw.Verify(g => g.EjecutarAsync(
+            It.Is<ConnectorRequest>(q => q.Operacion == "Add"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task GatewayConnectorTool_UsaDefectosDelConector_SinInventarRutas()
     {
         // El planner solo manda {conector, operacion}: el recurso/método salen de

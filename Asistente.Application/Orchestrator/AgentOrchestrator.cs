@@ -380,12 +380,14 @@ public class AgentOrchestrator : IAgentOrchestrator
                 {
                     // Contrato máquina-máquina (PlanBuilder.EntradaConector):
                     // {"conector","operacion"} + "metodo" opcional del set cerrado.
-                    // El recurso/método ausentes los resuelve la herramienta desde
-                    // los defectos del conector.
+                    // El objetivo viaja como ETIQUETA humana, NO como operacion:
+                    // si fuera operacion pisaría el OperacionDefecto del conector
+                    // y los conectores de protocolo estricto (SOAP: SOAPAction)
+                    // recibirían texto libre (#7021: fault por "suma con el...").
                     var (codigoConector, operacionConector, metodoConector) = ExtraerConectorOperacionYMetodo(paso.Entrada);
                     if (!string.IsNullOrWhiteSpace(codigoConector))
                         parametros["conector"] = codigoConector;
-                    parametros["operacion"] = string.IsNullOrWhiteSpace(operacionConector)
+                    parametros["etiqueta"] = string.IsNullOrWhiteSpace(operacionConector)
                         ? plan.Objetivo : operacionConector;
                     if (!string.IsNullOrWhiteSpace(metodoConector))
                         parametros["metodo"] = metodoConector;

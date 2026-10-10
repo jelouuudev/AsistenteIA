@@ -43,12 +43,16 @@ public class GatewayConnectorTool : ITool
         var recurso = Valor(parametros, "recurso");
         var metodo = Valor(parametros, "metodo");
         var cuerpo = Valor(parametros, "cuerpo");
+        // Etiqueta humana del planner (su objetivo): última prioridad, solo para
+        // la auditoría. Nunca pisa el OperacionDefecto: ese define el protocolo
+        // (SOAPAction) y el objetivo es texto libre (#7021).
+        var etiqueta = Valor(parametros, "etiqueta");
         if (string.IsNullOrWhiteSpace(recurso) || string.IsNullOrWhiteSpace(metodo) || string.IsNullOrWhiteSpace(operacion) || string.IsNullOrWhiteSpace(cuerpo))
         {
             var conector = await _repo.GetByCodigoAsync(codigo, cancellationToken);
             string? Defecto(string clave) => conector?.Configuraciones
                 .FirstOrDefault(c => c.Clave.Equals(clave, StringComparison.OrdinalIgnoreCase))?.Valor;
-            operacion ??= Defecto("OperacionDefecto");
+            operacion ??= Defecto("OperacionDefecto") ?? etiqueta;
             metodo ??= Defecto("MetodoDefecto") ?? "GET";
             // Recurso por verbo (RecursoDefecto_POST, ...): un mismo conector
             // expone rutas distintas por verbo (httpbin: /get vs /post). Sin
