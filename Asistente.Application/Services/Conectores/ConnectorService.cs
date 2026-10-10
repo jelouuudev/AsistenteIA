@@ -95,12 +95,15 @@ public class ConnectorService
             ?? throw new KeyNotFoundException($"No existe el conector '{codigo}'.");
         // Secreto vacío = conservar el almacenado (solo cambian tipo/usuario).
         // Antes se ignoraba todo el cambio si no venía secreto nuevo.
+        // Usuario vacío = conservar también (el formulario nunca lo muestra;
+        // si se pisara con el vacío, cada guardado borraría el usuario real).
         if (string.IsNullOrWhiteSpace(request.Secreto))
         {
             var actual = conector.Credenciales.FirstOrDefault()
                 ?? throw new InvalidOperationException("El conector no tiene credencial que conservar.");
             actual.Tipo = request.Tipo.Trim();
-            actual.NombreUsuario = request.NombreUsuario;
+            if (!string.IsNullOrWhiteSpace(request.NombreUsuario))
+                actual.NombreUsuario = request.NombreUsuario;
         }
         else
         {
