@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
 using Asistente.Shared;
 using Microsoft.Extensions.Logging;
-
 namespace Asistente.Application.Services.Memoria;
 
 /// <summary>
@@ -20,27 +19,46 @@ public class MemoryOrchestrator
 {
     private readonly MemoryManager _manager;
     private readonly IMemoryRepository _repo;
+    private readonly IMemoriaService _conversaciones;
     private readonly ILogger<MemoryOrchestrator> _logger;
 
     public MemoryOrchestrator(
         MemoryManager manager,
         IMemoryRepository repo,
+        IMemoriaService conversaciones,
         ILogger<MemoryOrchestrator> logger)
     {
         _manager = manager;
         _repo = repo;
+        _conversaciones = conversaciones;
         _logger = logger;
     }
 
     /// <summary>
-    /// Arma el bloque "[Memoria {ámbito}: {título}] ..." con lo autorizado.
-    /// Vacío si no hay nada aplicable: nunca falla la operación principal.
+    /// Arma el bloque "[Memoria {ámbito}: {título}] ..." con las autorizadas.
+    /// Vacío si no hay nada: nunca falla la operación principal.
+    /// Si se indica idConversacion, antepone los últimos N turnos del historial
+    /// (memoria conversacional persistente reutilizando el almacenamiento de
+    /// chat existente, sin duplicar datos). Solo de su propietario.
     /// </summary>
     public async Task<string> ObtenerContextoAsync(int idUsuario, int? idAsistente = null,
-        int? idWorkflow = null, int maxCaracteres = 3000, CancellationToken ct = default)
+        int? idWorkflow = null, int maxCaracteres = 3000, int? idConversacion = null,
+        int maxTurnos = 6, CancellationToken ct = default)
     {
         try
         {
+            var sb = new StringBuilder();
+
+            if (idConversacion.HasValue)
+            {
+                var bloque = await BloqueConversacionalAsync(idUsuario, idConversacion.Value, maxTurnos, ct);
+                if (!string.IsNullOrWhiteSpace(bloque))
+                {
+                    sb.Append(bloque);
+                    sb.Append('\n');
+                }
+            }
+
             var piezas = new List<(int Orden, MemoryDto M)>();
             var todas = await _manager.ListarAsync(idUsuario, null, ct);
 
@@ -57,7 +75,6 @@ public class MemoryOrchestrator
                 if (orden < 9) piezas.Add((orden, m));
             }
 
-            var sb = new StringBuilder();
             foreach (var (_, m) in piezas.OrderBy(p => p.Orden).ThenBy(p => p.M.Codigo))
             {
                 var bloque = $"[Memoria {m.Ambito}: {m.Titulo}]\n{m.Contenido}\n";
@@ -69,6 +86,36 @@ public class MemoryOrchestrator
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Memoria: no se pudo componer contexto.");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Últimos turnos de una conversación del propio usuario, como bloque de
+    /// memoria conversacional. Solo del propietario; ajenas devuelven vacío
+    /// (sin filtrar nada: ni siquiera se confirma su existencia).
+    /// </summary>
+    internal async Task<string> BloqueConversacionalAsync(int idUsuario, int idConversacion,
+        int maxTurnos, CancellationToken ct)
+    {
+        try
+        {
+            var conversacion = await _conversaciones.ObtenerConversacionAsync(idConversacion);
+            if (conversacion == null
+                || conversacion.UsuarioPropietario != idUsuario
+                || !string.Equals(conversacion.Estado, "Activa", StringComparison.OrdinalIgnoreCase))
+                return string.Empty;
+            var turnos = (conversacion.Mensajes ?? new List<MensajeDto>())
+                .Where(m => !string.IsNullOrWhiteSpace(m.Contenido))
+                .TakeLast(Math.Max(maxTurnos, 1))
+                .Select(m => $"{(m.Rol ?? "usuario").Trim().ToLowerInvariant()}: {m.Contenido.Trim()}");
+            var cuerpo = string.Join("\n", turnos);
+            if (string.IsNullOrWhiteSpace(cuerpo)) return string.Empty;
+            return $"[Memoria Conversacional: {conversacion.Titulo ?? $"conversación {idConversacion}"}]\n{cuerpo}\n";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Memoria: no se pudo leer la conversación {Id}.", idConversacion);
             return string.Empty;
         }
     }

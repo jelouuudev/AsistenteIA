@@ -461,6 +461,22 @@ public class MemoryManagerTests
         Assert.Contains(logs.Datos, l => l.Operacion == "Eliminar");
     }
 
+    private static Mock<IMemoriaService> Conversaciones(
+        Dictionary<int, ConversacionDto>? conversaciones = null)
+    {
+        var mock = new Mock<IMemoriaService>();
+        mock.Setup(c => c.ObtenerConversacionAsync(It.IsAny<int>()))
+            .ReturnsAsync((int id) => conversaciones != null && conversaciones.TryGetValue(id, out var conv)
+                ? conv
+                : null);
+        return mock;
+    }
+
+    private static MemoryOrchestrator Orquestador(MemoryManager manager, RepoMemoria repo,
+        Dictionary<int, ConversacionDto>? conversaciones = null)
+        => new(manager, repo, Conversaciones(conversaciones).Object,
+            NullLogger<MemoryOrchestrator>.Instance);
+
     [Fact]
     public async Task Orchestrator_OrdenaWorkflowAgenteUsuarioOrg_YRecorta()
     {
@@ -475,8 +491,7 @@ public class MemoryManagerTests
         await crear("A", "Agente", 9, new string('a', 500));
         await crear("U", "Usuario", 7, new string('u', 500));
         await crear("W", "Workflow", 3, new string('w', 500));
-        var orch = new MemoryOrchestrator(manager, repo,
-            NullLogger<MemoryOrchestrator>.Instance);
+        var orch = Orquestador(manager, repo);
 
         var ctx = await orch.ObtenerContextoAsync(7, 9, 3, 3000);
 
@@ -500,8 +515,7 @@ public class MemoryManagerTests
             }, 7);
         await crear("O", "Organizacion", null, new string('o', 500));
         await crear("W", "Workflow", 3, new string('w', 500));
-        var orch = new MemoryOrchestrator(manager, repo,
-            NullLogger<MemoryOrchestrator>.Instance);
+        var orch = Orquestador(manager, repo);
 
         // Solo cabe el bloque Workflow (~520): Organización queda fuera.
         var ctx = await orch.ObtenerContextoAsync(7, null, 3, 600);
@@ -514,9 +528,8 @@ public class MemoryManagerTests
     [Fact]
     public async Task Orchestrator_Workflow_GuardaYRetomaEstado()
     {
-        var (manager, _, _, _, _, _) = Fabrica(Array.Empty<string>());
-        var orch = new MemoryOrchestrator(manager,
-            new RepoMemoria(), NullLogger<MemoryOrchestrator>.Instance);
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+        var orch = Orquestador(manager, repo);
 
         await orch.GuardarEstadoWorkflowAsync(11, "WF-11", "Estado", "paso=2", 7);
         var leida = await orch.LeerEstadoWorkflowAsync(11, "WF-11", 7);
@@ -566,5 +579,40 @@ public class MemoryManagerTests
             IdUsuario = 9
         });
         Assert.True(guardar.Exitoso);
+    }
+
+    [Fact]
+    public async Task Orchestrator_Conversacional_SoloPropietarioYActiva()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+        var convs = new Dictionary<int, ConversacionDto>
+        {
+            [77] = new ConversacionDto
+            {
+                IdConversacion = 77,
+                UsuarioPropietario = 7,
+                Estado = "Activa",
+                Titulo = "Soporte",
+                Mensajes = new System.Collections.Generic.List<MensajeDto>
+                {
+                    new() { IdMensaje = 1, IdConversacion = 77, Rol = "user", Contenido = "mi impresora no imprime" },
+                    new() { IdMensaje = 2, IdConversacion = 77, Rol = "assistant", Contenido = "revise el tóner" },
+                    new() { IdMensaje = 3, IdConversacion = 77, Rol = "user", Contenido = "gracias, funcionó" }
+                }
+            }
+        };
+        var orch = Orquestador(manager, repo, convs);
+
+        // Los últimos 2 turnos sí; el primero queda fuera del tope.
+        var ctx = await orch.ObtenerContextoAsync(7, null, null, 3000, 77, 2);
+
+        Assert.Contains("[Memoria Conversacional: Soporte]", ctx);
+        Assert.Contains("assistant: revise el tóner", ctx);
+        Assert.Contains("gracias, funcionó", ctx);
+        Assert.DoesNotContain("impresora", ctx);
+
+        // Conversación ajena: vacía, sin confirmar ni negar su existencia.
+        var ajena = await orch.ObtenerContextoAsync(9, null, null, 3000, 77, 5);
+        Assert.DoesNotContain("Memoria Conversacional", ajena);
     }
 }
