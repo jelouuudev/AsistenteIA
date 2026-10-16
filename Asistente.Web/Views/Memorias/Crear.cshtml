@@ -1,0 +1,62 @@
+@model Asistente.Shared.CrearMemoryRequest
+@{
+    ViewData["Title"] = "Crear memoria";
+    var ambitos = new[] { "Organizacion", "Usuario", "Agente", "Workflow", "Conversacional" };
+}
+
+<div class="mb-4">
+    <h4 class="text-white fw-bold mb-0"><i class="bi bi-plus-circle me-2" style="color:#818cf8;"></i>Crear memoria</h4>
+    <p class="text-secondary small mb-0">Genera la versión 1 y la indexa para búsqueda semántica.</p>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+}
+
+<form asp-action="Crear" method="post" class="card border-0 p-4" style="background:rgba(255,255,255,0.03);border-radius:16px;max-width:720px;">
+    @Html.AntiForgeryToken()
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label text-secondary">Código *</label>
+            <input asp-for="Codigo" class="form-control" placeholder="FORM-REPORTE-MENSUAL" required />
+        </div>
+        <div class="col-md-6">
+            <label class="form-label text-secondary">Ámbito *</label>
+            <select asp-for="Ambito" class="form-select">
+                @foreach (var a in ambitos)
+                {
+                    <option>@a</option>
+                }
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Título *</label>
+            <input asp-for="Titulo" class="form-control" required />
+        </div>
+        <div class="col-12">
+            <label class="form-label text-secondary">Contenido *</label>
+            <textarea asp-for="Contenido" class="form-control font-monospace" rows="6" required></textarea>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Categoría (código)</label>
+            <input asp-for="Categoria" class="form-control" placeholder="FormatoReporte" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Id propietario (opcional)</label>
+            <input asp-for="IdPropietario" type="number" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary">Retención (días, opcional)</label>
+            <input asp-for="DiasRetencion" type="number" min="1" class="form-control" />
+        </div>
+        <div class="col-12 form-check ms-2">
+            <input asp-for="RequierePermiso" class="form-check-input" checked />
+            <label class="form-check-label text-secondary">Requiere permiso MEMORIA:{código}</label>
+        </div>
+        <div class="col-12 mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Crear</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
+        </div>
+    </div>
+</form>

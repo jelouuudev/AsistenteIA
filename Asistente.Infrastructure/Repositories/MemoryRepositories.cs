@@ -1,0 +1,103 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Asistente.Application.Interfaces;
+using Asistente.Domain.Entities;
+using Asistente.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace Asistente.Infrastructure.Repositories;
+
+public class MemoryRepository : IMemoryRepository
+{
+    private readonly AsistenteDbContext _context;
+    public MemoryRepository(AsistenteDbContext context) => _context = context;
+
+    public Task<MemoryRecord?> GetByIdAsync(int id, CancellationToken ct = default)
+        => _context.MemoryRecords
+            .Include(m => m.Scope).Include(m => m.Category)
+            .FirstOrDefaultAsync(m => m.IdMemory == id, ct);
+
+    public Task<MemoryRecord?> GetByCodigoAsync(string codigo, CancellationToken ct = default)
+        => _context.MemoryRecords
+            .Include(m => m.Scope).Include(m => m.Category)
+            .FirstOrDefaultAsync(m => m.Codigo == codigo, ct);
+
+    public Task<List<MemoryRecord>> GetActivasAsync(CancellationToken ct = default)
+        => _context.MemoryRecords
+            .Include(m => m.Scope).Include(m => m.Category)
+            .Where(m => m.Activo).OrderByDescending(m => m.FechaActualizacion).ToListAsync(ct);
+
+    public Task<List<MemoryRecord>> GetByScopeAsync(int idScope, CancellationToken ct = default)
+        => _context.MemoryRecords
+            .Include(m => m.Scope).Include(m => m.Category)
+            .Where(m => m.IdScope == idScope && m.Activo).ToListAsync(ct);
+
+    public async Task<MemoryRecord> AddAsync(MemoryRecord memoria, CancellationToken ct = default)
+    {
+        await _context.MemoryRecords.AddAsync(memoria, ct);
+        await _context.SaveChangesAsync(ct);
+        return memoria;
+    }
+
+    public async Task UpdateAsync(MemoryRecord memoria, CancellationToken ct = default)
+    {
+        _context.Entry(memoria).State = EntityState.Modified;
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteAsync(MemoryRecord memoria, CancellationToken ct = default)
+    {
+        _context.MemoryRecords.Remove(memoria);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public Task<List<MemoryScope>> GetScopesAsync(CancellationToken ct = default)
+        => _context.MemoryScopes.Where(s => s.Activo).OrderBy(s => s.IdScope).ToListAsync(ct);
+
+    public Task<List<MemoryCategory>> GetCategoriesAsync(CancellationToken ct = default)
+        => _context.MemoryCategories.Where(c => c.Activo).OrderBy(c => c.Nombre).ToListAsync(ct);
+
+    public Task<List<MemoryRetentionPolicy>> GetPoliticasAsync(CancellationToken ct = default)
+        => _context.MemoryRetentionPolicies.Where(p => p.Activo).ToListAsync(ct);
+}
+
+public class MemoryVersionRepository : IMemoryVersionRepository
+{
+    private readonly AsistenteDbContext _context;
+    public MemoryVersionRepository(AsistenteDbContext context) => _context = context;
+
+    public async Task AddAsync(MemoryVersion version, CancellationToken ct = default)
+    {
+        await _context.MemoryVersions.AddAsync(version, ct);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public Task<List<MemoryVersion>> GetByMemoryAsync(int idMemory, CancellationToken ct = default)
+        => _context.MemoryVersions.Where(v => v.IdMemory == idMemory)
+            .OrderBy(v => v.Numero).ToListAsync(ct);
+
+    public Task<MemoryVersion?> GetByNumeroAsync(int idMemory, int numero, CancellationToken ct = default)
+        => _context.MemoryVersions
+            .FirstOrDefaultAsync(v => v.IdMemory == idMemory && v.Numero == numero, ct);
+}
+
+public class MemoryAccessLogRepository : IMemoryAccessLogRepository
+{
+    private readonly AsistenteDbContext _context;
+    public MemoryAccessLogRepository(AsistenteDbContext context) => _context = context;
+
+    public async Task AddAsync(MemoryAccessLog log, CancellationToken ct = default)
+    {
+        await _context.MemoryAccessLogs.AddAsync(log, ct);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public Task<List<MemoryAccessLog>> GetByMemoryAsync(int idMemory, int tope = 100, CancellationToken ct = default)
+        => _context.MemoryAccessLogs.Where(l => l.IdMemory == idMemory)
+            .OrderByDescending(l => l.Fecha).Take(tope).ToListAsync(ct);
+
+    public Task<long> ContarPorOperacionAsync(string operacion, CancellationToken ct = default)
+        => _context.MemoryAccessLogs.LongCountAsync(l => l.Operacion == operacion, ct);
+}

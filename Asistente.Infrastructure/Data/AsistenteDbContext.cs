@@ -99,6 +99,14 @@ public class AsistenteDbContext : DbContext, IUnitOfWork
     public DbSet<ConnectorPolicy> ConnectorPoliticas => Set<ConnectorPolicy>();
     public DbSet<ConnectorExecution> ConnectorEjecuciones => Set<ConnectorExecution>();
 
+    // ETAPA 21: Memoria Empresarial Avanzada y Contexto Persistente.
+    public DbSet<MemoryScope> MemoryScopes => Set<MemoryScope>();
+    public DbSet<MemoryCategory> MemoryCategories => Set<MemoryCategory>();
+    public DbSet<MemoryRecord> MemoryRecords => Set<MemoryRecord>();
+    public DbSet<MemoryVersion> MemoryVersions => Set<MemoryVersion>();
+    public DbSet<MemoryAccessLog> MemoryAccessLogs => Set<MemoryAccessLog>();
+    public DbSet<MemoryRetentionPolicy> MemoryRetentionPolicies => Set<MemoryRetentionPolicy>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AsistenteDbContext).Assembly);

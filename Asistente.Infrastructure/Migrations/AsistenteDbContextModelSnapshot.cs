@@ -2099,6 +2099,249 @@ namespace Asistente.Infrastructure.Migrations
                     b.ToTable("HistorialPrompt", (string)null);
                 });
 
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryAccessLog", b =>
+                {
+                    b.Property<int>("IdLog")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdLog"));
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("Fecha")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("IdAsistente")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("IdMemory")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("IdUsuario")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Motivo")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Operacion")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Resultado")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("IdLog");
+
+                    b.HasIndex("Codigo", "Fecha");
+
+                    b.HasIndex("IdMemory", "Fecha");
+
+                    b.ToTable("MemoryAccessLogs", (string)null);
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryCategory", b =>
+                {
+                    b.Property<int>("IdCategory")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdCategory"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("IdCategory");
+
+                    b.HasIndex("Codigo")
+                        .IsUnique();
+
+                    b.ToTable("MemoryCategories", (string)null);
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryRecord", b =>
+                {
+                    b.Property<int>("IdMemory")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdMemory"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Contenido")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("FechaActualizacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaExpiracion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("IdCategory")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("IdPropietario")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IdScope")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Indexada")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequierePermiso")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("VectorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("VersionActual")
+                        .HasColumnType("int");
+
+                    b.HasKey("IdMemory");
+
+                    b.HasIndex("Codigo")
+                        .IsUnique();
+
+                    b.HasIndex("IdCategory");
+
+                    b.HasIndex("IdScope", "Activo");
+
+                    b.ToTable("MemoryRecords", (string)null);
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryRetentionPolicy", b =>
+                {
+                    b.Property<int>("IdPolicy")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdPolicy"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ConservarTrazabilidad")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("DiasRetencion")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("EliminarAlExpirar")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("IdScope")
+                        .HasColumnType("int");
+
+                    b.HasKey("IdPolicy");
+
+                    b.HasIndex("IdScope");
+
+                    b.ToTable("MemoryRetentionPolicies", (string)null);
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryScope", b =>
+                {
+                    b.Property<int>("IdScope")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdScope"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("IdScope");
+
+                    b.HasIndex("Codigo")
+                        .IsUnique();
+
+                    b.ToTable("MemoryScopes", (string)null);
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryVersion", b =>
+                {
+                    b.Property<int>("IdVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdVersion"));
+
+                    b.Property<string>("Contenido")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("Fecha")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("IdMemory")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("IdUsuario")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Motivo")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Numero")
+                        .HasColumnType("int");
+
+                    b.HasKey("IdVersion");
+
+                    b.HasIndex("IdMemory", "Numero")
+                        .IsUnique();
+
+                    b.ToTable("MemoryVersions", (string)null);
+                });
+
             modelBuilder.Entity("Asistente.Domain.Entities.Mensaje", b =>
                 {
                     b.Property<int>("IdMensaje")
@@ -3368,6 +3611,45 @@ namespace Asistente.Infrastructure.Migrations
                     b.Navigation("Prompt");
                 });
 
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryRecord", b =>
+                {
+                    b.HasOne("Asistente.Domain.Entities.MemoryCategory", "Category")
+                        .WithMany("Memorias")
+                        .HasForeignKey("IdCategory")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Asistente.Domain.Entities.MemoryScope", "Scope")
+                        .WithMany("Memorias")
+                        .HasForeignKey("IdScope")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+
+                    b.Navigation("Scope");
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryRetentionPolicy", b =>
+                {
+                    b.HasOne("Asistente.Domain.Entities.MemoryScope", "Scope")
+                        .WithMany("Politicas")
+                        .HasForeignKey("IdScope")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Scope");
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryVersion", b =>
+                {
+                    b.HasOne("Asistente.Domain.Entities.MemoryRecord", "Memory")
+                        .WithMany("Versiones")
+                        .HasForeignKey("IdMemory")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Memory");
+                });
+
             modelBuilder.Entity("Asistente.Domain.Entities.Mensaje", b =>
                 {
                     b.HasOne("Asistente.Domain.Entities.Conversacion", "Conversacion")
@@ -3677,6 +3959,23 @@ namespace Asistente.Infrastructure.Migrations
             modelBuilder.Entity("Asistente.Domain.Entities.Herramienta", b =>
                 {
                     b.Navigation("AsistentesHerramientas");
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryCategory", b =>
+                {
+                    b.Navigation("Memorias");
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryRecord", b =>
+                {
+                    b.Navigation("Versiones");
+                });
+
+            modelBuilder.Entity("Asistente.Domain.Entities.MemoryScope", b =>
+                {
+                    b.Navigation("Memorias");
+
+                    b.Navigation("Politicas");
                 });
 
             modelBuilder.Entity("Asistente.Domain.Entities.Plan", b =>

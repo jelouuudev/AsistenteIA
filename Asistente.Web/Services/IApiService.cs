@@ -301,4 +301,18 @@ public interface IApiService
     Task<ConnectorMetricas> GetConectorMetricasAsync(int id, int currentUserId, string ip);
     Task<IEnumerable<ConectorEjecucionDto>> GetConectorAuditoriaAsync(int id, int currentUserId, string ip);
 
+
+    // Memoria Empresarial (ETAPA 21)
+    Task<IEnumerable<MemoryDto>> GetMemoriasAsync(string? ambito, int currentUserId, string ip);
+    Task<MemoryDto?> GetMemoriaAsync(string codigo, int currentUserId, string ip);
+    Task<MemoryDto> CrearMemoriaAsync(CrearMemoryRequest request, int currentUserId, string ip);
+    Task<MemoryDto> ActualizarMemoriaAsync(string codigo, string contenido, string? motivo, int currentUserId, string ip);
+    Task RevertirMemoriaAsync(string codigo, int numero, string? motivo, int currentUserId, string ip);
+    Task EliminarMemoriaAsync(string codigo, int currentUserId, string ip);
+    Task<IEnumerable<MemoryVersionDto>> GetMemoriaVersionesAsync(string codigo, int currentUserId, string ip);
+    Task<IEnumerable<MemoryAccessLogDto>> GetMemoriaAuditoriaAsync(string codigo, int currentUserId, string ip);
+    Task<IEnumerable<MemorySearchHitDto>> BuscarMemoriasAsync(string texto, int currentUserId, string ip);
+    Task<MemoryMetricasDto> GetMemoriaMetricasAsync(int currentUserId, string ip);
+    Task<IEnumerable<string>> GetMemoriaRetencionPendientesAsync(int currentUserId, string ip);
+    Task<(long Desactivadas, long Eliminadas)> AplicarRetencionAsync(int currentUserId, string ip);
 }

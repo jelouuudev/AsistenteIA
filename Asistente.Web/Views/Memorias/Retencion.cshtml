@@ -1,0 +1,45 @@
+@{
+    ViewData["Title"] = "Retención";
+    var pendientes = ViewBag.Pendientes as System.Collections.Generic.IEnumerable<string>
+        ?? new System.Collections.Generic.List<string>();
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-hourglass me-2" style="color:#fcd34d;"></i>Retención</h4>
+        <p class="text-secondary small mb-0">Memorias vencidas según políticas (desactiva o purga con trazabilidad)</p>
+    </div>
+    <form asp-action="AplicarRetencion" method="post" class="d-inline"
+          onsubmit="return confirm('¿Aplicar retención a las pendientes?');">
+        @Html.AntiForgeryToken()
+        <button type="submit" class="btn btn-warning"><i class="bi bi-play-fill me-1"></i>Aplicar retención</button>
+    </form>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+}
+@if (TempData["OkMessage"] != null)
+{
+    <div class="alert alert-success">@TempData["OkMessage"]</div>
+}
+
+<div class="card border-0" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+    <div class="card-body">
+        <h6 class="text-white mb-3">Pendientes (@pendientes.Count())</h6>
+        @if (pendientes.Any())
+        {
+            <ul class="list-unstyled mb-0">
+                @foreach (var c in pendientes)
+                {
+                    <li class="mb-1"><a asp-action="Detalle" asp-route-id="@c"><code>@c</code></a></li>
+                }
+            </ul>
+        }
+        else
+        {
+            <p class="text-secondary small mb-0">Nada vencido.</p>
+        }
+    </div>
+</div>

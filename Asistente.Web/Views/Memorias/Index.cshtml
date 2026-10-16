@@ -1,0 +1,148 @@
+@model List<Asistente.Shared.MemoryDto>
+@{
+    ViewData["Title"] = "Memorias";
+    var metricas = ViewBag.Metricas as Asistente.Shared.MemoryMetricasDto;
+    var busqueda = ViewBag.Busqueda as System.Collections.Generic.IEnumerable<Asistente.Shared.MemorySearchHitDto>;
+    var ambitos = new[] { "", "Conversacional", "Usuario", "Agente", "Organizacion", "Workflow" };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-journal-bookmark me-2" style="color:#818cf8;"></i>Memoria Empresarial</h4>
+        <p class="text-secondary small mb-0">Conocimiento persistente por ámbito (ETAPA 21)</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="Retencion" class="btn btn-outline-warning"><i class="bi bi-hourglass me-1"></i>Retención</a>
+        <a asp-action="Crear" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Crear</a>
+    </div>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+}
+@if (TempData["OkMessage"] != null)
+{
+    <div class="alert alert-success">@TempData["OkMessage"]</div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(99,102,241,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#818cf8;">@(metricas?.TotalActivas ?? 0)</div>
+                <div class="text-secondary small">Memorias activas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(16,185,129,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#6ee7b7;">@(metricas?.Versiones ?? 0)</div>
+                <div class="text-secondary small">Versiones</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(168,85,247,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#c084fc;">@(metricas?.Accesos ?? 0)</div>
+                <div class="text-secondary small">Lecturas + búsquedas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(251,191,36,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#fcd34d;">@(metricas?.ExpiradasPendientes ?? 0)</div>
+                <div class="text-secondary small">Expiradas pendientes</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form asp-action="Index" method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+        <select name="ambito" class="form-select" onchange="this.form.submit()">
+            @foreach (var a in ambitos)
+            {
+                <option value="@a" selected="@(ViewBag.Ambito as string == a)">@(string.IsNullOrEmpty(a) ? "Todos los ámbitos" : a)</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-7">
+        <input name="q" class="form-control" placeholder="Búsqueda semántica..." value="@ViewBag.Q" />
+    </div>
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-outline-info w-100"><i class="bi bi-search me-1"></i>Buscar</button>
+    </div>
+</form>
+
+@if (busqueda != null)
+{
+    <div class="card border-0 mb-4" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+        <div class="card-body">
+            <h6 class="text-white mb-3"><i class="bi bi-search me-2"></i>Resultados (@busqueda.Count())</h6>
+            @foreach (var h in busqueda)
+            {
+                <div class="mb-2">
+                    <a asp-action="Detalle" asp-route-id="@h.Codigo"><code>@h.Codigo</code></a>
+                    <span class="badge bg-secondary ms-1">@h.Ambito</span>
+                    <span class="text-secondary small ms-1">@($"{h.Puntaje:F2}")</span>
+                    <div class="text-secondary small">@h.Fragmento</div>
+                </div>
+            }
+            @if (!busqueda.Any())
+            {
+                <p class="text-secondary small mb-0">Sin resultados autorizados.</p>
+            }
+        </div>
+    </div>
+}
+
+<div class="card border-0" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+    <div class="card-body p-0">
+        <table class="table table-dark table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Título</th>
+                    <th>Ámbito</th>
+                    <th>Versión</th>
+                    <th>Permiso</th>
+                    <th>Expira</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in Model)
+                {
+                    <tr>
+                        <td><code>@m.Codigo</code></td>
+                        <td>@m.Titulo</td>
+                        <td><span class="badge bg-secondary">@m.Ambito</span></td>
+                        <td>v@m.VersionActual</td>
+                        <td>
+                            @if (m.RequierePermiso)
+                            {
+                                <span class="badge bg-warning text-dark">MEMORIA:@m.Codigo</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Abierta</span>
+                            }
+                        </td>
+                        <td class="small">@(m.FechaExpiracion?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td class="text-end">
+                            <a asp-action="Detalle" asp-route-id="@m.Codigo" class="btn btn-sm btn-outline-info">Ver</a>
+                        </td>
+                    </tr>
+                }
+                @if (!Model.Any())
+                {
+                    <tr><td colspan="7" class="text-center text-secondary py-4">Sin memorias visibles (o sin permiso).</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

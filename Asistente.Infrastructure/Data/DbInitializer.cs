@@ -216,6 +216,72 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
+        // ETAPA 21: herramienta de memoria + catálogos (idempotentes).
+        if (!await context.Herramientas.AnyAsync(h => h.Codigo == "MemoryTool"))
+        {
+            await context.Herramientas.AddAsync(new Herramienta
+            {
+                Nombre = "Memoria institucional",
+                Codigo = "MemoryTool",
+                Descripcion = "Consulta y guarda memoria institucional (formatos de reportes, definiciones, preferencias, contexto de workflows). Parámetros: operacion (buscar|leer|guardar), texto, codigo, titulo, contenido, ambito (Usuario|Agente|Organizacion|Workflow).",
+                Categoria = "Memoria",
+                Activa = true,
+                RequierePermiso = true,
+                FechaRegistro = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var ambitosEtapa21 = new (string Codigo, string Nombre, string Descripcion)[]
+        {
+            ("Conversacional", "Conversacional", "Contexto de conversaciones"),
+            ("Usuario", "Usuario", "Preferencias y datos del usuario"),
+            ("Agente", "Agente", "Conocimiento propio del agente"),
+            ("Organizacion", "Organización", "Conocimiento institucional compartido"),
+            ("Workflow", "Workflow", "Estado persistente de workflows")
+        };
+        foreach (var (codigo, nombre, descripcion) in ambitosEtapa21)
+        {
+            if (!await context.MemoryScopes.AnyAsync(s => s.Codigo == codigo))
+            {
+                await context.MemoryScopes.AddAsync(new MemoryScope
+                    { Codigo = codigo, Nombre = nombre, Descripcion = descripcion, Activo = true });
+            }
+        }
+        await context.SaveChangesAsync();
+
+        var categoriasEtapa21 = new (string Codigo, string Nombre)[]
+        {
+            ("FormatoReporte", "Formato de reporte"),
+            ("Definicion", "Definición institucional"),
+            ("Preferencia", "Preferencia de usuario"),
+            ("Hecho", "Hecho operativo"),
+            ("Procedimiento", "Procedimiento")
+        };
+        foreach (var (codigo, nombre) in categoriasEtapa21)
+        {
+            if (!await context.MemoryCategories.AnyAsync(c => c.Codigo == codigo))
+            {
+                await context.MemoryCategories.AddAsync(new MemoryCategory
+                    { Codigo = codigo, Nombre = nombre, Activo = true });
+            }
+        }
+        await context.SaveChangesAsync();
+
+        // Política global por defecto: 365 días, desactiva (no purga).
+        if (!await context.MemoryRetentionPolicies.AnyAsync(p => p.IdScope == null))
+        {
+            await context.MemoryRetentionPolicies.AddAsync(new MemoryRetentionPolicy
+            {
+                IdScope = null,
+                DiasRetencion = 365,
+                EliminarAlExpirar = false,
+                ConservarTrazabilidad = true,
+                Activo = true
+            });
+            await context.SaveChangesAsync();
+        }
+
         // Seed ConfiguracionOrchestrator
         if (!await context.ConfiguracionesOrchestrator.AnyAsync())
         {

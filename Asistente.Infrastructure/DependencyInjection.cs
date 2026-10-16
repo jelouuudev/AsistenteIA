@@ -101,6 +101,10 @@ public static class DependencyInjection
         services.AddScoped<ICredencialCifrador, CredencialCifrador>();
         services.AddScoped<IConnectorRepository, ConnectorRepository>();
         services.AddScoped<IConnectorExecutionRepository, ConnectorExecutionRepository>();
+        // Memoria Empresarial Avanzada (ETAPA 21)
+        services.AddScoped<IMemoryRepository, MemoryRepository>();
+        services.AddScoped<IMemoryVersionRepository, MemoryVersionRepository>();
+        services.AddScoped<IMemoryAccessLogRepository, MemoryAccessLogRepository>();
         services.AddScoped<ISqlQueryExecutor, SqlQueryExecutor>();
         services.AddScoped<ISchemaDiscoveryService, SchemaDiscoveryService>();
 

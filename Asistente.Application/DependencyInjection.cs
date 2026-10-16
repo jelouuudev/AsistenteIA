@@ -62,6 +62,13 @@ public static class DependencyInjection
         // Los repositorios y el cifrador se registran en Infrastructure.
         services.AddScoped<ITool, GatewayConnectorTool>();
         services.AddSingleton<Services.Conectores.ConnectorPolicyState>();
+        // Memoria Empresarial Avanzada (ETAPA 21).
+        // Los repositorios se registran en Infrastructure.
+        services.AddScoped<ITool, MemoryTool>();
+        services.AddScoped<Services.Memoria.MemoryManager>();
+        services.AddScoped<Services.Memoria.MemoryOrchestrator>();
+        services.AddScoped<Services.Memoria.MemoryRetentionEngine>();
+        services.AddScoped<Services.Memoria.SemanticMemorySearch>();
         services.AddScoped<Services.Conectores.ConnectorService>();
         services.AddScoped<IConnectorGateway, Services.Conectores.ConnectorGateway>();
         services.AddScoped<IConnector, Services.Conectores.RestConnector>();

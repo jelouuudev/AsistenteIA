@@ -1592,4 +1592,64 @@ public class ApiService : IApiService
         => await EnviarSinRetornoAsync(
             CrearRequest(HttpMethod.Put, $"/api/conectores/{codigo}/credencial",
                 new { tipo, nombreUsuario, secreto, parametros = parametros ?? new Dictionary<string, string>() }, currentUserId, ip));
+
+    // Memoria Empresarial (ETAPA 21)
+    public async Task<IEnumerable<MemoryDto>> GetMemoriasAsync(string? ambito, int currentUserId, string ip)
+        => await EnviarYLeerAsync<IEnumerable<MemoryDto>>(
+            CrearRequest(HttpMethod.Get, string.IsNullOrWhiteSpace(ambito) ? "/api/memorias" : $"/api/memorias?ambito={Uri.EscapeDataString(ambito)}", null, currentUserId, ip));
+
+    public async Task<MemoryDto?> GetMemoriaAsync(string codigo, int currentUserId, string ip)
+    {
+        try
+        {
+            return await EnviarYLeerAsync<MemoryDto>(
+                CrearRequest(HttpMethod.Get, $"/api/memorias/{codigo}", null, currentUserId, ip));
+        }
+        catch { return null; }
+    }
+
+    public async Task<MemoryDto> CrearMemoriaAsync(CrearMemoryRequest request, int currentUserId, string ip)
+        => await EnviarYLeerAsync<MemoryDto>(
+            CrearRequest(HttpMethod.Post, "/api/memorias", request, currentUserId, ip));
+
+    public async Task<MemoryDto> ActualizarMemoriaAsync(string codigo, string contenido, string? motivo, int currentUserId, string ip)
+        => await EnviarYLeerAsync<MemoryDto>(
+            CrearRequest(HttpMethod.Put, $"/api/memorias/{codigo}", new { contenido, motivo }, currentUserId, ip));
+
+    public async Task RevertirMemoriaAsync(string codigo, int numero, string? motivo, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(
+            CrearRequest(HttpMethod.Post, $"/api/memorias/{codigo}/revertir/{numero}", new { motivo }, currentUserId, ip));
+
+    public async Task EliminarMemoriaAsync(string codigo, int currentUserId, string ip)
+        => await EnviarSinRetornoAsync(
+            CrearRequest(HttpMethod.Delete, $"/api/memorias/{codigo}", null, currentUserId, ip));
+
+    public async Task<IEnumerable<MemoryVersionDto>> GetMemoriaVersionesAsync(string codigo, int currentUserId, string ip)
+        => await EnviarYLeerAsync<IEnumerable<MemoryVersionDto>>(
+            CrearRequest(HttpMethod.Get, $"/api/memorias/{codigo}/versiones", null, currentUserId, ip));
+
+    public async Task<IEnumerable<MemoryAccessLogDto>> GetMemoriaAuditoriaAsync(string codigo, int currentUserId, string ip)
+        => await EnviarYLeerAsync<IEnumerable<MemoryAccessLogDto>>(
+            CrearRequest(HttpMethod.Get, $"/api/memorias/{codigo}/auditoria", null, currentUserId, ip));
+
+    public async Task<IEnumerable<MemorySearchHitDto>> BuscarMemoriasAsync(string texto, int currentUserId, string ip)
+        => await EnviarYLeerAsync<IEnumerable<MemorySearchHitDto>>(
+            CrearRequest(HttpMethod.Get, $"/api/memorias/buscar?texto={Uri.EscapeDataString(texto)}", null, currentUserId, ip));
+
+    public async Task<MemoryMetricasDto> GetMemoriaMetricasAsync(int currentUserId, string ip)
+        => await EnviarYLeerAsync<MemoryMetricasDto>(
+            CrearRequest(HttpMethod.Get, "/api/memorias/metricas", null, currentUserId, ip));
+
+    public async Task<IEnumerable<string>> GetMemoriaRetencionPendientesAsync(int currentUserId, string ip)
+        => await EnviarYLeerAsync<IEnumerable<string>>(
+            CrearRequest(HttpMethod.Get, "/api/memorias/retencion/pendientes", null, currentUserId, ip));
+
+    public async Task<(long Desactivadas, long Eliminadas)> AplicarRetencionAsync(int currentUserId, string ip)
+    {
+        var json = await EnviarYLeerAsync<JsonElement>(
+            CrearRequest(HttpMethod.Post, "/api/memorias/retencion/aplicar", null, currentUserId, ip));
+        long des = json.TryGetProperty("desactivadas", out var d) && d.TryGetInt64(out var dv) ? dv : 0;
+        long eli = json.TryGetProperty("eliminadas", out var e) && e.TryGetInt64(out var ev) ? ev : 0;
+        return (des, eli);
+    }
 }
