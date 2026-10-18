@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Asistente.Domain.Interfaces;
@@ -19,6 +20,7 @@ public static class DbInitializer
 
         // Ensure database is created/migrated
         await context.Database.MigrateAsync();
+        await VerificarEsquemaAsync(context);
 
         // Seed Roles
         if (!await context.Roles.AnyAsync())
@@ -615,5 +617,58 @@ public static class DbInitializer
 
             await context.SaveChangesAsync();
         }
+    }
+
+    /// <summary>
+    /// Comprueba que toda tabla que declara el modelo exista realmente en la base.
+    ///
+    /// Existe por un motivo concreto: EF decide qué migraciones aplicar comparando
+    /// el MODELO contra el SNAPSHOT, nunca contra la base real. Si una migración
+    /// crea una tabla con un nombre distinto al que su propio snapshot registra
+    /// (pasó con 20260810162521_Etapa14_SeguridadGobernanza, que creó
+    /// 'ConfiguracionRAG' mientras el modelo dice 'ConfiguracionesRAG'), EF ve que
+    /// modelo y esquema coinciden, no genera rename y MigrateAsync no tiene nada que
+    /// aplicar. La deriva queda oculta hasta que un endpoint revienta con
+    /// "Invalid object name": en este proyecto, dos meses.
+    ///
+    /// Esta verificación la delata en el arranque, con el nombre de la tabla, en
+    /// lugar de dejar que se manifieste como un 500 por petición. Ante
+    /// desalineación corta el arranque: un contenedor sirviendo errores es peor que
+    /// uno que reinicia y reintenta (el compose usa restart: always).
+    /// </summary>
+    private static async Task VerificarEsquemaAsync(AsistenteDbContext context)
+    {
+        // GetTableName() es null en los tipos mapeados a vista, así que este filtro
+        // ya los deja fuera.
+        var declaradas = context.Model.GetEntityTypes()
+            .Where(e => e.GetTableName() != null)
+            .Select(e => new
+            {
+                Tabla = e.GetTableName(),
+                Entidad = e.ClrType?.Name
+            })
+            .Where(t => !string.IsNullOrWhiteSpace(t.Tabla))
+            .ToList();
+
+        if (declaradas.Count == 0) return;
+
+        var existentes = await context.Database
+            .SqlQueryRaw<string>("SELECT TABLE_NAME AS Value FROM INFORMATION_SCHEMA.TABLES")
+            .ToListAsync();
+
+        var faltantes = declaradas
+            .Where(d => !existentes.Contains(d.Tabla!, StringComparer.OrdinalIgnoreCase))
+            .GroupBy(d => d.Tabla, StringComparer.OrdinalIgnoreCase)
+            .Select(g => $"{g.Key} (entidad {g.First().Entidad})")
+            .ToList();
+
+        if (faltantes.Count == 0) return;
+
+        throw new InvalidOperationException(
+            "El esquema de la base de datos no coincide con el modelo: " +
+            $"{faltantes.Count} tabla(s) declarada(s) por EF no existen. " +
+            $"Faltan: {string.Join(", ", faltantes)}. " +
+            "Suele indicar una migración cuyo SQL contradice su propio snapshot; " +
+            "revisa la última migración aplicada y crea la que corrija el nombre.");
     }
 }

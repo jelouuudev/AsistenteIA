@@ -109,7 +109,15 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Seed database + migraciones (requerido en contenedores prod)
+// Migraciones + verificación de esquema + seed, antes de aceptar tráfico.
+// DbInitializer aplica las migraciones pendientes (MigrateAsync) y comprueba que
+// toda tabla que declara el modelo exista de verdad.
+//
+// Esto NO se traga el error a propósito. Antes sí lo hacía, y por eso una base
+// desalineada (ConfiguracionesRAG, dos meses) arrancaba igual y solo se
+// manifiestaba como un 500 en cada petición de chat: un contenedor que sirve
+// errores es peor que uno que no arranca. Con restart: always de docker-compose el
+// contenedor reintenta solo en cuanto la causa desaparece.
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -119,7 +127,10 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        Log.Fatal(ex, "Ocurrió un error al aplicar migraciones o sembrar la base de datos.");
+        Log.Fatal(ex,
+            "No se pudieron aplicar las migraciones, verificar el esquema o sembrar la base de datos. " +
+            "La aplicación no continúa con un esquema inconsistente.");
+        throw;
     }
 }
 
