@@ -48,14 +48,30 @@ public static class DependencyInjection
         services.AddScoped<IConfiguracionWorkflowRepository, ConfiguracionWorkflowRepository>();
 
         // Selección del almacén vectorial según configuración (ETAPA 15 - despliegue sin ChromaDB)
-        services.AddScoped<IVectorStore>(sp =>
+        // El almacén CRUDO. Solo lo consumes quien debe ver también los vectores de
+        // memoria institucional (SemanticMemorySearch).
+        static IVectorStore AlmacenCrudo(IServiceProvider sp)
         {
             var embeddingCfg = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmbeddingConfig>>().Value;
             var baseVectorial = (embeddingCfg.BaseVectorial ?? "Chroma").Trim();
             if (baseVectorial.Equals("InMemory", StringComparison.OrdinalIgnoreCase))
                 return sp.GetRequiredService<InMemoryVectorStore>();
             return sp.GetRequiredService<ChromaVectorStore>();
-        });
+        }
+
+        // Todo el resto recibe el almacén ENVUELTO: no puede devolver vectores de
+        // memoria. Documentos y memorias comparten colección, y el RAG solo
+        // autoriza por documento, asi que un vector de memoria devuelto aqui
+        // saltaria el permiso MEMORIA:{codigo} del Memory Manager. Al decidirlo en
+        // la frontera, un consumidor nuevo queda protegido por omision.
+        services.AddScoped<IVectorStore>(sp => new MemorySafeVectorStore(AlmacenCrudo(sp)));
+
+        // Excepcion explicita: la busqueda de memorias si necesita el almacen crudo.
+        services.AddScoped<Asistente.Application.Services.Memoria.SemanticMemorySearch>(sp =>
+            new Asistente.Application.Services.Memoria.SemanticMemorySearch(
+                AlmacenCrudo(sp),
+                sp.GetRequiredService<IEmbeddingProvider>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Asistente.Application.Services.Memoria.SemanticMemorySearch>>()));
 
         // Repositorios base
         services.AddScoped<IConversacionRepository, ConversacionRepository>();

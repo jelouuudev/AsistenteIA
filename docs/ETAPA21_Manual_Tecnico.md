@@ -34,6 +34,7 @@ MemoryManager (CRUD+versionado+permisos+auditoría)
 ## 3. Decisiones
 
 - **Vector compartido, filtro por permiso después**: cada memoria se indexa con Guid propio y marcador `MEMORIA:{codigo}`; al buscar se filtra a esos Guids y LUEGO se exige permiso. Sin vector (Chroma caído) degrada a texto sin romper.
+- **La frontera la impone el almacén, no cada consumidor** (`MemorySafeVectorStore`): como documentos y memorias comparten colección, y el RAG solo autoriza por documento, un vector de memoria devuelto por una consulta de RAG saltaría el permiso `MEMORIA:{codigo}` y llegaría al prompt sin autorizar. Que la exclusión esté en `IVectorStore` y no en cada servicio evita que un consumidor nuevo la reabra en silencio: solo `SemanticMemorySearch` recibe el almacén CRUDO, como excepción explícita en el DI.
 - **Versionado append-only**: crear→v1; actualizar/revertir agregan versiones; jamás se reescribe.
 - **Permisos**: `RequierePermiso` exige `MEMORIA:{Codigo}`; el propietario exime en su ámbito Usuario. Denegado no expone contenido (403 + auditoría).
 - **Retención**: vencimiento explícito o por días de la política (ámbito > global); expirar desactiva, purgar elimina vector+registro dejando el evento con el código. Lazy en lectura + `POST retencion/aplicar` explícito.

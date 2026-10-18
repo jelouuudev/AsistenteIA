@@ -96,7 +96,7 @@ public class RecuperacionService : IRecuperacionService
             {
                 resultadosSemanticos = await _vectorStore.SearchAsync(pregunta, maxChunks * 2);
             }
-            
+
             if (resultadosSemanticos != null && resultadosSemanticos.Any())
             {
                 var filtrados = resultadosSemanticos.Where(r => r.Score >= minScore).Take(maxChunks).ToList();
@@ -151,6 +151,7 @@ public class RecuperacionService : IRecuperacionService
 
         return await RecuperarContextoLexicoAsync(pregunta, maxChunks, maxCaracteres, cancellationToken);
     }
+
 
     private async Task<string> RecuperarContextoLexicoAsync(string pregunta, int maxChunks, int maxCaracteres, CancellationToken cancellationToken)
     {
@@ -488,10 +489,10 @@ public class RecuperacionService : IRecuperacionService
                         .Select(g => g.First())
                         .ToList();
                 }
-                else
-                {
-                    resultadosSemanticos = await _vectorStore.SearchWithFilterAsync(pregunta, maxChunks * 3, filtro);
-                }
+else
+            {
+resultadosSemanticos = await _vectorStore.SearchAsync(pregunta, maxChunks * 2);
+            }
                 
                 // SEGURIDAD (fix desasignacion): si el filtro por fuentes no devolvio
                 // resultados, NO se hace fallback sin filtro. El fallback exponia
