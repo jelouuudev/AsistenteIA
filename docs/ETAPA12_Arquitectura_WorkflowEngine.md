@@ -73,6 +73,24 @@ Tras cada paso exitoso se indexa el resultado bajo tres claves:
 permitiendo encadenar salidas (ej. Paso 1 consulta clientes → Paso 2 genera reporte con
 `{{resultado}}`).
 
+### 4.1 Memoria del flujo (ETAPA 21)
+
+Antes de ejecutar los pasos, el motor carga dos claves adicionales desde el
+`MemoryOrchestrator` (ámbito **Workflow** y los ámbitos superiores):
+
+- `memoria` — conocimiento institucional y del agente autorizado para este flujo
+  (`{{memoria}}`).
+- `estadoPrevio` — el último estado que el propio flujo guardó (`{{estadoPrevio}}`),
+  para continuar después de un reinicio o de una reanudación por confirmación.
+
+Al cerrar la ejecución (no al pausarse esperando confirmación), el motor persiste un
+snapshot del estado como memoria `WF-ESTADO-{IdWorkflow}`, versionada: cada ejecución
+deja una versión. Es lo que un flujo usa para retomar donde quedó.
+
+Estas dos claves son para parámetros de texto (títulos, formatos, consultas redactadas).
+Inyectar prosa dentro de una sentencia SQL rompe la consulta: use `{{resultado}}` o
+un parámetro propio para eso.
+
 ## 5. Reintentos y errores (Actividad 5)
 
 `reintentos = max(paso.ReintentosMaximos, config.ReintentosMaximos)`. El bucle intenta

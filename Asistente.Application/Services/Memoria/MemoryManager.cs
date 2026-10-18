@@ -15,11 +15,15 @@ namespace Asistente.Application.Services.Memoria;
 /// permisos (MEMORIA:{Codigo} o propiedad en ámbito Usuario), expiración perezosa
 /// y auditoría total. La indexación semántica es best-effort: jamás tumba la
 /// operación. Eliminar respeta la política (trazabilidad o purga).
+///
+/// El historial de versiones no lo gestiona aquí sino el Memory Version Manager:
+/// esta clase compone contenido y versión y se la pasa; el control de acceso a
+/// una versión sigue siendo de esta capa, que es quien conoce al usuario.
 /// </summary>
 public class MemoryManager
 {
     private readonly IMemoryRepository _repo;
-    private readonly IMemoryVersionRepository _versiones;
+    private readonly MemoryVersionManager _versiones;
     private readonly IMemoryAccessLogRepository _logs;
     private readonly SemanticMemorySearch _busqueda;
     private readonly MemoryRetentionEngine _retencion;
@@ -28,7 +32,7 @@ public class MemoryManager
 
     public MemoryManager(
         IMemoryRepository repo,
-        IMemoryVersionRepository versiones,
+        MemoryVersionManager versiones,
         IMemoryAccessLogRepository logs,
         SemanticMemorySearch busqueda,
         MemoryRetentionEngine retencion,
@@ -88,15 +92,7 @@ public class MemoryManager
             memoria.FechaExpiracion = ahora.AddDays(request.DiasRetencion.Value);
 
         await _repo.AddAsync(memoria, ct);
-        await _versiones.AddAsync(new MemoryVersion
-        {
-            IdMemory = memoria.IdMemory,
-            Numero = 1,
-            Contenido = memoria.Contenido,
-            Motivo = "Creación",
-            IdUsuario = idUsuario,
-            Fecha = ahora
-        }, ct);
+        await _versiones.RegistrarAsync(memoria, memoria.Contenido, "Creación", idUsuario, ct);
         await _busqueda.IndexarAsync(memoria, ct);
         if (memoria.Indexada)
             await _repo.UpdateAsync(memoria, ct);
@@ -129,14 +125,17 @@ public class MemoryManager
     }
 
     public async Task<MemoryDto> ActualizarAsync(string codigo, ActualizarMemoryRequest request,
-        int idUsuario, CancellationToken ct = default)
+        int idUsuario, CancellationToken ct = default, bool ignorarExpiracion = false)
     {
         var memoria = await _repo.GetByCodigoAsync(codigo, ct)
             ?? throw new KeyNotFoundException($"No existe la memoria '{codigo}'.");
         if (!memoria.Activo)
             throw new InvalidOperationException($"La memoria '{codigo}' está inactiva.");
         var ambito = memoria.Scope?.Codigo ?? string.Empty;
-        if (await ExpiradaAsync(memoria, ct))
+        // ignorarExpiracion lo usa solo el estado de un workflow: se reescribe en cada
+        // ejecución, así que un registro que caducó debe poder renovarse en vez de
+        // quedar con el contenido viejo congelado para siempre.
+        if (!ignorarExpiracion && await ExpiradaAsync(memoria, ct))
             throw new InvalidOperationException($"La memoria '{codigo}' expiró.");
         if (!await AutorizadoAsync(memoria, ambito, idUsuario, ct))
         {
@@ -152,15 +151,7 @@ public class MemoryManager
         memoria.Contenido = request.Contenido;
         memoria.FechaActualizacion = ahora;
         await _repo.UpdateAsync(memoria, ct);
-        await _versiones.AddAsync(new MemoryVersion
-        {
-            IdMemory = memoria.IdMemory,
-            Numero = memoria.VersionActual,
-            Contenido = memoria.Contenido,
-            Motivo = request.Motivo,
-            IdUsuario = idUsuario,
-            Fecha = ahora
-        }, ct);
+        await _versiones.RegistrarAsync(memoria, memoria.Contenido, request.Motivo, idUsuario, ct);
         await _busqueda.IndexarAsync(memoria, ct);
         if (memoria.Indexada)
             await _repo.UpdateAsync(memoria, ct);
@@ -172,8 +163,11 @@ public class MemoryManager
     public async Task<MemoryDto> RevertirAsync(string codigo, int numero, string? motivo,
         int idUsuario, CancellationToken ct = default)
     {
-        var version = await _versiones.GetByNumeroAsync(
-            (await _repo.GetByCodigoAsync(codigo, ct))?.IdMemory ?? 0, numero)
+        // Revertir NO borra ni reescribe: anexa el contenido de la versión elegida
+        // como versión nueva (append-only). El control de acceso y la expiración los
+        // verifica ActualizarAsync, por la misma vía que cualquier cambio.
+        var idMemory = (await _repo.GetByCodigoAsync(codigo, ct))?.IdMemory ?? 0;
+        var version = await _versiones.ObtenerAsync(idMemory, numero, ct)
             ?? throw new KeyNotFoundException($"La memoria '{codigo}' no tiene versión {numero}.");
         return await ActualizarAsync(codigo, new ActualizarMemoryRequest
         {
@@ -303,14 +297,11 @@ public class MemoryManager
             ?? throw new KeyNotFoundException($"No existe la memoria '{codigo}'.");
         if (!await AutorizadoAsync(memoria, memoria.Scope?.Codigo ?? string.Empty, idUsuario, ct))
             throw new UnauthorizedAccessException($"Sin permiso para '{codigo}'.");
-        return (await _versiones.GetByMemoryAsync(memoria.IdMemory, ct))
-            .Select(v => new MemoryVersionDto
-            {
-                Numero = v.Numero, Contenido = v.Contenido, Motivo = v.Motivo, Fecha = v.Fecha
-            }).ToList();
+        return await _versiones.ListarDtoAsync(memoria.IdMemory, ct);
     }
 
-    public async Task<List<MemoryDto>> ListarAsync(int idUsuario, string? ambito = null, CancellationToken ct = default)
+    public async Task<List<MemoryDto>> ListarAsync(int idUsuario, string? ambito = null,
+        CancellationToken ct = default, int? tope = null)
     {
         var ahora = DateTime.UtcNow;
         var politicas = await _repo.GetPoliticasAsync(ct);
@@ -328,6 +319,9 @@ public class MemoryManager
             if (MemoryRetentionEngine.VencimientoEfectivo(memoria, dias) is DateTime vence && vence <= ahora)
                 continue;
             salida.Add(ADto(memoria, memoria.Scope?.Codigo ?? string.Empty));
+            // Cada candidata autorizada cuesta una consulta de permisos: con 'tope'
+            // el recorrido se corta en cuanto se alcanza lo pedido.
+            if (tope.HasValue && salida.Count >= tope.Value) break;
         }
         return salida;
     }
@@ -350,7 +344,7 @@ public class MemoryManager
         }
         long versiones = 0;
         foreach (var memoria in activas)
-            versiones += (await _versiones.GetByMemoryAsync(memoria.IdMemory, ct)).Count;
+            versiones += await _versiones.ContarAsync(memoria.IdMemory, ct);
         return new MemoryMetricasDto
         {
             TotalActivas = activas.Count,

@@ -19,20 +19,21 @@ namespace Asistente.Application.Services.Memoria;
 public class MemoryRetentionEngine
 {
     private readonly IMemoryRepository _repo;
-    private readonly IMemoryVersionRepository _versiones;
     private readonly IMemoryAccessLogRepository _logs;
     private readonly SemanticMemorySearch _busqueda;
     private readonly ILogger<MemoryRetentionEngine> _logger;
 
+    // Sin IMemoryVersionRepository: al purgar una memoria se borra su fila y su
+    // vector, pero sus versiones quedan como historial (la trazabilidad manda) y
+    // esta clase nunca las leyó. Se retiró la dependencia porque inyectarla sin
+    // usarla oculta que el borrado de versiones es responsabilidad de otro capa.
     public MemoryRetentionEngine(
         IMemoryRepository repo,
-        IMemoryVersionRepository versiones,
         IMemoryAccessLogRepository logs,
         SemanticMemorySearch busqueda,
         ILogger<MemoryRetentionEngine> logger)
     {
         _repo = repo;
-        _versiones = versiones;
         _logs = logs;
         _busqueda = busqueda;
         _logger = logger;

@@ -25,6 +25,7 @@ public class WorkflowEngineTests
     private readonly Mock<IToolOrchestrator> _orchestrator = new();
     private readonly List<WorkflowEjecucion> _ejecucionesGuardadas = new();
     private readonly List<WorkflowPasoEjecucion> _pasosGuardados = new();
+    private Mock<Asistente.Application.Services.Memoria.MemoryOrchestrator>? _memoriaMock;
 
     private ConfiguracionWorkflow ConfigPorDefecto() => new()
     {
@@ -56,9 +57,26 @@ public class WorkflowEngineTests
         authMock.Setup(a => a.VerificarWorkflowAsistenteAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ResultadoAutorizacion { Permitido = true });
 
+        // Memoria del workflow: sin estado previo ni bloque de conocimiento.
+        var memoriaMock = new Mock<Asistente.Application.Services.Memoria.MemoryOrchestrator>(
+            null!, null!, null!, new Mock<ILogger<Asistente.Application.Services.Memoria.MemoryOrchestrator>>().Object);
+        memoriaMock
+            .Setup(m => m.ObtenerContextoAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(string.Empty);
+        memoriaMock
+            .Setup(m => m.TryLeerEstadoWorkflowAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Asistente.Shared.MemoryDto?)null);
+        memoriaMock
+            .Setup(m => m.GuardarEstadoWorkflowAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Asistente.Shared.MemoryDto());
+        _memoriaMock = memoriaMock;
+
         return new WorkflowEngine(_workflowRepo.Object, _ejecRepo.Object,
             _pasoEjecRepo.Object, _configRepo.Object, _orchestrator.Object,
-            _uow.Object, authMock.Object, new Mock<ILogger<WorkflowEngine>>().Object);
+            _uow.Object, authMock.Object, new Mock<ILogger<WorkflowEngine>>().Object,
+            memoriaMock.Object);
     }
 
     private Workflow ConstruirWorkflow(List<WorkflowPaso> pasos)
@@ -227,5 +245,125 @@ public class WorkflowEngineTests
         Assert.True(res.Exitoso);
         Assert.NotNull(capturados);
         Assert.Equal("Manual de Producto", capturados!["consulta"]?.ToString());
+    }
+
+    /// <summary>
+    /// La memoria del ámbito Workflow entra al contexto compartido: un paso puede
+    /// referenciarla con {{memoria}}. Antes el motor solo daba soporte a
+    /// {{resultado}}/{{PasoN}}/{{contextoInicial}} y la memoria era inalcanzable
+    /// desde una definición de flujo.
+    /// </summary>
+    [Fact]
+    public async Task MemoriaWorkflow_InyectaElBloqueEnLosParametrosDelPaso()
+    {
+        var pasos = new List<WorkflowPaso>
+        {
+            Paso(1, "ReportTool", parametros: "{\"titulo\":\"Formato: {{memoria}}\"}")
+        };
+        ConstruirWorkflow(pasos);
+        string? tituloVisto = null;
+        _orchestrator.Setup(o => o.EjecutarAsync(It.IsAny<ToolExecutionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ToolExecutionRequest r, CancellationToken _) =>
+            {
+                tituloVisto = r.Parametros["titulo"]?.ToString();
+                return new ToolExecutionResult { Exitoso = true, Contenido = "reporte" };
+            });
+        var engine = CrearEngine();
+        _memoriaMock!
+            .Setup(m => m.ObtenerContextoAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("[Memoria Organizacion: Formato]\ncolumnas: codigo, nombre");
+
+        await engine.EjecutarAsync(1, 7, 3, true, null, CancellationToken.None);
+
+        Assert.NotNull(tituloVisto);
+        Assert.Contains("columnas: codigo, nombre", tituloVisto!);
+    }
+
+    /// <summary>
+    /// La ejecución arranca con el estado que el propio flujo guardó antes, para
+    /// poder continuar tras un reinicio o una reanudación por confirmación.
+    /// </summary>
+    [Fact]
+    public async Task MemoriaWorkflow_RetomaElEstadoPrevioGuardado()
+    {
+        var pasos = new List<WorkflowPaso>
+        {
+            Paso(1, "ReportTool", parametros: "{\"contenido\":\"{{estadoPrevio}}\"}")
+        };
+        ConstruirWorkflow(pasos);
+        string? contenidoVisto = null;
+        _orchestrator.Setup(o => o.EjecutarAsync(It.IsAny<ToolExecutionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ToolExecutionRequest r, CancellationToken _) =>
+            {
+                contenidoVisto = r.Parametros["contenido"]?.ToString();
+                return new ToolExecutionResult { Exitoso = true, Contenido = "reporte" };
+            });
+        var engine = CrearEngine();
+        _memoriaMock!
+            .Setup(m => m.TryLeerEstadoWorkflowAsync("WF-ESTADO-1", It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Asistente.Shared.MemoryDto
+            {
+                Codigo = "WF-ESTADO-1",
+                Contenido = "Paso 1 (SqlQueryTool): clientes:5",
+                VersionActual = 3
+            });
+
+        await engine.EjecutarAsync(1, 7, 3, true, null, CancellationToken.None);
+
+        Assert.NotNull(contenidoVisto);
+        Assert.Contains("clientes:5", contenidoVisto!);
+    }
+
+    /// <summary>
+    /// Al cerrar el flujo, su estado queda en memoria de ámbito Workflow (una versión
+    /// nueva por ejecución), que es lo que hace posible la reanudación del caso anterior.
+    /// </summary>
+    [Fact]
+    public async Task MemoriaWorkflow_PersisteElEstadoAlTerminarElFlujo()
+    {
+        var pasos = new List<WorkflowPaso> { Paso(1, "SqlQueryTool") };
+        ConstruirWorkflow(pasos);
+        _orchestrator.Setup(o => o.EjecutarAsync(It.IsAny<ToolExecutionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionResult { Exitoso = true, Contenido = "clientes:5" });
+        var engine = CrearEngine();
+
+        var res = await engine.EjecutarAsync(1, 7, 3, true, null, CancellationToken.None);
+
+        Assert.True(res.Exitoso);
+        _memoriaMock!.Verify(m => m.GuardarEstadoWorkflowAsync(
+            1, "WF-ESTADO-1", It.IsAny<string>(), It.IsAny<string>(), 7, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _memoriaMock.Verify(m => m.GuardarEstadoWorkflowAsync(
+            1, "WF-ESTADO-1", It.IsAny<string>(),
+            It.Is<string>(c => c.Contains("clientes:5")), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Un fallo al guardar la memoria no puede dar por fallida una ejecución que ya
+    /// se cerró correctamente en la base de datos.
+    /// </summary>
+    [Fact]
+    public async Task MemoriaWorkflow_SiFalla_NoTumbaLaEjecucion()
+    {
+        var pasos = new List<WorkflowPaso> { Paso(1, "SqlQueryTool") };
+        ConstruirWorkflow(pasos);
+        _orchestrator.Setup(o => o.EjecutarAsync(It.IsAny<ToolExecutionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionResult { Exitoso = true, Contenido = "ok" });
+        var engine = CrearEngine();
+        _memoriaMock!
+            .Setup(m => m.ObtenerContextoAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("vector store caído"));
+        _memoriaMock
+            .Setup(m => m.GuardarEstadoWorkflowAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("vector store caído"));
+
+        var res = await engine.EjecutarAsync(1, 7, 3, true, null, CancellationToken.None);
+
+        Assert.True(res.Exitoso);
+        Assert.Equal("Exitosa", res.Estado);
     }
 }

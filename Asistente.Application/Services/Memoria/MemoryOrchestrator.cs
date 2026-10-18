@@ -13,10 +13,21 @@ namespace Asistente.Application.Services.Memoria;
 /// Orquestador de memoria (ETAPA 21): compone el contexto operativo para un
 /// agente/usuario/workflow con las memorias autorizadas de cada ámbito
 /// (Workflow > Agente > Usuario > Organización), recortado a un tope.
-/// Es lo que consumen Agent Runtime, Planner y Workflow Engine.
+/// Es lo que consumen el Agent Runtime (ChatService, siempre en cada mensaje) y
+/// el Workflow Engine (estado persistente + token {{memoria}} en sus pasos).
+/// El Planner no lo invoca directamente a propósito: sus pasos Agent ejecutan el
+/// Agent Runtime, que ya inyecta la memoria; llamarlo otra vez duplicaría el
+/// bloque sin aportar nada.
 /// </summary>
 public class MemoryOrchestrator
 {
+    /// <summary>
+    /// Tope de memorias que se evaluan al componer contexto. Cada candidata se
+    /// autoriza con una consulta de permisos, así que sin este tope el coste crece
+    /// con el número de memorias activas y el runtime paga la factura en cada mensaje.
+    /// </summary>
+    internal const int TopeMemoriasContexto = 20;
+
     private readonly MemoryManager _manager;
     private readonly IMemoryRepository _repo;
     private readonly IMemoriaService _conversaciones;
@@ -41,7 +52,7 @@ public class MemoryOrchestrator
     /// (memoria conversacional persistente reutilizando el almacenamiento de
     /// chat existente, sin duplicar datos). Solo de su propietario.
     /// </summary>
-    public async Task<string> ObtenerContextoAsync(int idUsuario, int? idAsistente = null,
+    public virtual async Task<string> ObtenerContextoAsync(int idUsuario, int? idAsistente = null,
         int? idWorkflow = null, int maxCaracteres = 3000, int? idConversacion = null,
         int maxTurnos = 6, CancellationToken ct = default)
     {
@@ -54,13 +65,13 @@ public class MemoryOrchestrator
                 var bloque = await BloqueConversacionalAsync(idUsuario, idConversacion.Value, maxTurnos, ct);
                 if (!string.IsNullOrWhiteSpace(bloque))
                 {
-                    sb.Append(bloque);
+                    sb.Append(Recortar(bloque, maxCaracteres));
                     sb.Append('\n');
                 }
             }
 
             var piezas = new List<(int Orden, MemoryDto M)>();
-            var todas = await _manager.ListarAsync(idUsuario, null, ct);
+            var todas = await _manager.ListarAsync(idUsuario, null, ct, TopeMemoriasContexto);
 
             foreach (var m in todas)
             {
@@ -70,6 +81,11 @@ public class MemoryOrchestrator
                     "Agente" when idAsistente.HasValue && m.IdPropietario == idAsistente => 1,
                     "Usuario" when m.IdPropietario == idUsuario => 2,
                     "Organizacion" => 3,
+                    // El ámbito Conversacional sí es inyectable: son notas y
+                    // antecedentes que alguien registró como memoria (no el historial
+                    // del chat, que va aparte). Antes caía en la rama de descarte y
+                    // una memoria de este ámbito nunca llegaba al prompt.
+                    "Conversacional" => 4,
                     _ => 9
                 };
                 if (orden < 9) piezas.Add((orden, m));
@@ -122,34 +138,66 @@ public class MemoryOrchestrator
 
     /// <summary>Caso 3: el workflow guarda su estado para continuar después
     /// (crea la primera vez, versiona las siguientes).</summary>
-    public async Task<MemoryDto> GuardarEstadoWorkflowAsync(int idWorkflow, string codigo,
+    public virtual async Task<MemoryDto> GuardarEstadoWorkflowAsync(int idWorkflow, string codigo,
         string titulo, string contenido, int idUsuario, CancellationToken ct = default)
     {
-        try
+        // La existencia se consulta en el repositorio y no con ObtenerAsync: ese
+        // método además evalúa expiración y permisos, y un estado de workflow que
+        // venció (política de 365 días, sin permiso asociado) ya no podría volver
+        // a guardarse. El estado de un flujo es del propio flujo, no una memoria
+        // sujeta a autorización de lectura.
+        var existente = await _repo.GetByCodigoAsync(codigo.Trim(), ct);
+        if (existente != null && existente.Activo)
         {
-            await _manager.ObtenerAsync(codigo, idUsuario, null, ct);
             return await _manager.ActualizarAsync(codigo, new ActualizarMemoryRequest
             {
                 Contenido = contenido,
                 Motivo = $"Estado del workflow {idWorkflow}."
-            }, idUsuario, ct);
+            }, idUsuario, ct, ignorarExpiracion: true);
         }
-        catch (KeyNotFoundException)
+
+        return await _manager.CrearAsync(new CrearMemoryRequest
         {
-            return await _manager.CrearAsync(new CrearMemoryRequest
-            {
-                Codigo = codigo,
-                Titulo = titulo,
-                Contenido = contenido,
-                Ambito = "Workflow",
-                IdPropietario = idWorkflow,
-                RequierePermiso = false
-            }, idUsuario, ct);
-        }
+            Codigo = codigo,
+            Titulo = titulo,
+            Contenido = contenido,
+            Ambito = "Workflow",
+            IdPropietario = idWorkflow,
+            RequierePermiso = false
+        }, idUsuario, ct);
     }
 
     /// <summary>Caso 3: el workflow retoma su estado guardado.</summary>
-    public Task<MemoryDto> LeerEstadoWorkflowAsync(int idWorkflow, string codigo,
+    public virtual Task<MemoryDto> LeerEstadoWorkflowAsync(int idWorkflow, string codigo,
         int idUsuario, CancellationToken ct = default)
         => _manager.ObtenerAsync(codigo, idUsuario, null, ct);
+
+    /// <summary>
+    /// Igual que <see cref="LeerEstadoWorkflowAsync"/> pero devuelve null en lugar de
+    /// lanzar cuando no hay estado guardado. El Workflow Engine lo invoca en cada
+    /// ejecución y no debe convertir "no hay estado previo" en un error del flujo.
+    /// </summary>
+    public virtual async Task<MemoryDto?> TryLeerEstadoWorkflowAsync(string codigo,
+        int idUsuario, CancellationToken ct = default)
+    {
+        try
+        {
+            return await _manager.ObtenerAsync(codigo, idUsuario, null, ct);
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Corta un bloque a <paramref name="maxCaracteres"/> sin partir una línea,
+    /// para respetar el presupuesto de tokens del prompt.</summary>
+    private static string Recortar(string texto, int maxCaracteres)
+    {
+        if (maxCaracteres <= 0 || texto.Length <= maxCaracteres) return texto;
+        var recorte = texto[..maxCaracteres];
+        var ultimoSalto = recorte.LastIndexOf('\n');
+        if (ultimoSalto > maxCaracteres / 2) recorte = recorte[..ultimoSalto];
+        return recorte + "… (memoria recortada)";
+    }
 }

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Application.Services.Memoria;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -55,6 +56,19 @@ public class WorkflowPasoResultado
 /// </summary>
 public class WorkflowEngine : IWorkflowEngine
 {
+    /// <summary>
+    /// Código de la memoria donde se guarda el estado de cada flujo. El id del
+    /// workflow va en el código porque el de memoria es único en toda la base:
+    /// dos flujos con la misma definición no comparten estado.
+    /// </summary>
+    private const string PrefijoEstadoWorkflow = "WF-ESTADO-";
+
+    /// <summary>Tope del bloque de memoria inyectable en los pasos ({{memoria}}).</summary>
+    private const int MemoriaEnPasos = 1200;
+
+    /// <summary>Tope del snapshot de estado persistido al terminar el flujo.</summary>
+    private const int EstadoMaximo = 4000;
+
     private readonly IWorkflowRepository _workflowRepository;
     private readonly IWorkflowEjecucionRepository _ejecucionRepository;
     private readonly IWorkflowPasoEjecucionRepository _pasoEjecucionRepository;
@@ -63,6 +77,7 @@ public class WorkflowEngine : IWorkflowEngine
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutorizacionService _autorizacionService;
     private readonly ILogger<WorkflowEngine> _logger;
+    private readonly MemoryOrchestrator _memoria;
 
     public WorkflowEngine(
         IWorkflowRepository workflowRepository,
@@ -72,7 +87,8 @@ public class WorkflowEngine : IWorkflowEngine
         IToolOrchestrator toolOrchestrator,
         IUnitOfWork unitOfWork,
         IAutorizacionService autorizacionService,
-        ILogger<WorkflowEngine> logger)
+        ILogger<WorkflowEngine> logger,
+        MemoryOrchestrator memoria)
     {
         _workflowRepository = workflowRepository;
         _ejecucionRepository = ejecucionRepository;
@@ -82,6 +98,7 @@ public class WorkflowEngine : IWorkflowEngine
         _unitOfWork = unitOfWork;
         _autorizacionService = autorizacionService;
         _logger = logger;
+        _memoria = memoria;
     }
 
     public async Task<WorkflowExecutionResult> EjecutarAsync(
@@ -153,6 +170,14 @@ public class WorkflowEngine : IWorkflowEngine
         }
         if (ultimoResultado != null)
             contexto["resultado"] = ultimoResultado;
+
+        // === Memoria del workflow (ámbito Workflow) ===
+        // 'memoria': conocimiento institucional y del agente autorizado para este
+        // flujo, más lo que el propio flujo guardó antes (ámbito Workflow). Un paso
+        // lo referencia en sus parámetros con {{memoria}}.
+        // 'estadoPrevio': el último estado persistido del flujo, para continuar
+        // después de un reinicio o de una reanudación por confirmación.
+        await CargarMemoriaWorkflowAsync(workflow, idUsuario, idAsistente, contexto, cancellationToken);
 
         var resultado = new WorkflowExecutionResult { IdEjecucion = ejecucion.IdEjecucion };
         var flujoInicio = DateTime.UtcNow;
@@ -285,7 +310,88 @@ public class WorkflowEngine : IWorkflowEngine
         await _ejecucionRepository.UpdateAsync(ejecucion, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // El estado del flujo queda en memoria institucional (ámbito Workflow) para
+        // que la próxima ejecución pueda retomarlo. Se hace DESPUÉS de cerrar la
+        // ejecución en BD y nunca propaga su error al flujo.
+        await GuardarMemoriaWorkflowAsync(workflow, idUsuario, ejecucion, pasos, resultado, cancellationToken);
+
         return resultado;
+    }
+
+    /// <summary>
+    /// Carga en el contexto compartido la memoria disponible para el flujo:
+    /// <c>memoria</c> (conocimiento autorizado del usuario, agente y organización,
+    /// más lo guardado por este workflow antes) y <c>estadoPrevio</c> (el último
+    /// estado persistido). Ambas claves son sustituibles en los parámetros de un
+    /// paso con <c>{{memoria}}</c> y <c>{{estadoPrevio}}</c>; son pensadas para
+    /// parámetros de texto (títulos, formatos, consultas redactadas), no para
+    /// inyectar prosa dentro de una sentencia SQL.
+    /// Nunca propaga excepción: la memoria es una capa opcional.
+    /// </summary>
+    private async Task CargarMemoriaWorkflowAsync(Workflow workflow, int idUsuario, int? idAsistente,
+        Dictionary<string, string> contexto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var bloque = await _memoria.ObtenerContextoAsync(idUsuario, idAsistente,
+                idWorkflow: workflow.IdWorkflow, maxCaracteres: MemoriaEnPasos,
+                idConversacion: null, ct: cancellationToken);
+            if (!string.IsNullOrWhiteSpace(bloque))
+                contexto["memoria"] = bloque;
+
+            var estadoPrevio = await _memoria.TryLeerEstadoWorkflowAsync(
+                PrefijoEstadoWorkflow + workflow.IdWorkflow, idUsuario, cancellationToken);
+            if (estadoPrevio != null)
+            {
+                contexto["estadoPrevio"] = estadoPrevio.Contenido;
+                _logger.LogInformation("Workflow {Codigo}: se retomó el estado guardado (v{Version}).",
+                    workflow.Codigo, estadoPrevio.VersionActual);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Workflow {Codigo}: no se pudo cargar la memoria; se continúa sin ella.",
+                workflow.Codigo);
+        }
+    }
+
+    /// <summary>
+    /// Persiste el estado final del flujo como memoria de ámbito Workflow
+    /// (versionada: cada ejecución deja una versión). Best-effort: un fallo aquí
+    /// no puede dar por fallida una ejecución que ya se guardó como correcta.
+    /// </summary>
+    private async Task GuardarMemoriaWorkflowAsync(Workflow workflow, int idUsuario,
+        WorkflowEjecucion ejecucion, List<WorkflowPaso> pasos,
+        WorkflowExecutionResult resultado, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var lineas = new List<string>
+            {
+                $"Ejecución #{ejecucion.IdEjecucion} · Estado: {ejecucion.Estado} · Cierre: {ejecucion.FechaFin:yyyy-MM-dd HH:mm}Z"
+            };
+
+            foreach (var paso in resultado.Pasos)
+            {
+                if (string.IsNullOrWhiteSpace(paso.Resultado)) continue;
+                var detalle = paso.Resultado.Length > 600 ? paso.Resultado[..600] + "…" : paso.Resultado;
+                var orden = pasos.FirstOrDefault(p => p.IdPaso == paso.IdPaso)?.Orden;
+                lineas.Add($"Paso {orden ?? paso.IdPaso} ({paso.Nombre}): {detalle}");
+            }
+
+            var snapshot = string.Join("\n", lineas);
+            if (snapshot.Length > EstadoMaximo)
+                snapshot = snapshot[..EstadoMaximo] + "\n… (estado truncado)";
+
+            await _memoria.GuardarEstadoWorkflowAsync(workflow.IdWorkflow,
+                PrefijoEstadoWorkflow + workflow.IdWorkflow,
+                $"Estado del flujo {workflow.Codigo}",
+                snapshot, idUsuario, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Workflow {Codigo}: no se pudo guardar el estado en memoria.", workflow.Codigo);
+        }
     }
 
     private async Task<WorkflowPasoResultado> EjecutarPasoAsync(

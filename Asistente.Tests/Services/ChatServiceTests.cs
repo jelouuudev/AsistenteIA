@@ -30,6 +30,7 @@ public class ChatServiceTests
     private readonly Mock<IWorkflowEngine> _mockWorkflowEngine;
     private readonly Mock<IAgentOrchestrator> _mockAgentOrchestrator;
     private readonly Mock<Asistente.Application.Services.Herramientas.ISeleccionHerramientaSemantica> _mockSeleccionHerramienta;
+    private readonly Mock<Asistente.Application.Services.Memoria.MemoryOrchestrator> _mockMemoriaOrchestrator;
     private readonly IChatService _chatService;
 
     public ChatServiceTests()
@@ -117,7 +118,19 @@ public class ChatServiceTests
 
                 // Selector por descripcion (sin vocabulario): el Fake devuelve el valor que el
         // test configure para el mensaje.
-        _mockSeleccionHerramienta = new Mock<Asistente.Application.Services.Herramientas.ISeleccionHerramientaSemantica>();
+_mockSeleccionHerramienta = new Mock<Asistente.Application.Services.Herramientas.ISeleccionHerramientaSemantica>();
+
+        // Memory Orchestrator: el Agent Runtime lo inyecta en cada mensaje, así que
+        // sin stub explícito devolvería null y el prompt se armanotiraría. Las
+        // dependencias se pasan como null porque el mock intercepta los métodos
+        // virtuales y nunca las toca.
+        _mockMemoriaOrchestrator = new Mock<Asistente.Application.Services.Memoria.MemoryOrchestrator>(
+            null!, null!, null!,
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<Asistente.Application.Services.Memoria.MemoryOrchestrator>>());
+        _mockMemoriaOrchestrator
+            .Setup(m => m.ObtenerContextoAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync(string.Empty);
 
         _chatService = new ChatService(
             _mockConversationRepository.Object,
@@ -144,6 +157,7 @@ public class ChatServiceTests
             _mockUsuarioFuente.Object,
             new Lazy<Asistente.Application.Interfaces.IAgentOrchestrator>(() => _mockAgentOrchestrator.Object),
             new Mock<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>().Object,
+            _mockMemoriaOrchestrator.Object,
             _mockSeleccionHerramienta.Object);
     }
 
@@ -392,5 +406,120 @@ public class ChatServiceTests
         // Assert
         Assert.True(result.Exitoso);
         _mockConversationRepository.Verify(x => x.CreateAsync(It.IsAny<Conversacion>()), Times.Once);
+    }
+
+    /// <summary>
+    /// La memoria institucional es una entrada del Agent Runtime, no una herramienta
+    /// opcional: debe estar en el prompt de CADA mensaje. Antes solo llegaba si el LLM
+    /// decidía invocar MemoryTool, de modo que el 99% de las respuestas iban sin ella.
+    /// </summary>
+    [Fact]
+    public async Task ProcesarMensaje_InyectaLaMemoriaInstitucionalEnElPrompt()
+    {
+        var request = new MensajeRequest { Mensaje = "¿Cómo genero el reporte mensual?", IdConversacion = 1 };
+        _mockConversationRepository
+            .Setup(x => x.GetByIdAsync(1))
+            .ReturnsAsync(new Conversacion
+            {
+                IdConversacion = 1,
+                FechaInicio = DateTime.UtcNow,
+                Estado = EstadoConversacion.Activa,
+                Mensajes = new List<Mensaje>()
+            });
+        _mockMessageRepository.Setup(x => x.CreateAsync(It.IsAny<Mensaje>())).ReturnsAsync(new Mensaje());
+        _mockUnitOfWork.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        string? systemPrompt = null;
+        _mockOllamaService
+            .Setup(x => x.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<Mensaje>, string?, string?, double?, int?, System.Threading.CancellationToken>(
+                (_, _, prompt, _, _, _) => systemPrompt = prompt)
+            .ReturnsAsync("Respuesta");
+
+        _mockMemoriaOrchestrator
+            .Setup(m => m.ObtenerContextoAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync("[Memoria Organizacion: Formato de reporte mensual]\ncolumnas: codigo, nombre, total");
+
+        var result = await _chatService.ProcesarMensajeAsync(request);
+
+        Assert.True(result.Exitoso);
+        Assert.NotNull(systemPrompt);
+        Assert.Contains("MEMORIA INSTITUCIONAL", systemPrompt!);
+        Assert.Contains("columnas: codigo, nombre, total", systemPrompt!);
+        // El runtime pide la memoria del usuario y del agente efectivo.
+        _mockMemoriaOrchestrator.Verify(m => m.ObtenerContextoAsync(
+            It.IsAny<int>(), 1, null, It.IsAny<int>(), null, It.IsAny<int>(),
+            It.IsAny<System.Threading.CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>
+    /// Si no hay memoria configurada, el prompt se arma igual: la ausencia de
+    /// memoria nunca puede romper una respuesta.
+    /// </summary>
+    [Fact]
+    public async Task ProcesarMensaje_SinMemoria_NoAfectaLaRespuesta()
+    {
+        var request = new MensajeRequest { Mensaje = "Hola", IdConversacion = 1 };
+        _mockConversationRepository
+            .Setup(x => x.GetByIdAsync(1))
+            .ReturnsAsync(new Conversacion
+            {
+                IdConversacion = 1,
+                FechaInicio = DateTime.UtcNow,
+                Estado = EstadoConversacion.Activa,
+                Mensajes = new List<Mensaje>()
+            });
+        _mockMessageRepository.Setup(x => x.CreateAsync(It.IsAny<Mensaje>())).ReturnsAsync(new Mensaje());
+        _mockUnitOfWork.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        string? systemPrompt = null;
+        _mockOllamaService
+            .Setup(x => x.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<System.Threading.CancellationToken>()))
+            .Callback<IEnumerable<Mensaje>, string?, string?, double?, int?, System.Threading.CancellationToken>(
+                (_, _, prompt, _, _, _) => systemPrompt = prompt)
+            .ReturnsAsync("¡Hola!");
+
+        var result = await _chatService.ProcesarMensajeAsync(request);
+
+        Assert.True(result.Exitoso);
+        Assert.NotNull(systemPrompt);
+        Assert.DoesNotContain("MEMORIA INSTITUCIONAL", systemPrompt!);
+    }
+
+    /// <summary>
+    /// La memoria es best-effort: si el orquestador falla (vector store caído, base sin
+    /// Connectivity), el mensaje se responde igual en vez de devolver un error al usuario.
+    /// </summary>
+    [Fact]
+    public async Task ProcesarMensaje_SiLaMemoriaFalla_NoTumbaElChat()
+    {
+        var request = new MensajeRequest { Mensaje = "Hola", IdConversacion = 1 };
+        _mockConversationRepository
+            .Setup(x => x.GetByIdAsync(1))
+            .ReturnsAsync(new Conversacion
+            {
+                IdConversacion = 1,
+                FechaInicio = DateTime.UtcNow,
+                Estado = EstadoConversacion.Activa,
+                Mensajes = new List<Mensaje>()
+            });
+        _mockMessageRepository.Setup(x => x.CreateAsync(It.IsAny<Mensaje>())).ReturnsAsync(new Mensaje());
+        _mockUnitOfWork.Setup(x => x.SaveChangesAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(1);
+        _mockOllamaService
+            .Setup(x => x.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync("¡Hola!");
+        _mockMemoriaOrchestrator
+            .Setup(m => m.ObtenerContextoAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("vector store caído"));
+
+        var result = await _chatService.ProcesarMensajeAsync(request);
+
+        Assert.True(result.Exitoso);
+        Assert.Equal("¡Hola!", result.Respuesta);
     }
 }

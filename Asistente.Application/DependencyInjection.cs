@@ -64,11 +64,14 @@ public static class DependencyInjection
         services.AddSingleton<Services.Conectores.ConnectorPolicyState>();
         // Memoria Empresarial Avanzada (ETAPA 21).
         // Los repositorios se registran en Infrastructure.
+        // SemanticMemorySearch NO se registra aquí: necesita el almacén vectorial
+        // CRUDO (sin el filtro de memorias), y esa elección es de Infrastructure.
         services.AddScoped<ITool, MemoryTool>();
         services.AddScoped<Services.Memoria.MemoryManager>();
         services.AddScoped<Services.Memoria.MemoryOrchestrator>();
         services.AddScoped<Services.Memoria.MemoryRetentionEngine>();
-        services.AddScoped<Services.Memoria.SemanticMemorySearch>();
+        // Dueño del historial append-only: lo consume el Memory Manager.
+        services.AddScoped<Services.Memoria.MemoryVersionManager>();
         services.AddScoped<Services.Conectores.ConnectorService>();
         services.AddScoped<IConnectorGateway, Services.Conectores.ConnectorGateway>();
         services.AddScoped<IConnector, Services.Conectores.RestConnector>();

@@ -1,6 +1,7 @@
 using Asistente.Application.Interfaces;
 using Asistente.Application.Orchestrator;
 using Asistente.Application.Services.Herramientas;
+using Asistente.Application.Services.Memoria;
 using Asistente.Application.Services.Workflows;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Enums;
@@ -14,6 +15,14 @@ namespace Asistente.Application.Services;
 
 public class ChatService : IChatService
 {
+    /// <summary>
+    /// Presupuesto de caracteres para el bloque de memoria institucional en el prompt.
+    /// Franja deliberadamente corta: la memoria es una capa de referencia, y el
+    /// presupuesto grande del prompt es para el contexto documental y los datos de
+    /// herramientas, que sí exigen literalidad.
+    /// </summary>
+    private const int MemoriaEnPrompts = 1500;
+
     private readonly IConversacionRepository _conversacionRepository;
     private readonly IMensajeRepository _mensajeRepository;
     private readonly IOllamaService _ollamaService;
@@ -39,6 +48,7 @@ public class ChatService : IChatService
     private readonly Lazy<IAgentOrchestrator> _agentOrchestrator;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISeleccionHerramientaSemantica? _seleccionHerramienta;
+    private readonly MemoryOrchestrator _memoriaOrchestrator;
 
     public ChatService(
         IConversacionRepository conversacionRepository,
@@ -65,6 +75,7 @@ public class ChatService : IChatService
         IUsuarioFuenteRepository usuarioFuenteRepository,
         Lazy<IAgentOrchestrator> agentOrchestrator,
         IServiceScopeFactory scopeFactory,
+        MemoryOrchestrator memoriaOrchestrator,
         ISeleccionHerramientaSemantica? seleccionHerramienta = null)
     {
         _conversacionRepository = conversacionRepository;
@@ -91,6 +102,7 @@ public class ChatService : IChatService
         _usuarioFuenteRepository = usuarioFuenteRepository;
         _agentOrchestrator = agentOrchestrator;
         _scopeFactory = scopeFactory;
+        _memoriaOrchestrator = memoriaOrchestrator;
         _seleccionHerramienta = seleccionHerramienta;
     }
 
@@ -437,6 +449,33 @@ public class ChatService : IChatService
                     if (string.IsNullOrWhiteSpace(systemPrompt))
         {
             systemPrompt = "Eres un asistente virtual empresarial. Responde ÚNICAMENTE en español. Está prohibido usar cualquier otro idioma. No incluyas pensamiento interno ni etiquetas. Responde de forma clara, concisa y profesional.";
+        }
+
+        // === Memoria institucional (ETAPA 21) ===
+        // El Memory Orchestrator compone el bloque de memoria autorizada del usuario,
+        // del agente y de la organización (más la del workflow cuando aplica). Se
+        // inyecta SIEMPRE, no solo cuando el LLM decide llamar a MemoryTool: la
+        // memoria es una entrada del runtime, no una herramienta opcional.
+        // No se pasa idConversacion a propósito: en el chat la memoria conversacional
+        // ya viaja en la ventana de contexto y el resumen que arma ContextoService
+        // (mismos mensajes, otro formato), y reinyectarla duplicaría el gasto de
+        // tokens sin aportar nada.
+        var contextoMemoria = await ObtenerMemoriaParaPromptAsync(
+            request.UsuarioPropietario, idAsistenteEfectivo, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(contextoMemoria))
+        {
+            _logger.LogInformation("Memoria institucional inyectada en el prompt ({Len} caracteres).",
+                contextoMemoria.Length);
+
+            systemPrompt = systemPrompt.TrimEnd() + "\n\n" +
+                "## MEMORIA INSTITUCIONAL (conocimiento persistente ya autorizado para ti):\n" +
+                contextoMemoria + "\n\n" +
+                "Instrucciones:\n" +
+                "- Es contexto de referencia vigente: úsalo para responder con los datos que el usuario\n" +
+                "  ya definió (formatos, preferencias, definiciones, procedimientos).\n" +
+                "- Si una memoria contradice lo que el usuario pide en este mensaje, prevalece el mensaje actual.\n" +
+                "- No menciones que consultaste memoria ni cites estos bloques textualmente.";
         }
 
         // ETAPA 19.1: en ejecución de plan se omiten RAG y contexto empresarial para reducir
@@ -803,6 +842,32 @@ public class ChatService : IChatService
         await using var scope = _scopeFactory.CreateAsyncScope();
         var svc = scope.ServiceProvider.GetRequiredService<IWorkflowDecisionService>();
         return await svc.DecidirAsync(mensaje, ct);
+    }
+
+    /// <summary>
+    /// Memoria institucional para el prompt (ámbitos Usuario, Agente y Organización).
+    ///
+    /// No se pasa idConversacion a propósito: en el chat la memoria conversacional ya
+    /// viaja en la ventana de contexto y el resumen que arma ContextoService (los
+    /// mismos mensajes, otro formato), y reinyectarla solo duplicaría el gasto de
+    /// tokens. El try/catch es local a propósito: que la memoria nunca tumbe una
+    /// respuesta no debe depender de que el orquestador siga tragándose sus propios
+    /// errores, sino de que la frontera del runtime lo garantice por sí misma.
+    /// </summary>
+    private async Task<string> ObtenerMemoriaParaPromptAsync(
+        int idUsuario, int? idAsistente, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _memoriaOrchestrator.ObtenerContextoAsync(
+                idUsuario, idAsistente, idWorkflow: null,
+                maxCaracteres: MemoriaEnPrompts, idConversacion: null, ct: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Memoria: no se pudo componer el contexto; se responde sin memoria.");
+            return string.Empty;
+        }
     }
 
     private async Task<string?> ConstruirSystemPromptAsync(AsistenteDto asistente)

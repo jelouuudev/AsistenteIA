@@ -33,7 +33,8 @@ public class MemoryManagerTests
                 new MemoryScope { IdScope = 1, Codigo = "Usuario", Nombre = "Usuario", Activo = true },
                 new MemoryScope { IdScope = 2, Codigo = "Organizacion", Nombre = "Organización", Activo = true },
                 new MemoryScope { IdScope = 3, Codigo = "Workflow", Nombre = "Workflow", Activo = true },
-                new MemoryScope { IdScope = 4, Codigo = "Agente", Nombre = "Agente", Activo = true }
+                new MemoryScope { IdScope = 4, Codigo = "Agente", Nombre = "Agente", Activo = true },
+                new MemoryScope { IdScope = 5, Codigo = "Conversacional", Nombre = "Conversacional", Activo = true }
             });
             Categorias.Add(new MemoryCategory { IdCategory = 1, Codigo = "FormatoReporte", Nombre = "Formato", Activo = true });
         }
@@ -215,9 +216,10 @@ public class MemoryManagerTests
             : new VectorRoto();
         var busqueda = new SemanticMemorySearch(store, new EmbeddingsFalsos(),
             NullLogger<SemanticMemorySearch>.Instance);
-        var retencion = new MemoryRetentionEngine(repo, versiones, logs, busqueda,
+        var retencion = new MemoryRetentionEngine(repo, logs, busqueda,
             NullLogger<MemoryRetentionEngine>.Instance);
-        var manager = new MemoryManager(repo, versiones, logs, busqueda, retencion,
+        var gestorVersiones = new MemoryVersionManager(versiones);
+        var manager = new MemoryManager(repo, gestorVersiones, logs, busqueda, retencion,
             Auth(permitidos).Object, NullLogger<MemoryManager>.Instance);
         return (manager, repo, versiones, logs, vectores, retencion);
     }
@@ -614,5 +616,189 @@ public class MemoryManagerTests
         // Conversación ajena: vacía, sin confirmar ni negar su existencia.
         var ajena = await orch.ObtenerContextoAsync(9, null, null, 3000, 77, 5);
         Assert.DoesNotContain("Memoria Conversacional", ajena);
+    }
+
+    /// <summary>
+    /// Una memoria registrada en ámbito Conversacional debe llegar al contexto. Antes
+    /// caía en la rama de descarte del selector de ámbito: el catálogo la aceptaba al
+    /// crearse, pero jamás se inyectaba, así que era una memoria guardable e invisible.
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_RegistraElAmbitoConversacional()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "CONV-1",
+            Titulo = "Incidencia recurrente",
+            Contenido = "el tóner se agota cada dos semanas",
+            Ambito = "Conversacional",
+            IdPropietario = 7,
+            RequierePermiso = false
+        }, 7);
+        var orch = Orquestador(manager, repo);
+
+        var ctx = await orch.ObtenerContextoAsync(7, null, null, 3000);
+
+        Assert.Contains("[Memoria Conversacional: Incidencia recurrente]", ctx);
+        Assert.Contains("el tóner se agota", ctx);
+    }
+
+    /// <summary>
+    /// El bloque conversacional (historial reconstruido) también debe respetar el
+    /// presupuesto de caracteres: se antepone a todo lo demás, así que sin recorte
+    /// un historial largo desbordaba el tope del prompt por sí solo.
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_RespetarTope_InclusoConElHistorialDelante()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+        var convs = new Dictionary<int, ConversacionDto>
+        {
+            [5] = new ConversacionDto
+            {
+                IdConversacion = 5,
+                UsuarioPropietario = 7,
+                Estado = "Activa",
+                Titulo = "Larga",
+                Mensajes = Enumerable.Range(1, 40)
+                    .Select(i => new MensajeDto
+                    {
+                        IdMensaje = i,
+                        IdConversacion = 5,
+                        Rol = "user",
+                        Contenido = $"mensaje largo numero {i} con relleno para alargar el historial"
+                    })
+                    .ToList()
+            }
+        };
+        var orch = Orquestador(manager, repo, convs);
+
+        var ctx = await orch.ObtenerContextoAsync(7, null, null, 800, 5, 40);
+
+        Assert.True(ctx.Length <= 800, $"El contexto excedió el tope: {ctx.Length} caracteres.");
+        Assert.Contains("[Memoria Conversacional: Larga]", ctx);
+    }
+
+    /// <summary>
+    /// El estado de un workflow se relee aunque haya expirado. Antes se consultaba con
+    /// ObtenerAsync, que además de permisos evalúa la retención: un estado de más de
+    /// 365 días quedaba imposible de reescribir.
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_ReescribeEstadoWorkflowVencido()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+        repo.Politicas.Add(new MemoryRetentionPolicy
+        {
+            IdPolicy = 1, IdScope = 3, DiasRetencion = 10,
+            EliminarAlExpirar = false, ConservarTrazabilidad = true, Activo = true
+        });
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "WF-9",
+            Titulo = "Estado",
+            Contenido = "paso=1",
+            Ambito = "Workflow",
+            IdPropietario = 9,
+            RequierePermiso = false,
+            FechaExpiracion = DateTime.UtcNow.AddDays(-1)
+        }, 7);
+        var orch = Orquestador(manager, repo);
+
+        var guardada = await orch.GuardarEstadoWorkflowAsync(9, "WF-9", "Estado", "paso=2", 7);
+
+        Assert.Equal("paso=2", guardada.Contenido);
+        Assert.Equal(2, guardada.VersionActual);
+
+        // Sin estado previo todavía disponible (vencido): null, no excepción.
+        Assert.Null(await orch.TryLeerEstadoWorkflowAsync("WF-NO-EXISTE", 7));
+    }
+
+    private static (MemoryVersionManager Gestor, RepoVersiones Repo) FabricaVersiones()
+    {
+        var repo = new RepoVersiones();
+        return (new MemoryVersionManager(repo), repo);
+    }
+
+    private static MemoryRecord Memoria(int idMemory, int versionActual) => new()
+    {
+        IdMemory = idMemory,
+        Codigo = "MEM",
+        Titulo = "MEM",
+        Contenido = $"contenido v{versionActual}",
+        VersionActual = versionActual
+    };
+
+    /// <summary>
+    /// La versión anexada lleva el número que la memoria declara vigente: el
+    /// contador vive en un solo sitio y una versión nunca queda desalineada.
+    /// </summary>
+    [Fact]
+    public async Task VersionManager_RegistraLaVersionDeclaradaVigente()
+    {
+        var (gestor, repo) = FabricaVersiones();
+
+        var v = await gestor.RegistrarAsync(Memoria(7, 3), "contenido nuevo", "Actualización", 42);
+
+        Assert.Equal(7, v.IdMemory);
+        Assert.Equal(3, v.Numero);
+        Assert.Equal("contenido nuevo", v.Contenido);
+        Assert.Equal("Actualización", v.Motivo);
+        Assert.Equal(42, v.IdUsuario);
+        Assert.Single(repo.Datos);
+    }
+
+    /// <summary>
+    /// Append-only real: tres escrituras dejan tres versiones y las anteriores no
+    /// se tocan. Es el motivo de que revertir sea "copiar el contenido viejo como
+    /// versión nueva" en vez de restaurar la fila.
+    /// </summary>
+    [Fact]
+    public async Task VersionManager_HistorialEsAppendOnly()
+    {
+        var (gestor, repo) = FabricaVersiones();
+        await gestor.RegistrarAsync(Memoria(1, 1), "uno", "Creación", 1);
+        await gestor.RegistrarAsync(Memoria(1, 2), "dos", "Actualización", 1);
+        await gestor.RegistrarAsync(Memoria(1, 3), "tres", "Actualización", 1);
+
+        var historial = await gestor.ListarAsync(1);
+
+        Assert.Equal(3, historial.Count);
+        Assert.Equal(new[] { "uno", "dos", "tres" }, historial.Select(v => v.Contenido));
+        Assert.Equal(new[] { 1, 2, 3 }, historial.Select(v => v.Numero));
+        Assert.Equal(3, await gestor.ContarAsync(1));
+    }
+
+    /// <summary>
+    /// Revertir copia el contenido de la versión elegida como versión nueva: la
+    /// v1 queda intacta en el historial.
+    /// </summary>
+    [Fact]
+    public async Task VersionManager_RevertirConservaLaVersionOriginal()
+    {
+        var (gestor, _) = FabricaVersiones();
+        await gestor.RegistrarAsync(Memoria(1, 1), "uno", "Creación", 1);
+        await gestor.RegistrarAsync(Memoria(1, 2), "dos", "Actualización", 1);
+
+        var v1 = await gestor.ObtenerAsync(1, 1);
+        await gestor.RegistrarAsync(Memoria(1, 3), v1!.Contenido, "Reversión a v1.", 1);
+
+        Assert.Equal("uno", v1.Contenido);
+        Assert.Equal("uno", (await gestor.ObtenerAsync(1, 3))!.Contenido);
+        Assert.Null(await gestor.ObtenerAsync(1, 99));
+    }
+
+    [Fact]
+    public async Task VersionManager_ListaDtoEnOrdenDeVersion()
+    {
+        var (gestor, _) = FabricaVersiones();
+        await gestor.RegistrarAsync(Memoria(1, 1), "uno", "Creación", 1);
+        await gestor.RegistrarAsync(Memoria(1, 2), "dos", "Actualización", 1);
+
+        var dtos = await gestor.ListarDtoAsync(1);
+
+        Assert.Equal(new[] { 1, 2 }, dtos.Select(d => d.Numero));
+        Assert.Equal("Actualización", dtos[1].Motivo);
     }
 }
