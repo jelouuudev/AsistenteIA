@@ -65,16 +65,22 @@ public class MemoryAccessLogConfiguration : IEntityTypeConfiguration<MemoryAcces
 {
     public void Configure(EntityTypeBuilder<MemoryAccessLog> builder)
     {
-        builder.ToTable("MemoryAccessLogs");
-        builder.HasKey(l => l.IdLog);
-        builder.Property(l => l.Codigo).HasMaxLength(100).IsRequired();
-        builder.Property(l => l.Operacion).HasMaxLength(30).IsRequired();
-        builder.Property(l => l.Resultado).HasMaxLength(30).IsRequired();
-        builder.Property(l => l.Motivo).HasMaxLength(1000);
-        builder.HasIndex(l => new { l.IdMemory, l.Fecha });
-        builder.HasIndex(l => new { l.Codigo, l.Fecha });
+builder.ToTable("MemoryAccessLogs");
+            builder.HasKey(l => l.IdLog);
+            builder.Property(l => l.Codigo).HasMaxLength(100).IsRequired();
+            builder.Property(l => l.Ambito).HasMaxLength(30);
+            builder.Property(l => l.Operacion).HasMaxLength(30).IsRequired();
+            builder.Property(l => l.Resultado).HasMaxLength(30).IsRequired();
+            builder.Property(l => l.Motivo).HasMaxLength(1000);
+            builder.HasIndex(l => new { l.IdMemory, l.Fecha });
+            builder.HasIndex(l => new { l.Codigo, l.Fecha });
+            // Observabilidad: el panel agrupa por agente y por usuario, y calcula la
+            // media de tiempos. Sin estos indices es un escaneo completo por peticion.
+            builder.HasIndex(l => l.IdAsistente).HasDatabaseName("IX_MemoryAccessLogs_IdAsistente");
+            builder.HasIndex(l => l.IdUsuario).HasDatabaseName("IX_MemoryAccessLogs_IdUsuario");
+            builder.HasIndex(l => l.Operacion).HasDatabaseName("IX_MemoryAccessLogs_Operacion");
+        }
     }
-}
 
 public class MemoryRetentionPolicyConfiguration : IEntityTypeConfiguration<MemoryRetentionPolicy>
 {

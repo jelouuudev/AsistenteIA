@@ -83,6 +83,9 @@ public class MemoryRetentionEngine
                 {
                     IdMemory = null,
                     Codigo = memoria.Codigo,
+                    // Tras purgar, IdMemory queda en null y solo sobrevive el código:
+                    // el ámbito se copia aquí para no perder el tipo de memoria.
+                    Ambito = memoria.Scope?.Codigo,
                     IdUsuario = idUsuario,
                     Operacion = "Purgar",
                     Resultado = "Exitoso",

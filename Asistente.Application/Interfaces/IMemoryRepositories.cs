@@ -32,4 +32,16 @@ public interface IMemoryAccessLogRepository
     Task AddAsync(MemoryAccessLog log, CancellationToken ct = default);
     Task<List<MemoryAccessLog>> GetByMemoryAsync(int idMemory, int tope = 100, CancellationToken ct = default);
     Task<long> ContarPorOperacionAsync(string operacion, CancellationToken ct = default);
+
+    /// <summary>Observabilidad: número de accesos por agente (Id null = sin agente).</summary>
+    Task<List<(int? Agente, long Total)>> ContarPorAgenteAsync(CancellationToken ct = default);
+
+    /// <summary>Observabilidad: número de accesos por usuario (Id null = sin usuario).</summary>
+    Task<List<(int? Usuario, long Total)>> ContarPorUsuarioAsync(CancellationToken ct = default);
+
+    /// <summary>Observabilidad: duración media de las operaciones que la registran.</summary>
+    Task<double?> DuracionMediaMsAsync(string operacion, CancellationToken ct = default);
+
+    /// <summary>Observabilidad: accesos agrupados por tipo de memoria (ámbito).</summary>
+    Task<List<(string? Ambito, long Total)>> ContarPorTipoAsync(CancellationToken ct = default);
 }

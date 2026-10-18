@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Asistente.Domain.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Enums;
+using Asistente.Application.Services.Memoria;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -463,7 +464,11 @@ public static class DbInitializer
             ("ASISTENTES_ADMINISTRAR", "Asignar asistentes a usuarios", "Asistentes"),
             ("HERRAMIENTAS_CONSULTAR", "Consultar herramientas", "Herramientas"),
             ("SQL_CONSULTAR", "Consultar SQL", "SQL"),
-            ("AUDITORIA_CONSULTAR", "Consultar auditoría", "Auditoria")
+            ("AUDITORIA_CONSULTAR", "Consultar auditoría", "Auditoria"),
+            // Escritura en ámbitos compartidos de memoria (Organizacion, Agente,
+            // Workflow, Conversacional). El ámbito Usuario propio sigue siendo
+            // autoservicio: cada usuario escribe sus preferencias sin permiso.
+            (MemoryManager.PermisoAdministrarMemoria, "Administrar memoria compartida", "Memoria")
         };
 
         var mapaPermisos = new Dictionary<string, Permiso>();

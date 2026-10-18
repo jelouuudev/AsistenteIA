@@ -100,4 +100,42 @@ public class MemoryAccessLogRepository : IMemoryAccessLogRepository
 
     public Task<long> ContarPorOperacionAsync(string operacion, CancellationToken ct = default)
         => _context.MemoryAccessLogs.LongCountAsync(l => l.Operacion == operacion, ct);
+
+    public async Task<List<(int? Agente, long Total)>> ContarPorAgenteAsync(CancellationToken ct = default)
+    {
+        var filas = await _context.MemoryAccessLogs
+            .GroupBy(l => l.IdAsistente)
+            .Select(g => new { Agente = g.Key, Total = g.LongCount() })
+            .ToListAsync(ct);
+        return filas.Select(f => ((int?)f.Agente, (long)f.Total)).ToList();
+    }
+
+    public async Task<List<(int? Usuario, long Total)>> ContarPorUsuarioAsync(CancellationToken ct = default)
+    {
+        var filas = await _context.MemoryAccessLogs
+            .GroupBy(l => l.IdUsuario)
+            .Select(g => new { Usuario = g.Key, Total = g.LongCount() })
+            .ToListAsync(ct);
+        return filas.Select(f => ((int?)f.Usuario, (long)f.Total)).ToList();
+    }
+
+    public async Task<double?> DuracionMediaMsAsync(string operacion, CancellationToken ct = default)
+    {
+        // AverageAsync devuelve 0 (no null) cuando no hay filas: se traduce a null
+        // para que el panel pueda distinguir "sin medir" de "instantáneo".
+        var media = await _context.MemoryAccessLogs
+            .Where(l => l.Operacion == operacion && l.DuracionMs != null)
+            .Select(l => (double)l.DuracionMs!)
+            .ToListAsync(ct);
+        return media.Count == 0 ? null : media.Average();
+    }
+
+    public async Task<List<(string? Ambito, long Total)>> ContarPorTipoAsync(CancellationToken ct = default)
+    {
+        var filas = await _context.MemoryAccessLogs
+            .GroupBy(l => l.Ambito)
+            .Select(g => new { Ambito = g.Key, Total = g.LongCount() })
+            .ToListAsync(ct);
+        return filas.Select(f => ((string?)f.Ambito, (long)f.Total)).ToList();
+    }
 }

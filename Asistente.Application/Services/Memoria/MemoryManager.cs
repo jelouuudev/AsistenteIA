@@ -91,6 +91,20 @@ public class MemoryManager
         if (request.DiasRetencion.HasValue && request.DiasRetencion.Value > 0 && !memoria.FechaExpiracion.HasValue)
             memoria.FechaExpiracion = ahora.AddDays(request.DiasRetencion.Value);
 
+        // Regla de negocio: la memoria de un ámbito compartido NO se crea sin
+        // autorización. Antes este método era el único que no comprobaba permiso:
+        // cualquier usuario autenticado podía escribir en la memoria
+        // organizacional (verificado en vivo con los roles Administrador y
+        // Operador). El ámbito Usuario propio queda exento, igual que en la
+        // lectura: cada usuario mantiene sus propias preferencias sin trámite.
+        if (!await AutorizadoEscribirAsync(scope.Codigo, memoria.IdPropietario, idUsuario, ct))
+        {
+            await AuditarAsync(memoria, idUsuario, null, "Crear", "Denegado",
+                $"Sin permiso {PermisoAdministrarMemoria} para escribir en el ámbito '{scope.Codigo}'.", ct);
+            throw new UnauthorizedAccessException(
+                $"Sin permiso {PermisoAdministrarMemoria} para crear memorias en el ámbito '{scope.Codigo}'.");
+        }
+
         await _repo.AddAsync(memoria, ct);
         await _versiones.RegistrarAsync(memoria, memoria.Contenido, "Creación", idUsuario, ct);
         await _busqueda.IndexarAsync(memoria, ct);
@@ -211,6 +225,7 @@ public class MemoryManager
         int? idAsistente = null, int topK = 5, string? ambito = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(texto)) return new List<MemorySearchHitDto>();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var candidatas = await _repo.GetActivasAsync(ct);
         if (!string.IsNullOrWhiteSpace(ambito))
             candidatas = candidatas.Where(m =>
@@ -264,6 +279,9 @@ public class MemoryManager
             Operacion = "Buscar",
             Resultado = "Exitoso",
             Motivo = $"{hits.Count} resultado(s).",
+            // Tiempo de recuperación: desde que entra la consulta hasta que se
+            // resuelven los hits. Es la metrica que pide la observabilidad.
+            DuracionMs = (int)sw.ElapsedMilliseconds,
             Fecha = ahora
         }, ct);
         return hits;
@@ -282,11 +300,13 @@ public class MemoryManager
             .Select(l => new MemoryAccessLogDto
             {
                 Codigo = l.Codigo,
+                Ambito = l.Ambito,
                 IdUsuario = l.IdUsuario,
                 IdAsistente = l.IdAsistente,
                 Operacion = l.Operacion,
                 Resultado = l.Resultado,
                 Motivo = l.Motivo,
+                DuracionMs = l.DuracionMs,
                 Fecha = l.Fecha
             }).ToList();
     }
@@ -345,6 +365,23 @@ public class MemoryManager
         long versiones = 0;
         foreach (var memoria in activas)
             versiones += await _versiones.ContarAsync(memoria.IdMemory, ct);
+        var porAgente = new Dictionary<int, long>();
+        foreach (var (agente, total) in await _logs.ContarPorAgenteAsync(ct))
+            porAgente[agente ?? 0] = total;
+
+        var porUsuario = new Dictionary<int, long>();
+        foreach (var (usuario, total) in await _logs.ContarPorUsuarioAsync(ct))
+            porUsuario[usuario ?? 0] = total;
+
+        // Eventos sin ámbito (búsquedas y purgas antiguas) se agrupan aparte en vez
+        // de inventar un tipo.
+        var accesosPorTipo = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (tipo, total) in await _logs.ContarPorTipoAsync(ct))
+        {
+            var clave = string.IsNullOrWhiteSpace(tipo) ? "(sin tipo)" : tipo!;
+            accesosPorTipo[clave] = accesosPorTipo.TryGetValue(clave, out var n) ? n + total : total;
+        }
+
         return new MemoryMetricasDto
         {
             TotalActivas = activas.Count,
@@ -352,7 +389,16 @@ public class MemoryManager
             Versiones = versiones,
             Accesos = await _logs.ContarPorOperacionAsync("Leer", ct)
                 + await _logs.ContarPorOperacionAsync("Buscar", ct),
-            ExpiradasPendientes = expiradas
+            ExpiradasPendientes = expiradas,
+            // Lecturas con resultado: una búsqueda puede devolver varias memorias y
+            // una misma se relee muchas veces, así que se cuenta por evento de
+            // auditoría, que es lo que el panel puede desglosar.
+            MemoriasConsultadas = await _logs.ContarPorOperacionAsync("Leer", ct)
+                + await _logs.ContarPorOperacionAsync("Buscar", ct),
+            TiempoRecuperacionMs = await _logs.DuracionMediaMsAsync("Buscar", ct),
+            UsoPorAgente = porAgente,
+            UsoPorUsuario = porUsuario,
+            AccesosPorTipo = accesosPorTipo
         };
     }
 
@@ -365,6 +411,28 @@ public class MemoryManager
             return true;
         var permiso = await _autorizacion.VerificarPermisoAsync(
             idUsuario, $"MEMORIA:{memoria.Codigo}", ct);
+        return permiso.Permitido;
+    }
+
+    /// <summary>
+    /// Permiso que exige escribir en un ámbito compartido. Es el mismo patrón que
+    /// FUENTES_ADMINISTRAR o ASISTENTES_ADMINISTRAR: administeredar el contenido
+    /// de la organización es una tarea conprivilegio, no de autoservicio.
+    /// </summary>
+    public const string PermisoAdministrarMemoria = "MEMORIA_ADMINISTRAR";
+
+    /// <summary>
+    /// Autorización de escritura por ámbito. Solo el ámbito Usuario y de su propio
+    /// propietario es autoservicio; el resto (Organizacion, Agente, Workflow,
+    /// Conversacional) es conocimiento compartido y exige permiso.
+    /// </summary>
+    internal async Task<bool> AutorizadoEscribirAsync(string ambito, int? idPropietario,
+        int idUsuario, CancellationToken ct)
+    {
+        if (ambito.Equals("Usuario", StringComparison.OrdinalIgnoreCase) && idPropietario == idUsuario)
+            return true;
+        var permiso = await _autorizacion.VerificarPermisoAsync(
+            idUsuario, PermisoAdministrarMemoria, ct);
         return permiso.Permitido;
     }
 
@@ -395,6 +463,7 @@ public class MemoryManager
             {
                 IdMemory = memoria.IdMemory,
                 Codigo = memoria.Codigo,
+                Ambito = memoria.Scope?.Codigo,
                 IdUsuario = idUsuario == 0 ? null : idUsuario,
                 IdAsistente = idAsistente,
                 Operacion = operacion,
@@ -410,7 +479,7 @@ public class MemoryManager
     }
 
     private async Task AuditarCodigoAsync(string codigo, int? idMemory, int? idUsuario, int? idAsistente,
-        string operacion, string resultado, string? motivo, CancellationToken ct)
+        string operacion, string resultado, string? motivo, CancellationToken ct, string? ambito = null)
     {
         try
         {
@@ -418,6 +487,9 @@ public class MemoryManager
             {
                 IdMemory = idMemory,
                 Codigo = codigo,
+                // Cuando la memoria no existe no hay ámbito que registrar: se deja
+                // null en vez de inventar uno.
+                Ambito = ambito,
                 IdUsuario = idUsuario == 0 ? null : idUsuario,
                 IdAsistente = idAsistente,
                 Operacion = operacion,

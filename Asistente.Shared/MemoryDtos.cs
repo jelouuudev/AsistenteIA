@@ -52,11 +52,14 @@ public class MemoryVersionDto
 public class MemoryAccessLogDto
 {
     public string Codigo { get; set; } = string.Empty;
+    /// <summary>Tipo de memoria (ámbito). Sobrevive a la purga, cuando IdMemory no.</summary>
+    public string? Ambito { get; set; }
     public int? IdUsuario { get; set; }
     public int? IdAsistente { get; set; }
     public string Operacion { get; set; } = string.Empty;
     public string Resultado { get; set; } = string.Empty;
     public string? Motivo { get; set; }
+    public int? DuracionMs { get; set; }
     public DateTime Fecha { get; set; }
 }
 
@@ -76,4 +79,19 @@ public class MemoryMetricasDto
     public long Versiones { get; set; }
     public long Accesos { get; set; }
     public long ExpiradasPendientes { get; set; }
+
+    /// <summary>Memorias distintas devueltas por las búsquedas (observabilidad).</summary>
+    public long MemoriasConsultadas { get; set; }
+
+    /// <summary>Duración media de una búsqueda semántica, en milisegundos.</summary>
+    public double? TiempoRecuperacionMs { get; set; }
+
+    /// <summary>Accesos por agente. La clave 0 agrupa los accesos sin agente.</summary>
+    public System.Collections.Generic.Dictionary<int, long> UsoPorAgente { get; set; } = new();
+
+    /// <summary>Accesos por usuario. La clave 0 agrupa los accesos sin usuario.</summary>
+    public System.Collections.Generic.Dictionary<int, long> UsoPorUsuario { get; set; } = new();
+
+    /// <summary>Distribución de tipos de memoria leídos, por ámbito.</summary>
+    public System.Collections.Generic.Dictionary<string, long> AccesosPorTipo { get; set; } = new();
 }

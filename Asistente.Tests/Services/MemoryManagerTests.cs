@@ -121,6 +121,32 @@ public class MemoryManagerTests
             => Task.FromResult(Datos.Where(l => l.IdMemory == id).Take(tope).ToList());
         public Task<long> ContarPorOperacionAsync(string op, CancellationToken ct = default)
             => Task.FromResult(Datos.LongCount(l => l.Operacion == op));
+
+        // Observabilidad: se calcula en memoria como lo haria el GROUP BY de SQL.
+        public Task<List<(int? Agente, long Total)>> ContarPorAgenteAsync(CancellationToken ct = default)
+            => Task.FromResult(Datos.Where(l => l.IdAsistente != null)
+                .GroupBy(l => l.IdAsistente!.Value)
+                .Select(g => ((int?)g.Key, (long)g.LongCount()))
+                .ToList());
+
+        public Task<List<(int? Usuario, long Total)>> ContarPorUsuarioAsync(CancellationToken ct = default)
+            => Task.FromResult(Datos.Where(l => l.IdUsuario != null)
+                .GroupBy(l => l.IdUsuario!.Value)
+                .Select(g => ((int?)g.Key, (long)g.LongCount()))
+                .ToList());
+
+        public Task<double?> DuracionMediaMsAsync(string op, CancellationToken ct = default)
+        {
+            var conTiempo = Datos.Where(l => l.Operacion == op && l.DuracionMs != null)
+                .Select(l => (double)l.DuracionMs!.Value).ToList();
+            return Task.FromResult<double?>(conTiempo.Count == 0 ? null : conTiempo.Average());
+        }
+
+        public Task<List<(string? Ambito, long Total)>> ContarPorTipoAsync(CancellationToken ct = default)
+            => Task.FromResult(Datos.Where(l => l.Ambito != null)
+                .GroupBy(l => l.Ambito!)
+                .Select(g => ((string?)g.Key, (long)g.LongCount()))
+                .ToList());
     }
 
     private sealed class VectorFalso : IVectorStore
@@ -194,13 +220,200 @@ public class MemoryManagerTests
 
     private static Mock<IAutorizacionService> Auth(params string[] permitidos)
     {
+        var concedidos = new HashSet<string>(permitidos) { MemoryManager.PermisoAdministrarMemoria };
         var m = new Mock<IAutorizacionService>();
         m.Setup(a => a.VerificarPermisoAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((int _, string codigo, CancellationToken _) => new ResultadoAutorizacion
             {
-                Permitido = permitidos.Contains(codigo)
+                Permitido = concedidos.Contains(codigo)
             });
         return m;
+    }
+
+    private static Mock<IAutorizacionService> AuthSinPermisoCompartido(params string[] permitidos)
+    {
+        var concedidos = new HashSet<string>(permitidos);
+        var m = new Mock<IAutorizacionService>();
+        m.Setup(a => a.VerificarPermisoAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int _, string codigo, CancellationToken _) => new ResultadoAutorizacion
+            {
+                Permitido = concedidos.Contains(codigo)
+            });
+        return m;
+    }
+
+    /// <summary>
+    /// Regla de negocio: la memoria organizacional no se crea sin autorización.
+    /// Antes CrearAsync era el único método sin comprobación de permiso y cualquier
+    /// usuario autenticado podía escribir en la memoria de la organización.
+    /// </summary>
+    [Fact]
+    public async Task Crear_EnAmbitoCompartido_SinPermiso_EsDenegadoYAuditado()
+    {
+        var repo = new RepoMemoria();
+        var manager = new MemoryManager(repo,
+            new MemoryVersionManager(new RepoVersiones()),
+            new RepoLogs(),
+            new SemanticMemorySearch(new VectorFalso(), new EmbeddingsFalsos(), NullLogger<SemanticMemorySearch>.Instance),
+            new MemoryRetentionEngine(repo, new RepoLogs(), null!, NullLogger<MemoryRetentionEngine>.Instance),
+            AuthSinPermisoCompartido().Object,
+            NullLogger<MemoryManager>.Instance);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "ORG-NO-AUTORIZADA",
+            Titulo = "No autorizada",
+            Contenido = "contenido",
+            Ambito = "Organizacion"
+        }, 9));
+
+        Assert.Empty(repo.Datos);
+    }
+
+/// <summary>El ámbito Usuario propio sigue siendo autoservicio: sin permiso.</summary>
+    [Fact]
+    public async Task Crear_EnAmbitoUsuario_Propio_NoExigePermiso()
+    {
+        var (manager, repo, _, logs, _, _) = Fabrica(Array.Empty<string>());
+
+        var m = await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "MIA",
+            Titulo = "Mi preferencia",
+            Contenido = "contenido",
+            Ambito = "Usuario",
+            IdPropietario = 7
+        }, 7);
+
+        Assert.Equal("MIA", m.Codigo);
+        Assert.Single(repo.Datos);
+        Assert.Contains(logs.Datos, l => l.Operacion == "Crear" && l.Resultado == "Exitoso");
+    }
+
+    /// <summary>
+    /// El tipo de memoria debe quedar en la auditoría. Antes solo se guardaba el
+    /// código, y al purgar una memoria IdMemory queda en null: el ámbito se perdía
+    /// justo en el caso donde más importa la trazabilidad.
+    /// </summary>
+    [Fact]
+    public async Task Auditoria_RegistraElTipoDeMemoria()
+    {
+        var (manager, repo, _, logs, _, _) = Fabrica(Array.Empty<string>());
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "CON-AMBITO",
+            Titulo = "Con ámbito",
+            Contenido = "x",
+            Ambito = "Organizacion",
+            RequierePermiso = false
+        }, 1);
+        await manager.ObtenerAsync("CON-AMBITO", 1);
+
+        Assert.All(logs.Datos.Where(l => l.Codigo == "CON-AMBITO"),
+            l => Assert.Equal("Organizacion", l.Ambito));
+    }
+
+    /// <summary>
+    /// La purga borra la fila de la memoria: el evento de auditoría debe conservar
+    /// el tipo de memoria para que la trazabilidad no se quede coja.
+    /// </summary>
+    [Fact]
+    public async Task Auditoria_LaPurgaConservaElTipoDeMemoria()
+    {
+        var (manager, repo, _, logs, _, retencion) = Fabrica(Array.Empty<string>());
+        repo.Politicas.Add(new MemoryRetentionPolicy
+        {
+            IdPolicy = 1, IdScope = null, DiasRetencion = 10,
+            EliminarAlExpirar = true, ConservarTrazabilidad = true, Activo = true
+        });
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "PURGA-AMBITO", Titulo = "x", Contenido = "y",
+            Ambito = "Organizacion", RequierePermiso = false,
+            FechaExpiracion = DateTime.UtcNow.AddDays(-1)
+        }, 1);
+
+        await retencion.AplicarAsync(1);
+
+        var purga = logs.Datos.First(l => l.Operacion == "Purgar");
+        Assert.Null(purga.IdMemory);
+        Assert.Equal("PURGA-AMBITO", purga.Codigo);
+        Assert.Equal("Organizacion", purga.Ambito);
+    }
+
+    /// <summary>
+    /// Observabilidad: el panel debe exponer tiempo de recuperación, uso por agente,
+    /// uso por usuario y accesos por tipo de memoria.
+    /// </summary>
+    [Fact]
+    public async Task Metricas_ExponeTiempoDeRecuperacionYUsoPorAgenteYUsuario()
+    {
+        var (manager, repo, _, logs, _, _) = Fabrica(Array.Empty<string>());
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "ORG-1", Titulo = "x", Contenido = "contenido compartido largo",
+            Ambito = "Organizacion", RequierePermiso = false
+        }, 1);
+
+        await manager.BuscarAsync("contenido compartido", 1, idAsistente: 5, topK: 5, ambito: null, ct: default);
+        await manager.BuscarAsync("contenido compartido", 1, idAsistente: 5, topK: 5, ambito: null, ct: default);
+        await manager.ObtenerAsync("ORG-1", 1);
+
+        var m = await manager.MetricasAsync();
+
+        Assert.True(m.Accesos > 0);
+        Assert.Equal(m.Accesos, m.MemoriasConsultadas);
+        Assert.NotNull(m.TiempoRecuperacionMs);
+        Assert.True(m.TiempoRecuperacionMs >= 0);
+        Assert.True(m.UsoPorUsuario.ContainsKey(1));
+        // 1 Crear + 2 Buscar + 1 Leer: toda operación del usuario queda contada.
+        Assert.Equal(4, m.UsoPorUsuario[1]);
+        Assert.True(m.AccesosPorTipo.ContainsKey("Organizacion"));
+    }
+
+    /// <summary>
+    /// Una búsqueda sin resultados también queda registrada con su duración: si no,
+    /// el tiempo de recuperación solo mediría el camino feliz.
+    /// </summary>
+    [Fact]
+    public async Task Metricas_LaBusquedaRegistraDuracion_InclusoSinResultados()
+    {
+        var (manager, _, _, logs, _, _) = Fabrica(Array.Empty<string>());
+
+        await manager.BuscarAsync("nada de esto existe", 1, idAsistente: null, topK: 5, ambito: null, ct: default);
+        var m = await manager.MetricasAsync();
+
+        var busqueda = logs.Datos.First(l => l.Operacion == "Buscar");
+        Assert.NotNull(busqueda.DuracionMs);
+        Assert.NotNull(m.TiempoRecuperacionMs);
+    }
+
+    /// <summary>
+    /// Autorización de escritura: los ámbitos compartidos exigen
+    /// MEMORIA_ADMINISTRAR y el deniego queda auditado.
+    /// </summary>
+    [Fact]
+    public async Task Crear_SinPermisoCompartido_QuedaAuditadoComoDenegado()
+    {
+        var repo = new RepoMemoria();
+        var logs = new RepoLogs();
+        var busqueda = new SemanticMemorySearch(new VectorFalso(), new EmbeddingsFalsos(), NullLogger<SemanticMemorySearch>.Instance);
+        var manager = new MemoryManager(repo,
+            new MemoryVersionManager(new RepoVersiones()),
+            logs,
+            busqueda,
+            new MemoryRetentionEngine(repo, logs, busqueda, NullLogger<MemoryRetentionEngine>.Instance),
+            AuthSinPermisoCompartido().Object,
+            NullLogger<MemoryManager>.Instance);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "ORG-DENEGADA", Titulo = "x", Contenido = "y", Ambito = "Organizacion"
+        }, 4));
+
+        Assert.Contains(logs.Datos, l =>
+            l.Operacion == "Crear" && l.Resultado == "Denegado"
+            && l.Motivo!.Contains(MemoryManager.PermisoAdministrarMemoria));
     }
 
     private static (MemoryManager Manager, RepoMemoria Repo, RepoVersiones Versiones,

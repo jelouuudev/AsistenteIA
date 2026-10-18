@@ -2107,10 +2107,17 @@ namespace Asistente.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IdLog"));
 
+                    b.Property<string>("Ambito")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<string>("Codigo")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("DuracionMs")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("Fecha")
                         .HasColumnType("datetime2");
@@ -2139,6 +2146,15 @@ namespace Asistente.Infrastructure.Migrations
                         .HasColumnType("nvarchar(30)");
 
                     b.HasKey("IdLog");
+
+                    b.HasIndex("IdAsistente")
+                        .HasDatabaseName("IX_MemoryAccessLogs_IdAsistente");
+
+                    b.HasIndex("IdUsuario")
+                        .HasDatabaseName("IX_MemoryAccessLogs_IdUsuario");
+
+                    b.HasIndex("Operacion")
+                        .HasDatabaseName("IX_MemoryAccessLogs_Operacion");
 
                     b.HasIndex("Codigo", "Fecha");
 
