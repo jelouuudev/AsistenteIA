@@ -691,8 +691,19 @@ public class PlannerEngine : IPlannerEngine
             }
             return combinado;
         }
+        // El paso Coordination NO entra en el contexto: su resultado es la descripción
+        // del plan ("analicé tu solicitud, diseñé estos pasos"), no información que
+        // el usuario pidió. Incluirlo hacía dos cosas malas: el paso de entrega se
+        // llevaba como contexto un texto que contiene "[Paso 0: ...]", que
+        // ReportTool.EsResultadoEstructurado toma como señal de resultado
+        // estructurado, así que la entrega salía determinista y el usuario recibía
+        // la lista de tareas en vez de una respuesta. Con esto, un plan sin pasos
+        // de datos vuelve a caer en el Agent Runtime, que es donde se inyecta la
+        // memoria institucional.
         var pasosAnteriores = (await stepRepo.GetByPlanAsync(plan.IdPlan, ct, true))
-            .Where(p => p.Orden < paso.Orden && !string.IsNullOrWhiteSpace(p.Resultado))
+            .Where(p => p.Orden < paso.Orden
+                && p.Tipo != "Coordination"
+                && !string.IsNullOrWhiteSpace(p.Resultado))
             .Select(p => $"[Paso {p.Orden}: {p.Nombre}]\n{p.Resultado}");
         return string.Join("\n", pasosAnteriores);
     }
