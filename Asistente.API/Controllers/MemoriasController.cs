@@ -46,6 +46,10 @@ public class MemoriasController : ControllerBase
             var m = await _manager.CrearAsync(request, UsuarioId(), ct);
             return CreatedAtAction(nameof(Obtener), new { codigo = m.Codigo }, m);
         }
+        // Sin esta captura, un deniego de autorización (escritura en ámbito
+        // compartido sin MEMORIA_ADMINISTRAR) salía como 400 Bad Request, que
+        // blames al cliente de una falta de permisos. 403 es el código correcto.
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { error = ex.Message }); }
         catch (System.Exception ex) { return BadRequest(ex.Message); }
     }
 

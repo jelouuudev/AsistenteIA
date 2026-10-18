@@ -509,6 +509,14 @@ public static class DbInitializer
                 "HERRAMIENTAS_CONSULTAR", "SQL_CONSULTAR");
         }
 
+        // MEMORIA_ADMINISTRAR sí se otorga de forma idempotente, aunque ya haya
+        // asignaciones: sin él, escribir en un ámbito compartido queda bloqueado
+        // para TODO el mundo, incluido el administrador. El guard de arriba
+        // ("solo siembra inicial") evita resucitar permisos que un administrador
+        // desmarcó a propósito; este permiso no se puede desmarcar, porque su
+        // ausencia deja el sistema sin quién pueda mantener la memoria común.
+        await AsignarAsync(rolAdmin, MemoryManager.PermisoAdministrarMemoria);
+
         // 4) Políticas de IA por defecto (Actividad 12)
         if (!await context.PoliticasIA.AnyAsync())
         {
