@@ -87,11 +87,20 @@ public class MemoryAccessLog
     public int IdLog { get; set; }
     public int? IdMemory { get; set; }
     public string Codigo { get; set; } = string.Empty;
+    /// <summary>Tipo de memoria (ámbito: Conversacional, Usuario, Agente,
+    /// Organizacion, Workflow). Se copia aquí y no se deduce por IdMemory porque
+    /// al purgar una memoria IdMemory queda en null y solo sobrevive el código:
+    /// el ámbito se perdería justo en el caso donde más importa la trazabilidad.</summary>
+    public string? Ambito { get; set; }
     public int? IdUsuario { get; set; }
     public int? IdAsistente { get; set; }
     public string Operacion { get; set; } = string.Empty;
     public string Resultado { get; set; } = string.Empty;
     public string? Motivo { get; set; }
+    /// <summary>Duración en milisegundos cuando la operación la tiene (búsqueda
+    /// semántica, composición de contexto). Es lo que alimenta la métrica de
+    /// tiempo de recuperación del panel.</summary>
+    public int? DuracionMs { get; set; }
     public DateTime Fecha { get; set; } = DateTime.UtcNow;
 }
 
