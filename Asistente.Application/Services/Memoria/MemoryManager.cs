@@ -287,6 +287,46 @@ public class MemoryManager
         return hits;
     }
 
+    /// <summary>
+    /// Audita la inyección de una memoria en el prompt de un agente.
+    ///
+    /// Es la lectura que ocurre en CADA mensaje y antes no dejaba rastro:
+    /// ObtenerContextoAsync compone el contexto con ListarAsync, que no audita
+    /// nada. Sin esto, el uso real de la memoria en el runtime era invisible y el
+    /// campo IdAsistente de la auditoría quedaba siempre en null (verificado
+    /// contra la tabla: 32 accesos, cero con agente).
+    ///
+    /// Se audita una entrada por memoria efectivamente incluida, no una por
+    /// mensaje: el bloque está acotado por caracteres (1500 en el chat), así que
+    /// son unas pocas filas y el tipo de memoria queda registrado por separado.
+    /// Nunca propaga excepción: auditar nunca tumba una respuesta.
+    /// </summary>
+    public async Task AuditarInyeccionAsync(MemoryDto memoria, int idUsuario, int? idAsistente,
+        int duracionMs, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(memoria.Codigo)) return;
+        try
+        {
+            await _logs.AddAsync(new MemoryAccessLog
+            {
+                IdMemory = memoria.IdMemory,
+                Codigo = memoria.Codigo,
+                Ambito = memoria.Ambito,
+                IdUsuario = idUsuario == 0 ? null : idUsuario,
+                IdAsistente = idAsistente,
+                Operacion = "Inyectar",
+                Resultado = "Exitoso",
+                Motivo = $"Inyectada en el prompt del agente {(idAsistente.HasValue ? idAsistente.Value.ToString() : "(sin agente)")}.",
+                DuracionMs = duracionMs,
+                Fecha = DateTime.UtcNow
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Memoria: no se pudo auditar la inyección de '{Codigo}'.", memoria.Codigo);
+        }
+    }
+
     public async Task<List<MemoryAccessLogDto>> AuditoriaAsync(string codigo, int idUsuario,
         int tope = 100, CancellationToken ct = default)
     {

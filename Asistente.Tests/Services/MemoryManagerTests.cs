@@ -389,6 +389,61 @@ public class MemoryManagerTests
     }
 
     /// <summary>
+    /// La lectura automática que ocurre en CADA mensaje debe dejar rastro, atribuida
+    /// al agente. Antes no se auditaba nada: ListarAsync no escribe en el log, así
+    /// que el uso real de la memoria era invisible y el campo IdAsistente quedaba
+    /// siempre en null (32 accesos registrados, cero con agente).
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_AuditaCadaMemoriaInyectada_ConAgenteYTipo()
+    {
+        var (manager, repo, _, logs, _, _) = Fabrica(Array.Empty<string>());
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "ORG-AUDITADA", Titulo = "Org", Contenido = "contenido institucional",
+            Ambito = "Organizacion", RequierePermiso = false
+        }, 1);
+        var orch = Orquestador(manager, repo);
+
+        await orch.ObtenerContextoAsync(7, idAsistente: 42);
+
+        var inyecciones = logs.Datos.Where(l => l.Operacion == "Inyectar").ToList();
+        Assert.Single(inyecciones);
+        Assert.Equal("ORG-AUDITADA", inyecciones[0].Codigo);
+        Assert.Equal(42, inyecciones[0].IdAsistente);
+        Assert.Equal(7, inyecciones[0].IdUsuario);
+        // El tipo de memoria tambien queda en la lectura, no solo en la escritura.
+        Assert.Equal("Organizacion", inyecciones[0].Ambito);
+        Assert.NotNull(inyecciones[0].DuracionMs);
+    }
+
+    /// <summary>
+    /// Solo se audita lo que realmente entra en el prompt: si el bloque se recorta
+    /// por el tope de caracteres, las memorias que no cupieron no consumieron nada.
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_NoAuditaMemoriasQue_NoEntranEnElBloque()
+    {
+        var (manager, repo, _, logs, _, _) = Fabrica(Array.Empty<string>());
+        var crear = async (string codigo, string ambito, int? prop) =>
+            await manager.CrearAsync(new CrearMemoryRequest
+            {
+                Codigo = codigo, Titulo = codigo, Contenido = new string('x', 500),
+                Ambito = ambito, IdPropietario = prop, RequierePermiso = false
+            }, 1);
+        await crear("W1", "Workflow", 1);
+        await crear("W2", "Workflow", 1);
+        await crear("W3", "Workflow", 1);
+        var orch = Orquestador(manager, repo);
+
+        await orch.ObtenerContextoAsync(1, null, 1, 600);
+
+        var inyecciones = logs.Datos.Where(l => l.Operacion == "Inyectar").ToList();
+        Assert.Single(inyecciones);
+        Assert.Equal("W1", inyecciones[0].Codigo);
+    }
+
+    /// <summary>
     /// Autorización de escritura: los ámbitos compartidos exigen
     /// MEMORIA_ADMINISTRAR y el deniego queda auditado.
     /// </summary>

@@ -91,12 +91,24 @@ public class MemoryOrchestrator
                 if (orden < 9) piezas.Add((orden, m));
             }
 
+            // Se mide la composición completa y se reparte entre las memorias
+            // inyectadas: es lo que da el "tiempo de recuperación" por agente.
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var inyectadas = new List<MemoryDto>();
             foreach (var (_, m) in piezas.OrderBy(p => p.Orden).ThenBy(p => p.M.Codigo))
             {
                 var bloque = $"[Memoria {m.Ambito}: {m.Titulo}]\n{m.Contenido}\n";
                 if (sb.Length + bloque.Length > maxCaracteres) break;
                 sb.Append(bloque);
+                inyectadas.Add(m);
             }
+
+            // La lectura automática de cada mensaje es la que más memoria mueve y
+            // antes no dejaba rastro. Se audita por memoria, atribuida al agente.
+            var duracion = (int)sw.ElapsedMilliseconds;
+            foreach (var m in inyectadas)
+                await _manager.AuditarInyeccionAsync(m, idUsuario, idAsistente, duracion, ct);
+
             return sb.ToString();
         }
         catch (Exception ex)
