@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using Asistente.Application.Interfaces;
 using Asistente.Application.Services.Memoria;
+using Asistente.Domain.Interfaces;
 using Asistente.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,15 +18,36 @@ public class MemoriasController : ControllerBase
 {
     private readonly MemoryManager _manager;
     private readonly MemoryRetentionEngine _retencion;
+    private readonly IDashboardMemoriaService _dashboard;
+    private readonly IPermisoService _permisos;
 
-    public MemoriasController(MemoryManager manager, MemoryRetentionEngine retencion)
+    public MemoriasController(MemoryManager manager, MemoryRetentionEngine retencion,
+        IDashboardMemoriaService dashboard, IPermisoService permisos)
     {
         _manager = manager;
         _retencion = retencion;
+        _dashboard = dashboard;
+        _permisos = permisos;
     }
 
     private int UsuarioId()
         => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
+
+    /// <summary>
+    /// Panel de memoria: métricas, auditoría reciente y retención pendiente.
+    ///
+    /// Requiere AUDITORIA_CONSULTAR, igual que el panel de Seguridad, y no un
+    /// MEMORIA:{codigo}: el panel enseña TODAS las memorias, así que exigir el
+    /// permiso de cada una dejaría la tabla en blanco salvo para el dueño de todo.
+    /// Operador no la ve (403); Supervisor y Administrador sí.
+    /// </summary>
+    [HttpGet("dashboard")]
+    public async Task<ActionResult<DashboardMemoriaDto>> Dashboard(CancellationToken ct)
+    {
+        if (!await _permisos.TienePermisoAsync(UsuarioId(), "AUDITORIA_CONSULTAR", ct))
+            return StatusCode(403, "No tiene el permiso requerido: AUDITORIA_CONSULTAR.");
+        return Ok(await _dashboard.ObtenerAsync(ct));
+    }
 
     [HttpGet]
     public async Task<ActionResult> Listar([FromQuery] string? ambito, CancellationToken ct)

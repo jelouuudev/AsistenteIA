@@ -72,6 +72,9 @@ public static class DependencyInjection
         services.AddScoped<Services.Memoria.MemoryRetentionEngine>();
         // Dueño del historial append-only: lo consume el Memory Manager.
         services.AddScoped<Services.Memoria.MemoryVersionManager>();
+        // Panel de memoria (ETAPA 21): compone Manager + RetentionEngine, sin
+        // repositorios propios ni una segunda copia de los contadores.
+        services.AddScoped<IDashboardMemoriaService, Services.Memoria.DashboardMemoriaService>();
         services.AddScoped<Services.Conectores.ConnectorService>();
         services.AddScoped<IConnectorGateway, Services.Conectores.ConnectorGateway>();
         services.AddScoped<IConnector, Services.Conectores.RestConnector>();

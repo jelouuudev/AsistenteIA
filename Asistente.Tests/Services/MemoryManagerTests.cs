@@ -117,8 +117,12 @@ public class MemoryManagerTests
             Datos.Add(l);
             return Task.CompletedTask;
         }
-        public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, CancellationToken ct = default)
-            => Task.FromResult(Datos.Where(l => l.IdMemory == id).Take(tope).ToList());
+public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, CancellationToken ct = default)
+              => Task.FromResult(Datos.Where(l => l.IdMemory == id).Take(tope).ToList());
+
+          // Panel de memoria: accesos de todas las memorias, no de una sola.
+          public Task<List<MemoryAccessLog>> GetRecientesAsync(int tope = 50, CancellationToken ct = default)
+              => Task.FromResult(Datos.OrderByDescending(l => l.Fecha).Take(tope).ToList());
         public Task<long> ContarPorOperacionAsync(string op, CancellationToken ct = default)
             => Task.FromResult(Datos.LongCount(l => l.Operacion == op));
 
@@ -441,6 +445,51 @@ public class MemoryManagerTests
         var inyecciones = logs.Datos.Where(l => l.Operacion == "Inyectar").ToList();
         Assert.Single(inyecciones);
         Assert.Equal("W1", inyecciones[0].Codigo);
+    }
+
+    /// <summary>
+    /// Panel de memoria (ETAPA 21, secciones 7 y 17).
+    ///
+    /// Una sola llamada debe traer las tres cosas que el panel enseña: las métricas,
+    /// el rastro de accesos de TODAS las memorias y lo que la retención tiene
+    /// pendiente. Si alguna quedara sin cablear, el panel se pintaría igual con
+    /// datos vacíos y nadie lo notaría hasta que alguien preguntara por qué la
+    /// tabla está en blanco.
+    /// </summary>
+    [Fact]
+    public async Task Dashboard_TraeMetricas_AuditoriaDeTodas_YRetencionPendiente()
+    {
+        var (manager, _, _, logs, _, retencion) = Fabrica(Array.Empty<string>());
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "PANEL-CADUCA", Titulo = "Caduca", Contenido = "contenido",
+            Ambito = "Organizacion", RequierePermiso = false,
+            FechaExpiracion = DateTime.UtcNow.AddDays(-1)
+        }, 1);
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "PANEL-VIVA", Titulo = "Viva", Contenido = "contenido",
+            Ambito = "Organizacion", RequierePermiso = false
+        }, 1);
+        await manager.ObtenerAsync("PANEL-VIVA", 1, null);
+
+        var panel = await new DashboardMemoriaService(manager, retencion).ObtenerAsync();
+
+        // Métricas: las dos siguen activas (la caducada no se apaga sola).
+        Assert.Equal(2, panel.Metricas.TotalActivas);
+
+        // Auditoría: de TODAS las memorias, sin filtrar por una concreta. El panel
+        // no sabe de antemano cuál mirar, y esa es precisamente la lectura que
+        // antes no existía.
+        Assert.NotEmpty(panel.UltimasAuditorias);
+        Assert.Contains(panel.UltimasAuditorias, a => a.Codigo == "PANEL-VIVA");
+        Assert.Contains(logs.Datos, l => l.Operacion == "Crear");
+
+        // Retención: debe coincidir con lo que el motor dice que tocaría, no con
+        // una copia propia de la lista.
+        var esperado = (await retencion.ExpiradasAsync()).ConvertAll(x => x.Codigo);
+        Assert.NotEmpty(esperado);
+        Assert.Equal(esperado, panel.RetencionPendientes);
     }
 
     /// <summary>

@@ -118,6 +118,9 @@ public static class DependencyInjection
         services.AddScoped<IConnectorRepository, ConnectorRepository>();
         services.AddScoped<IConnectorExecutionRepository, ConnectorExecutionRepository>();
         // Memoria Empresarial Avanzada (ETAPA 21)
+        // El cifrador se registra ANTES que cualquier cosa que construya el DbContext:
+        // el contexto lo toma por constructor y el modelo no se puede armar sin él.
+        services.AddScoped<IMemoryCifrador, MemoryCifrador>();
         services.AddScoped<IMemoryRepository, MemoryRepository>();
         services.AddScoped<IMemoryVersionRepository, MemoryVersionRepository>();
         services.AddScoped<IMemoryAccessLogRepository, MemoryAccessLogRepository>();

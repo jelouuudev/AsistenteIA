@@ -38,7 +38,25 @@ evento de purga conserva la trazabilidad.
 
 ## 6. Dashboard y auditoría
 
+**Panel de memoria** (Memorias → *Panel*, o `/Memorias/Dashboard`; lo ve
+Administrador y Supervisor): tarjetas con lo global (activas, versiones, accesos,
+tiempo de recuperación, expiradas, pendientes de purgar, accesos recientes),
+desgloses por ámbito, agente, usuario y tipo de acceso, los códigos que el
+próximo barrido apagaría, y los últimos 50 accesos con fecha, operación, memoria,
+tipo, usuario, agente, resultado y duración. Es la vista única para auditar quién
+leyó qué y desde qué agente.
+
 Index: tarjetas (activas, versiones, accesos, expiradas pendientes), filtro por
 ámbito, búsqueda semántica y tabla con versión/permiso/vencimiento. Detalle:
 contenido actual, formulario de nueva versión, tabla de versiones con revertir,
 y tabla de auditoría (operación, resultado, motivo, fecha).
+
+## 7. Cifrado del contenido
+
+No hay que hacer nada: el contenido de las memorias se guarda cifrado solo, y al
+leerlo se descifra automáticamente. El panel, la búsqueda y los agentes funcionan
+igual que siempre.
+
+Lo único que hay que saber: **la clave no se puede cambiar** una vez guardada
+memoria cifrada (`MEMORIA_CLAVE_CIFRADO`). Un cambio hace ilegibles los contenidos
+anteriores; solo se recupera con la clave vieja o desde un respaldo.

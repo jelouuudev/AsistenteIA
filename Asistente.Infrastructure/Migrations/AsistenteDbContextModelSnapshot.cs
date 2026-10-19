@@ -2147,6 +2147,9 @@ namespace Asistente.Infrastructure.Migrations
 
                     b.HasKey("IdLog");
 
+                    b.HasIndex("Fecha")
+                        .HasDatabaseName("IX_MemoryAccessLogs_Fecha");
+
                     b.HasIndex("IdAsistente")
                         .HasDatabaseName("IX_MemoryAccessLogs_IdAsistente");
 

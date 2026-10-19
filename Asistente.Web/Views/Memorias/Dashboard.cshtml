@@ -1,0 +1,247 @@
+@model Asistente.Shared.DashboardMemoriaDto
+@{
+    ViewData["Title"] = "Panel de Memoria";
+    var m = Model.Metricas;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="text-white fw-bold mb-0"><i class="bi bi-speedometer2 me-2" style="color:#818cf8;"></i>Panel de Memoria Empresarial</h4>
+        <p class="text-secondary small mb-0">Uso, reutilización y retención (ETAPA 21, sección 17)</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="Index" class="btn btn-outline-info"><i class="bi bi-journal-bookmark me-1"></i>Memorias</a>
+        <a asp-action="Retencion" class="btn btn-outline-warning"><i class="bi bi-hourglass me-1"></i>Retención</a>
+    </div>
+</div>
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+}
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(99,102,241,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#818cf8;">@m.TotalActivas</div>
+                <div class="text-secondary small">Memorias activas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(16,185,129,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#6ee7b7;">@m.Versiones</div>
+                <div class="text-secondary small">Versiones guardadas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(168,85,247,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#c084fc;">@m.Accesos</div>
+                <div class="text-secondary small">Lecturas + búsquedas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(59,130,246,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#93c5fd;">@m.MemoriasConsultadas</div>
+                <div class="text-secondary small">Memorias consultadas</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(236,72,153,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#f9a8d4;">@(m.TiempoRecuperacionMs?.ToString("F1") ?? "—")</div>
+                <div class="text-secondary small">Tiempo de recuperación (ms)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(251,191,36,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#fcd34d;">@m.ExpiradasPendientes</div>
+                <div class="text-secondary small">Expiradas por retención</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(239,68,68,0.15);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold" style="color:#fca5a5;">@Model.RetencionPendientes.Count</div>
+                <div class="text-secondary small">Pendientes de purgar</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0" style="background:rgba(255,255,255,0.05);border-radius:16px;">
+            <div class="card-body text-center py-4">
+                <div class="fs-1 fw-bold text-white">@Model.UltimasAuditorias.Count</div>
+                <div class="text-secondary small">Accesos recientes registrados</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-5">
+        <div class="card border-0 h-100" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+            <div class="card-body">
+                <h6 class="text-white mb-3"><i class="bi bi-diagram-3 me-2"></i>Memorias por ámbito</h6>
+                @if (!m.PorAmbito.Any())
+                {
+                    <p class="text-secondary small mb-0">Sin memorias activas.</p>
+                }
+                else
+                {
+                    @foreach (var kv in m.PorAmbito.OrderByDescending(kv => kv.Value))
+                    {
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge bg-secondary">@kv.Key</span>
+                            <span class="fw-bold" style="color:#818cf8;">@kv.Value</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7">
+        <div class="card border-0 h-100" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+            <div class="card-body">
+                <h6 class="text-white mb-3"><i class="bi bi-hourglass-split me-2"></i>Retención pendiente</h6>
+                @if (!Model.RetencionPendientes.Any())
+                {
+                    <p class="text-secondary small mb-0">Nada caducado: la política no tiene nada que apagar.</p>
+                }
+                else
+                {
+                    <p class="text-secondary small">Estas memorias ya vencieron según su política y se desactivarán en el próximo barrido:</p>
+                    <div class="d-flex flex-wrap gap-1">
+                        @foreach (var codigo in Model.RetencionPendientes)
+                        {
+                            <a asp-action="Detalle" asp-route-id="@codigo"><code class="badge bg-warning text-dark">@codigo</code></a>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-0 h-100" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+            <div class="card-body">
+                <h6 class="text-white mb-3"><i class="bi bi-robot me-2"></i>Uso por agente</h6>
+                @if (!m.UsoPorAgente.Any())
+                {
+                    <p class="text-secondary small mb-0">Sin accesos registrados.</p>
+                }
+                else
+                {
+                    @foreach (var kv in m.UsoPorAgente.OrderByDescending(kv => kv.Value))
+                    {
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-secondary">@(kv.Key == 0 ? "Sin agente" : $"Agente {kv.Key}")</span>
+                            <span class="fw-bold" style="color:#6ee7b7;">@kv.Value</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 h-100" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+            <div class="card-body">
+                <h6 class="text-white mb-3"><i class="bi bi-person me-2"></i>Uso por usuario</h6>
+                @if (!m.UsoPorUsuario.Any())
+                {
+                    <p class="text-secondary small mb-0">Sin accesos registrados.</p>
+                }
+                else
+                {
+                    @foreach (var kv in m.UsoPorUsuario.OrderByDescending(kv => kv.Value))
+                    {
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-secondary">@(kv.Key == 0 ? "Sin usuario" : $"Usuario {kv.Key}")</span>
+                            <span class="fw-bold" style="color:#93c5fd;">@kv.Value</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 h-100" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+            <div class="card-body">
+                <h6 class="text-white mb-3"><i class="bi bi-tags me-2"></i>Accesos por tipo</h6>
+                @if (!m.AccesosPorTipo.Any())
+                {
+                    <p class="text-secondary small mb-0">Sin accesos registrados.</p>
+                }
+                else
+                {
+                    @foreach (var kv in m.AccesosPorTipo.OrderByDescending(kv => kv.Value))
+                    {
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="badge bg-secondary">@kv.Key</span>
+                            <span class="fw-bold" style="color:#c084fc;">@kv.Value</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<h6 class="text-white mb-3"><i class="bi bi-clipboard-data me-2"></i>Últimos accesos registrados</h6>
+<div class="card border-0" style="background:rgba(255,255,255,0.03);border-radius:16px;">
+    <div class="card-body p-0">
+        <table class="table table-dark table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Operación</th>
+                    <th>Memoria</th>
+                    <th>Tipo</th>
+                    <th>Usuario</th>
+                    <th>Agente</th>
+                    <th>Resultado</th>
+                    <th class="text-end">ms</th>
+                    <th>Motivo</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var a in Model.UltimasAuditorias)
+                {
+                    <tr>
+                        <td class="small">@a.Fecha.ToLocalTime().ToString("dd/MM HH:mm")</td>
+                        <td><span class="badge bg-info text-dark">@a.Operacion</span></td>
+                        <td>
+                            <a asp-action="Detalle" asp-route-id="@a.Codigo"><code>@a.Codigo</code></a>
+                        </td>
+                        <td class="small">@(a.Ambito ?? "—")</td>
+                        <td class="small">@(a.IdUsuario?.ToString() ?? "—")</td>
+                        <td class="small">@(a.IdAsistente?.ToString() ?? "—")</td>
+                        <td>
+                            <span class="badge @(a.Resultado == "Denegado" || a.Resultado == "Bloqueado" ? "bg-danger" : "bg-success")">@a.Resultado</span>
+                        </td>
+                        <td class="text-end small">@(a.DuracionMs?.ToString() ?? "—")</td>
+                        <td class="small text-secondary">@a.Motivo</td>
+                    </tr>
+                }
+                @if (!Model.UltimasAuditorias.Any())
+                {
+                    <tr><td colspan="9" class="text-center text-secondary py-4">Todavía no hay accesos registrados.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

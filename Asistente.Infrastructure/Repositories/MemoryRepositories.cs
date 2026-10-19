@@ -98,6 +98,10 @@ public class MemoryAccessLogRepository : IMemoryAccessLogRepository
         => _context.MemoryAccessLogs.Where(l => l.IdMemory == idMemory)
             .OrderByDescending(l => l.Fecha).Take(tope).ToListAsync(ct);
 
+    public Task<List<MemoryAccessLog>> GetRecientesAsync(int tope = 50, CancellationToken ct = default)
+        => _context.MemoryAccessLogs
+            .OrderByDescending(l => l.Fecha).Take(tope).ToListAsync(ct);
+
     public Task<long> ContarPorOperacionAsync(string operacion, CancellationToken ct = default)
         => _context.MemoryAccessLogs.LongCountAsync(l => l.Operacion == operacion, ct);
 

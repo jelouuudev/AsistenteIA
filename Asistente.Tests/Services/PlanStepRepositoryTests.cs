@@ -37,9 +37,13 @@ public class PlanStepRepositoryTests : IDisposable
 
     private AsistenteDbContext NuevoContexto()
     {
-        var ctx = new AsistenteDbContext(new DbContextOptionsBuilder<AsistenteDbContext>()
-            .UseSqlite(_conn)
-            .Options);
+        // El modelo cifra Contenido de memoria, así que el contexto exige un
+        // cifrador. Aquí no se toca memoria: basta una clave de prueba.
+        var ctx = new AsistenteDbContext(
+            new DbContextOptionsBuilder<AsistenteDbContext>()
+                .UseSqlite(_conn)
+                .Options,
+            Asistente.Infrastructure.Services.MemoryCifrador.DesdeClave("clave-solo-para-estos-tests"));
         // El modelo usa nvarchar(max) (SQL Server); en SQLite se crean solo las
         // tablas mínimas con DDL compatible.
         ctx.Database.ExecuteSqlRaw("""

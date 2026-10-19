@@ -79,6 +79,10 @@ builder.ToTable("MemoryAccessLogs");
             builder.HasIndex(l => l.IdAsistente).HasDatabaseName("IX_MemoryAccessLogs_IdAsistente");
             builder.HasIndex(l => l.IdUsuario).HasDatabaseName("IX_MemoryAccessLogs_IdUsuario");
             builder.HasIndex(l => l.Operacion).HasDatabaseName("IX_MemoryAccessLogs_Operacion");
+            // El panel pide los N accesos mas recientes de TODAS las memorias, sin
+            // filtrar por memoria, agente ni operacion: la unica columna por la que
+            // ordena es Fecha. Sin este indice es un orden de la tabla entera.
+            builder.HasIndex(l => l.Fecha).HasDatabaseName("IX_MemoryAccessLogs_Fecha");
         }
     }
 

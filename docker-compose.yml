@@ -89,6 +89,7 @@ services:
       - Embedding__ModeloEmbeddings=${EMBEDDING_MODEL:-nomic-embed-text}
       - Chroma__Url=${CHROMA_URL:-http://chromadb:8000}
       - JwtSettings__SecretKey=${JWT_SECRET}
+      - Memoria__ClaveCifrado=${MEMORIA_CLAVE_CIFRADO:-}
       - TZ=America/Lima
       - ApiBaseUrl=http://api:5298
       - Swagger__Habilitado=true

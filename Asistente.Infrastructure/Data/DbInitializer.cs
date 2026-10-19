@@ -6,6 +6,7 @@ using Asistente.Domain.Interfaces;
 using Asistente.Domain.Entities;
 using Asistente.Domain.Enums;
 using Asistente.Application.Services.Memoria;
+using Asistente.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -630,6 +631,59 @@ public static class DbInitializer
 
             await context.SaveChangesAsync();
         }
+
+        await CifrarContenidoPreexistenteAsync(context);
+    }
+
+    /// <summary>
+    /// Cifra el contenido de memoria escrito ANTES de que existiera el cifrado.
+    ///
+    /// El conversor de valor del modelo cifra al escribir y descifra al leer, pero no
+    /// puede hacer nada con las filas que ya estaban en la base en claro: el
+    /// descifrador las devuelve tal cual (las que no llevan prefijo las trata como
+    /// previas al cifrado) y se quedarían en claro indefinidamente. Este pasito las
+    /// reescribe para que también pasen por el cifrado.
+    ///
+    /// Dos detalles que no son opcionales:
+    ///
+    /// - La detección va por SQL crudo. Un LINQ sobre Contenido se traduce con el
+    ///   parámetro YA CIFRADO, porque es el propio conversor el que convierte los
+    ///   parámetros; "Contenido NOT LIKE 'enc:v1:%'" dentro de EF no encontraría
+    ///   ninguna fila y este método no haría nunca nada. Solo se buscan los Id.
+    ///
+    /// - Se marca la propiedad como modificada y se deja que guarde el conversor.
+    ///   Escribir el texto a mano saltaría el mismo punto único que se instaló
+    ///   justamente para que no se pueda olvidar ninguna escritura.
+    ///
+    /// Idempotente: al volver a arrancar no queda ninguna fila sin prefijo y no
+    /// escribe nada. Un fallo aquí corta el arranque, igual que el resto de la
+    /// verificación: preferible a levantarse con datos en claro.
+    /// </summary>
+    private static async Task CifrarContenidoPreexistenteAsync(AsistenteDbContext context)
+    {
+        var prefijo = MemoryCifrador.Prefijo;
+        var memorias = await context.Database.SqlQueryRaw<int>(
+                $"SELECT IdMemory AS [Value] FROM [MemoryRecords] WHERE [Contenido] NOT LIKE '{prefijo}%'")
+            .ToListAsync();
+        var versiones = await context.Database.SqlQueryRaw<int>(
+                $"SELECT IdVersion AS [Value] FROM [MemoryVersions] WHERE [Contenido] NOT LIKE '{prefijo}%'")
+            .ToListAsync();
+
+        if (memorias.Count == 0 && versiones.Count == 0) return;
+
+        foreach (var memoria in await context.MemoryRecords
+                     .Where(m => memorias.Contains(m.IdMemory)).ToListAsync())
+        {
+            context.Entry(memoria).Property(m => m.Contenido).IsModified = true;
+        }
+
+        foreach (var version in await context.MemoryVersions
+                     .Where(v => versiones.Contains(v.IdVersion)).ToListAsync())
+        {
+            context.Entry(version).Property(v => v.Contenido).IsModified = true;
+        }
+
+        await context.SaveChangesAsync();
     }
 
     /// <summary>

@@ -6,8 +6,13 @@ namespace Asistente.Infrastructure.Data;
 
 public class AsistenteDbContext : DbContext, IUnitOfWork
 {
-    public AsistenteDbContext(DbContextOptions<AsistenteDbContext> options) : base(options)
+    private readonly IMemoryCifrador _memoriaCifrador;
+
+    public AsistenteDbContext(
+        DbContextOptions<AsistenteDbContext> options,
+        IMemoryCifrador memoriaCifrador) : base(options)
     {
+        _memoriaCifrador = memoriaCifrador;
     }
 
     public DbSet<Conversacion> Conversaciones => Set<Conversacion>();
@@ -111,5 +116,31 @@ public class AsistenteDbContext : DbContext, IUnitOfWork
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AsistenteDbContext).Assembly);
         base.OnModelCreating(modelBuilder);
+        CifrarContenidoDeMemoria(modelBuilder);
+    }
+
+    /// <summary>
+    /// Cifra el contenido de memoria en el conversor de valor de EF Core, que es el
+    /// único punto por el que pasa todo dato: cada lectura materializa ya descifrado
+    /// y cada escritura llega cifrada a la columna.
+    ///
+    /// Se eligió el conversor a propósito frente a cifrar llamada a llamada en
+    /// MemoryManager: hay 10 puntos de lectura y escritura repartidos entre Manager,
+    /// Orquestador, VersionManager y el Dashboard, y saltarse uno deja contenido en
+    /// claro sin que nada falle ni avise. Aquí no se puede olvidar ninguno.
+    ///
+    /// Ninguna consulta filtra Contenido de memoria en SQL (las dos comparaciones que
+    /// existen son sobre mensajes de chat), así que no hay que descifrar en la base.
+    /// </summary>
+    private void CifrarContenidoDeMemoria(ModelBuilder modelBuilder)
+    {
+        var cifrador = _memoriaCifrador;
+        modelBuilder.Entity<MemoryRecord>()
+            .Property(m => m.Contenido)
+            .HasConversion(valor => cifrador.Cifrar(valor), valor => cifrador.Descifrar(valor));
+
+        modelBuilder.Entity<MemoryVersion>()
+            .Property(v => v.Contenido)
+            .HasConversion(valor => cifrador.Cifrar(valor), valor => cifrador.Descifrar(valor));
     }
 }

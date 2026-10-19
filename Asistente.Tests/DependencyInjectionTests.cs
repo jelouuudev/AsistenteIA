@@ -46,8 +46,12 @@ public class DependencyInjectionTests
                 ["Embedding:Url"] = "http://localhost:11434",
                 ["Ollama:Url"] = "http://localhost:11434",
                 ["Ollama:TimeoutSegundos"] = "3600",
-                ["Chroma:Url"] = "http://localhost:8000",
-                ["Chroma:TimeoutSegundos"] = "30"
+["Chroma:Url"] = "http://localhost:8000",
+                  ["Chroma:TimeoutSegundos"] = "30",
+                  // El modelo cifra Contenido de memoria con un conversor de valor que
+                  // necesita el cifrador, y el cifrador falla al construirse si no hay
+                  // clave. Sin esta línea ValidateOnBuild revienta.
+                  ["Memoria:ClaveCifrado"] = "clave-de-prueba-solo-para-el-contenedor"
             })
             .Build();
 
@@ -103,6 +107,30 @@ public class DependencyInjectionTests
         // envuelto, seguiría compilando pero no encontraría ninguna memoria.
         var busqueda = scope.ServiceProvider.GetRequiredService<SemanticMemorySearch>();
         Assert.NotNull(busqueda);
+    }
+
+    /// <summary>
+    /// El cifrado vive en el conversor de valor del modelo, no en las llamadas a
+    /// guardar. Si alguien lo quitara de OnModelCreating, el resto de la suite sigue
+    /// en verde (lee texto ya descifrado) y la columna volvería a quedar en claro
+    /// sin que nada lo avise. Aquí se comprueba que el modelo lo tiene puesto en las
+    /// dos tablas que guardan contenido: MemoryRecords y MemoryVersions.
+    /// </summary>
+    [Fact]
+    public void ElModelo_DeMemoria_CifraElContenidoEnLasDosTablas()
+    {
+        using var provider = Contenedor();
+        using var scope = provider.CreateScope();
+
+        var contexto = scope.ServiceProvider.GetRequiredService<Asistente.Infrastructure.Data.AsistenteDbContext>();
+
+        var record = contexto.Model.FindEntityType(typeof(Asistente.Domain.Entities.MemoryRecord));
+        var version = contexto.Model.FindEntityType(typeof(Asistente.Domain.Entities.MemoryVersion));
+
+        Assert.NotNull(record);
+        Assert.NotNull(version);
+        Assert.NotNull(record!.FindProperty(nameof(Asistente.Domain.Entities.MemoryRecord.Contenido))!.GetValueConverter());
+        Assert.NotNull(version!.FindProperty(nameof(Asistente.Domain.Entities.MemoryVersion.Contenido))!.GetValueConverter());
     }
 
     /// <summary>

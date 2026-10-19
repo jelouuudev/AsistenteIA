@@ -10,7 +10,11 @@ using Microsoft.Extensions.Logging;
 namespace Asistente.Web.Controllers;
 
 /// <summary>Dashboard de Memoria Empresarial (ETAPA 21).</summary>
-[Authorize(Roles = "Administrador")]
+// Sin rol fijo aquí: cada acción declara el suyo. [Authorize] se combina en AND,
+// así que si el controlador exigiera Administrador a nivel de clase ninguna acción
+// podría abrirse para Supervisor (lección ya aplicada en SeguridadController).
+// Las acciones que modifican memoria siguen siendo de Administrador.
+[Authorize]
 public class MemoriasController : Controller
 {
     private readonly IApiService _apiService;
@@ -30,6 +34,27 @@ public class MemoriasController : Controller
 
     private string Ip() => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
+    /// <summary>
+    /// Panel de memoria (ETAPA 21, sección 17): métricas, auditoría reciente y
+    /// retención pendiente. De lectura, así que lo ve también Supervisor, que ya
+    /// tiene AUDITORIA_CONSULTAR. Crear o modificar memorias sigue siendo de
+    /// Administrador.
+    /// </summary>
+    [Authorize(Roles = "Administrador,Supervisor")]
+    public async Task<IActionResult> Dashboard()
+    {
+        try
+        {
+            return View(await _apiService.GetMemoriaDashboardAsync(UsuarioId(), Ip()));
+        }
+        catch (System.Exception ex)
+        {
+            TempData["ErrorMessage"] = $"Error al cargar el panel: {ex.Message}";
+            return View(new DashboardMemoriaDto());
+        }
+    }
+
+    [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> Index(string? ambito, string? q)
     {
         try
@@ -49,6 +74,7 @@ public class MemoriasController : Controller
         }
     }
 
+    [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> Detalle(string id)
     {
         var memoria = await _apiService.GetMemoriaAsync(id, UsuarioId(), Ip());
@@ -70,10 +96,12 @@ public class MemoriasController : Controller
     }
 
     [HttpGet]
+    [Authorize(Roles = "Administrador")]
     public IActionResult Crear() => View(new CrearMemoryRequest());
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> Crear(CrearMemoryRequest request)
     {
         try
@@ -91,6 +119,7 @@ public class MemoriasController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> Actualizar(string id, string contenido, string? motivo)
     {
         try
@@ -104,6 +133,7 @@ public class MemoriasController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> Revertir(string id, int numero, string? motivo)
     {
         try
@@ -117,6 +147,7 @@ public class MemoriasController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> Eliminar(string id)
     {
         try
@@ -128,6 +159,9 @@ public class MemoriasController : Controller
         return RedirectToAction(nameof(Index));
     }
 
+    // Solo lectura de lo que la política tocaría: Supervisor ya ve la auditoría,
+    // y sin esto no podría comprobar si la retención tiene pendientes.
+    [Authorize(Roles = "Administrador,Supervisor")]
     public async Task<IActionResult> Retencion()
     {
         try
@@ -143,6 +177,7 @@ public class MemoriasController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> AplicarRetencion()
     {
         try

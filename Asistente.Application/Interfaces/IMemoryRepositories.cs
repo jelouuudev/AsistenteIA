@@ -31,6 +31,13 @@ public interface IMemoryAccessLogRepository
 {
     Task AddAsync(MemoryAccessLog log, CancellationToken ct = default);
     Task<List<MemoryAccessLog>> GetByMemoryAsync(int idMemory, int tope = 100, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accesos recientes de TODAS las memorias, para el panel de memoria.
+    /// Sin esta lectura el panel solo podría mostrar el rastro de una memoria
+    /// concreta, que es justo lo que un operador no sabe cuál mirar.
+    /// </summary>
+    Task<List<MemoryAccessLog>> GetRecientesAsync(int tope = 50, CancellationToken ct = default);
     Task<long> ContarPorOperacionAsync(string operacion, CancellationToken ct = default);
 
     /// <summary>Observabilidad: número de accesos por agente (Id null = sin agente).</summary>

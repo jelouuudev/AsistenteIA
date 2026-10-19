@@ -336,20 +336,34 @@ public class MemoryManager
         if (memoria == null) return new List<MemoryAccessLogDto>();
         if (!await AutorizadoAsync(memoria, memoria.Scope?.Codigo ?? string.Empty, idUsuario, ct))
             throw new UnauthorizedAccessException($"Sin permiso para '{codigo}'.");
-        return (await _logs.GetByMemoryAsync(memoria.IdMemory, tope, ct))
-            .Select(l => new MemoryAccessLogDto
-            {
-                Codigo = l.Codigo,
-                Ambito = l.Ambito,
-                IdUsuario = l.IdUsuario,
-                IdAsistente = l.IdAsistente,
-                Operacion = l.Operacion,
-                Resultado = l.Resultado,
-                Motivo = l.Motivo,
-                DuracionMs = l.DuracionMs,
-                Fecha = l.Fecha
-            }).ToList();
-    }
+return (await _logs.GetByMemoryAsync(memoria.IdMemory, tope, ct))
+              .Select(Mapear).ToList();
+      }
+
+      /// <summary>
+      /// Auditoría reciente de todas las memorias, para el panel de memoria.
+      ///
+      /// No filtra por memoria ni exige permiso por código: a quien llega aquí ya se
+      /// le pidió AUDITORIA_CONSULTAR en el endpoint. Exigir además MEMORIA:{codigo}
+      /// por cada fila dejaría el panel en blanco salvo para el dueño de todo.
+      /// </summary>
+      public async Task<List<MemoryAccessLogDto>> AuditoriaRecienteAsync(int tope = 50,
+          CancellationToken ct = default)
+          => (await _logs.GetRecientesAsync(tope, ct)).Select(Mapear).ToList();
+
+      /// <summary>Mapeo único del log: lo usan la auditoría de una memoria y la del panel.</summary>
+      private static MemoryAccessLogDto Mapear(MemoryAccessLog l) => new()
+      {
+          Codigo = l.Codigo,
+          Ambito = l.Ambito,
+          IdUsuario = l.IdUsuario,
+          IdAsistente = l.IdAsistente,
+          Operacion = l.Operacion,
+          Resultado = l.Resultado,
+          Motivo = l.Motivo,
+          DuracionMs = l.DuracionMs,
+          Fecha = l.Fecha
+      };
 
     public async Task<List<MemoryVersionDto>> VersionesAsync(string codigo, int idUsuario, CancellationToken ct = default)
     {

@@ -1636,9 +1636,13 @@ public class ApiService : IApiService
         => await EnviarYLeerAsync<IEnumerable<MemorySearchHitDto>>(
             CrearRequest(HttpMethod.Get, $"/api/memorias/buscar?texto={Uri.EscapeDataString(texto)}", null, currentUserId, ip));
 
-    public async Task<MemoryMetricasDto> GetMemoriaMetricasAsync(int currentUserId, string ip)
+public async Task<MemoryMetricasDto> GetMemoriaMetricasAsync(int currentUserId, string ip)
         => await EnviarYLeerAsync<MemoryMetricasDto>(
             CrearRequest(HttpMethod.Get, "/api/memorias/metricas", null, currentUserId, ip));
+
+    public async Task<DashboardMemoriaDto> GetMemoriaDashboardAsync(int currentUserId, string ip)
+        => await EnviarYLeerAsync<DashboardMemoriaDto>(
+            CrearRequest(HttpMethod.Get, "/api/memorias/dashboard", null, currentUserId, ip));
 
     public async Task<IEnumerable<string>> GetMemoriaRetencionPendientesAsync(int currentUserId, string ip)
         => await EnviarYLeerAsync<IEnumerable<string>>(

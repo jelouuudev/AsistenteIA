@@ -23,8 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- El panel de memoria movió los roles de nivel de controlador a nivel de
+         acción en Asistente.Web; sin esta referencia no se puede comprobar que
+         ninguna acción haya quedado abierta. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Asistente.Application\Asistente.Application.csproj" />
     <ProjectReference Include="..\Asistente.Infrastructure\Asistente.Infrastructure.csproj" />
+    <ProjectReference Include="..\Asistente.Web\Asistente.Web.csproj" />
   </ItemGroup>
 
 </Project>
