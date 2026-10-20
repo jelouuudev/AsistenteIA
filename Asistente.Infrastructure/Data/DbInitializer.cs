@@ -646,27 +646,43 @@ public static class DbInitializer
     ///
     /// Dos detalles que no son opcionales:
     ///
-    /// - La detección va por SQL crudo. Un LINQ sobre Contenido se traduce con el
-    ///   parámetro YA CIFRADO, porque es el propio conversor el que convierte los
-    ///   parámetros; "Contenido NOT LIKE 'enc:v1:%'" dentro de EF no encontraría
-    ///   ninguna fila y este método no haría nunca nada. Solo se buscan los Id.
+    /// - La detección va por SQL crudo. Un LINQ sobre Contenido no sirve porque EF
+    ///   aplica el MISMO conversor al argumento de la consulta que a la columna: el
+    ///   predicado viaja cifrado, es decir compara enc:v1:% contra enc(v1:...) y no
+    ///   puede casar nunca. Con el NOT de la detección eso no queda en cero filas,
+    ///   queda en TODAS: se re-cifraría la memoria entera en cada arranque.
+    ///   Solo se buscan los Id por SQL y luego se cargan por Id.
+    ///
+    /// - Ese SQL crudo tiene que llevar {0} y el valor por parámetro. Con un string
+    ///   interpolado EF deja el marcador DENTRO de las comillas, el SQL acaba siendo
+    ///   NOT LIKE '@p0%' (texto literal que no casa con nada) y se vuelve al mismo
+    ///   fallo: todo seleccionado, todo reescrito. El interpolado también dispara el
+    ///   aviso EF1002 de inyección SQL, y por una razón: efectivamente no parametriza.
     ///
     /// - Se marca la propiedad como modificada y se deja que guarde el conversor.
     ///   Escribir el texto a mano saltaría el mismo punto único que se instaló
     ///   justamente para que no se pueda olvidar ninguna escritura.
     ///
     /// Idempotente: al volver a arrancar no queda ninguna fila sin prefijo y no
-    /// escribe nada. Un fallo aquí corta el arranque, igual que el resto de la
-    /// verificación: preferible a levantarse con datos en claro.
+    /// escribe nada (la detección devuelve cero y sale antes de tocar nada). Un
+    /// fallo aquí corta el arranque, igual que el resto de la verificación:
+    /// preferible a levantarse con datos en claro.
     /// </summary>
-    private static async Task CifrarContenidoPreexistenteAsync(AsistenteDbContext context)
+    internal static async Task CifrarContenidoPreexistenteAsync(AsistenteDbContext context)
     {
         var prefijo = MemoryCifrador.Prefijo;
+        // SqlQueryRaw con {0}, no interpolacion: un "$...{prefijo}..." con SqlQuery
+        // no parametriza. EF deja el marcador DENTRO de las comillas y el SQL acaba
+        // siendo NOT LIKE '@p0%' (texto literal que no casa con nada), asi que NOT
+        // LIKE vale para TODA la fila y en cada arranque se reescribe la memoria
+        // entera: se cifra de nuevo y el contenido cambia de cadena cada boot.
+        // Con {0} el valor viaja como parametro de verdad (y sin el aviso EF1002).
+        var patrones = prefijo + "%";
         var memorias = await context.Database.SqlQueryRaw<int>(
-                $"SELECT IdMemory AS [Value] FROM [MemoryRecords] WHERE [Contenido] NOT LIKE '{prefijo}%'")
+                "SELECT IdMemory AS [Value] FROM [MemoryRecords] WHERE [Contenido] NOT LIKE {0}", patrones)
             .ToListAsync();
         var versiones = await context.Database.SqlQueryRaw<int>(
-                $"SELECT IdVersion AS [Value] FROM [MemoryVersions] WHERE [Contenido] NOT LIKE '{prefijo}%'")
+                "SELECT IdVersion AS [Value] FROM [MemoryVersions] WHERE [Contenido] NOT LIKE {0}", patrones)
             .ToListAsync();
 
         if (memorias.Count == 0 && versiones.Count == 0) return;

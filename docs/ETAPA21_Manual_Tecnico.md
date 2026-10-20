@@ -52,9 +52,10 @@ El contenido de `MemoryRecords` y `MemoryVersions` se guarda cifrado con AES-256
 
 **Formato.** Los valores llevan el prefijo `enc:v1:`. `Descifrar` devuelve sin tocar cualquier valor que no empiece por él, así que los contenidos anteriores al cifrado se siguen pudiendo leer y no rompen el arranque.
 
-**Backfill.** `DbInitializer.CifrarContenidoPreexistenteAsync` reescribe las filas que quedan en claro. Dos detalles que no son opcionales:
+**Backfill.** `DbInitializer.CifrarContenidoPreexistenteAsync` reescribe las filas que quedan en claro. Tres detalles que no son opcionales:
 
-- La detección va por **SQL crudo**. Un LINQ sobre `Contenido` se traduce con el parámetro ya cifrado (el conversor convierte los parámetros), así que `Contenido NOT LIKE 'enc:v1:%'` dentro de EF no encontraría nunca ninguna fila. Solo se buscan los Id y luego se cargan por Id.
+- La detección va por **SQL crudo con `{0}`**: un LINQ sobre `Contenido` no sirve porque EF aplica el mismo conversor al argumento de la consulta que a la columna, así que el predicado viaja **cifrado** y compara `enc:v1:%` contra `enc(v1:...)`. Con el `NOT` de la detección eso no da cero filas, da **todas**: se re-cifraría la memoria entera en cada arranque. Solo se buscan los Id y luego se cargan por Id.
+- Ese SQL tiene que pasar el valor por parámetro (`SqlQueryRaw(sql, prefijo + "%")`), no por interpolación. Un `"... NOT LIKE '{prefijo}%'"` hace que EF deje el marcador *dentro* de las comillas y el SQL acaba siendo `NOT LIKE '@p0%'`: texto literal que no casa con nada, con el mismo resultado de antes (todo seleccionado, todo reescrito) y con el aviso `EF1002` de fondo, que justamente avisa que ahí no parametriza.
 - Se marca la propiedad como modificada y se deja que guarde el conversor. Escribir el texto a mano saltaría el mismo punto único.
 
 Idempotente: al volver a arrancar no queda ninguna fila sin prefijo y no escribe nada.
