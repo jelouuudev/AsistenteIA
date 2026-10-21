@@ -6,7 +6,21 @@ Todo en el Web (**Memorias**) o en `api/memorias` (con sesión). Los permisos lo
 
 Web → Memorias → Crear: código `FORM-REPORTE-MENSUAL`, ámbito `Organizacion`,
 categoría `FormatoReporte`, contenido con el formato. Genera la **v1** y la indexa
-para búsqueda semántica. Si exige permiso, cada lector necesita `MEMORIA:FORM-REPORTE-MENSUAL`.
+para búsqueda semántica.
+
+**Quién puede leerla lo decide el ámbito**, no una casilla:
+
+| Ámbito | Quién la ve |
+|---|---|
+| `Organizacion` | Toda la empresa (compartida) |
+| `Usuario` | Solo su dueño (el *Id propietario*) |
+| `Agente` | Solo el agente indicado en *Id propietario* |
+| `Workflow` | Solo el flujo indicado en *Id propietario* |
+| `Conversacional` | Compartida, como nota de antecedentes |
+
+Además, **crear o modificar memorias en los ámbitos compartidos** (`Organizacion`,
+`Agente`, `Workflow`) exige el permiso `MEMORIA_ADMINISTRAR`: quien no lo tiene
+recibe un 403. En el ámbito `Usuario` propio no hace falta trámite.
 
 ## 2. Consultar memoria desde un agente
 

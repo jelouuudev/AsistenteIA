@@ -295,6 +295,50 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
     }
 
     /// <summary>
+    /// Sin especificar, la memoria queda protegida. El valor por defecto es
+    /// "exige permiso": una memoria compartida no debe quedar abierta por
+    /// olvido de quien la crea.
+    /// </summary>
+    [Fact]
+    public async Task Crear_SinEspecificarRequierePermiso_LaMemoriaQuedaProtegida()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+
+        var m = await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "SIN-ESPECIFICAR",
+            Titulo = "Sin especificar",
+            Contenido = "contenido",
+            Ambito = "Organizacion"
+        }, 7);
+
+        Assert.True(m.RequierePermiso);
+        Assert.True(repo.Datos.Single().RequierePermiso);
+    }
+
+    /// <summary>
+    /// Quien la crea puede pedirla explícitamente abierta: entonces no se exige
+    /// el permiso MEMORIA:{código} y la ven todos los autorizados.
+    /// </summary>
+    [Fact]
+    public async Task Crear_ConPermisoFalse_LaMemoriaQuedaAbierta()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+
+        var m = await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "ABIERTA",
+            Titulo = "Abierta",
+            Contenido = "contenido",
+            Ambito = "Organizacion",
+            RequierePermiso = false
+        }, 7);
+
+        Assert.False(m.RequierePermiso);
+        Assert.False(repo.Datos.Single().RequierePermiso);
+    }
+
+    /// <summary>
     /// El tipo de memoria debe quedar en la auditoría. Antes solo se guardaba el
     /// código, y al purgar una memoria IdMemory queda en null: el ámbito se perdía
     /// justo en el caso donde más importa la trazabilidad.

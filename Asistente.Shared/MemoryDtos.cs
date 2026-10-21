@@ -13,7 +13,16 @@ public class CrearMemoryRequest
     public string Ambito { get; set; } = "Organizacion";
     public int? IdPropietario { get; set; }
     public string? Categoria { get; set; }
-    public bool RequierePermiso { get; set; } = true;
+
+    /// <summary>
+    /// Si la memoria exige el permiso MEMORIA:{código} para poder leerse.
+    /// Null significa "no especificado" y cada canal lo resuelve segun su
+    /// intencion: la API lo toma como true (por defecto se protege) y la Web
+    /// como false (una casilla desmarcada no viaja en el POST, y antes, al ser
+    /// bool con valor por defecto true, toda memoria creada desde el formulario
+    /// acababa exigiendo un permiso que no habia forma de conceder).
+    /// </summary>
+    public bool? RequierePermiso { get; set; }
     public int? DiasRetencion { get; set; }
     public DateTime? FechaExpiracion { get; set; }
 }

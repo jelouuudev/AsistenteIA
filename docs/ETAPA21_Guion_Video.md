@@ -32,6 +32,10 @@
   Mostrar un `Denegado` a propósito (pedir sin permiso).
 
 ## Notas de grabación
-- Los permisos `MEMORIA:{Codigo}` se otorgan en Seguridad; para la demo el admin
-  los necesita en las memorias restringidas que quiera abrir en cámara.
+- La memoria restringida para el 403 es `SECRETA` (ya está en la base de datos,
+  ámbito `Organizacion`, exige el permiso `MEMORIA:SECRETA`): **cualquier** usuario
+  recibe 403 al pedirla, el administrador también. No hay que conceder nada.
+- El formulario de creación **no** tiene casilla de "requiere permiso": quien
+  decide el acceso es el ámbito de la memoria (Usuario, Agente y Workflow solo la
+  ven su dueño; Organizacion es compartida). Dilo así si te preguntan por ella.
 - Si ChromaDB está caído, la búsqueda degrada a texto (decirlo si pasa: es diseño).

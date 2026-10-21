@@ -50,10 +50,13 @@
             <label class="form-label text-secondary">Retención (días, opcional)</label>
             <input asp-for="DiasRetencion" type="number" min="1" class="form-control" />
         </div>
-        <div class="col-12 form-check ms-2">
-            <input asp-for="RequierePermiso" class="form-check-input" checked />
-            <label class="form-check-label text-secondary">Requiere permiso MEMORIA:{código}</label>
-        </div>
+        @* Sin casilla de "requiere permiso": el acceso a una memoria lo decide su
+           ambito (Usuario, Agente y Workflow solo la ve su dueno; Organizacion es
+           compartida) y escribir en los ambitos compartidos exige el permiso
+           MEMORIA_ADMINISTRAR. Un permiso por codigo (MEMORIA:{codigo}) no tiene
+           donde concederse desde la UI, asi que no se ofrece: una memoria creada
+           con esa exigencia quedaria reservada para siempre, invisible e
+           indestructible. *@
         <div class="col-12 mt-3 d-flex gap-2">
             <button type="submit" class="btn btn-primary">Crear</button>
             <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>

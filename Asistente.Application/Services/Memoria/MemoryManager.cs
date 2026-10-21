@@ -83,7 +83,9 @@ public class MemoryManager
             IdCategory = idCategoria,
             Activo = true,
             VersionActual = 1,
-            RequierePermiso = request.RequierePermiso,
+            // Sin especificar se protege por defecto: una memoria compartida no
+            // debe quedar abierta por olvido de quien la crea.
+            RequierePermiso = request.RequierePermiso ?? true,
             FechaExpiracion = request.FechaExpiracion,
             FechaCreacion = ahora,
             FechaActualizacion = ahora

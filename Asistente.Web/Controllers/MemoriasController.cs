@@ -106,6 +106,14 @@ public class MemoriasController : Controller
     {
         try
         {
+            // La UI crea siempre memorias abiertas: el acceso lo decide el ambito
+            // (Usuario, Agente y Workflow solo la ve su dueno; Organizacion es
+            // compartida) y escribir en los ambitos compartidos ya exige el
+            // permiso MEMORIA_ADMINISTRAR. El permiso por codigo (MEMORIA:{codigo})
+            // sigue existiendo en la API para uso programatico, pero no se ofrece
+            // en el formulario porque no hay donde concederlo: una memoria creada
+            // con esa exigencia quedaria invisible e indestructible para todos.
+            request.RequierePermiso = false;
             var creada = await _apiService.CrearMemoriaAsync(request, UsuarioId(), Ip());
             TempData["OkMessage"] = $"Memoria '{creada.Codigo}' creada (v1).";
             return RedirectToAction(nameof(Detalle), new { id = creada.Codigo });

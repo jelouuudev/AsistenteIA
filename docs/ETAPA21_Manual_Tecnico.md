@@ -31,14 +31,15 @@ MemoryManager (CRUD+versionado+permisos+auditoría)
 | Web | `Asistente.Web/Controllers/MemoriasController.cs` + `Views/Memorias/` + menú |
 | DI | `Asistente.Application/DependencyInjection.cs` + `Asistente.Infrastructure/DependencyInjection.cs` |
 | SQL | `scripts/etapa21_memoria.sql` (idempotente) |
-| Tests | `Asistente.Tests/Services/MemoryManagerTests.cs` (34 pruebas con fakes), `MemoryCifradorTests.cs` (8), `Web/MemoriasControllerRolesTests.cs` (5) |
+| Tests | `Asistente.Tests/Services/MemoryManagerTests.cs` (36 pruebas con fakes), `MemoryCifradorTests.cs` (8), `MemoryBackfillCifradoTests.cs` (3), `Web/MemoriasControllerRolesTests.cs` (5), `Web/MemoriasControllerCrearTests.cs` (2) |
 
 ## 3. Decisiones
 
 - **Vector compartido, filtro por permiso después**: cada memoria se indexa con Guid propio y marcador `MEMORIA:{codigo}`; al buscar se filtra a esos Guids y LUEGO se exige permiso. Sin vector (Chroma caído) degrada a texto sin romper.
 - **La frontera la impone el almacén, no cada consumidor** (`MemorySafeVectorStore`): como documentos y memorias comparten colección, y el RAG solo autoriza por documento, un vector de memoria devuelto por una consulta de RAG saltaría el permiso `MEMORIA:{codigo}` y llegaría al prompt sin autorizar. Que la exclusión esté en `IVectorStore` y no en cada servicio evita que un consumidor nuevo la reabra en silencio: solo `SemanticMemorySearch` recibe el almacén CRUDO, como excepción explícita en el DI.
 - **Versionado append-only**: crear→v1; actualizar/revertir agregan versiones; jamás se reescribe.
-- **Permisos**: `RequierePermiso` exige `MEMORIA:{Codigo}`; el propietario exime en su ámbito Usuario. Denegado no expone contenido (403 + auditoría).
+- **Permisos**: el acceso a una memoria lo decide su **ámbito**, no un permiso por código. `Usuario`, `Agente` y `Workflow` solo la ven su dueño (y el dueño de un ámbito Usuario queda exento de pedir permiso); `Organizacion` es compartida. Escribir en los ámbitos compartidos exige `MEMORIA_ADMINISTRAR` ("la memoria organizacional no podrá modificarse sin autorización"). Denegado no expone contenido (403 + auditoría).
+- **`RequierePermiso` es un flag de nivel API, y la UI no lo ofrece**: la API puede crear una memoria reservada (uso programático, donde el permiso `MEMORIA:{código}` ya está concedido por otra vía) y por defecto protege cuando no se indica. El formulario web, en cambio, **crea siempre memorias abiertas** y no expone la casilla: el catálogo de permisos es fijo y no admite crear `MEMORIA:{código}`, así que una memoria creada con esa exigencia quedaba invisible e indestructible para todos, incluido el administrador, sin ninguna salida desde la app. Por eso el Web fuerza el valor en vez de omitirlo: omitirlo haría que la API lo protegiera por defecto.
 - **Retención**: vencimiento explícito o por días de la política (ámbito > global); expirar desactiva, purgar elimina vector+registro dejando el evento con el código. Lazy en lectura + `POST retencion/aplicar` explícito.
 - **Auditoría total**: Crear/Leer/Actualizar/Eliminar/Buscar/Revertir/Expirar/Purgar con usuario, agente, resultado y motivo.
 - **La auditoría nunca tumba**: todo `AddAsync` de logs va en try/catch.
