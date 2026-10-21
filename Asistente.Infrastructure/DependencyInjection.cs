@@ -24,6 +24,10 @@ public static class DependencyInjection
         // Configuración de opciones (vector store / embeddings)
         services.Configure<ChromaConfig>(configuration.GetSection("Chroma"));
         services.Configure<EmbeddingConfig>(configuration.GetSection("Embedding"));
+        // Sin este Configure, IOptions<GestorDocumentalConfig> devolvía los valores por
+        // defecto de la clase (.pdf, C:\AsistenteIA_Documentos) y las secciones
+        // GestorDocumental de appsettings quedaban sin efecto (en Prod no se admitían .txt).
+        services.Configure<GestorDocumentalConfig>(configuration.GetSection("GestorDocumental"));
 
         // Servicios de IA en runtime (ETAPAs previas): almacén vectorial y embeddings
         // NOTA: OllamaEmbeddingProvider se registra como cliente tipado de IEmbeddingProvider

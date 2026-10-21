@@ -57,52 +57,64 @@ public class ProcesamientoDocumentalBackgroundService : BackgroundService
 
     private async Task ProcesarDocumentosPendientesAsync(CancellationToken cancellationToken)
     {
-        using var scope = _serviceProvider.CreateScope();
-        var procesamientoService = scope.ServiceProvider.GetRequiredService<IProcesamientoDocumentalService>();
+        List<Asistente.Shared.DocumentoProcesadoDto> pendientes;
 
         try
         {
+            // Un scope SOLO para leer la cola de pendientes.
+            using var scopeInicial = _serviceProvider.CreateScope();
+            var servicioInicial = scopeInicial.ServiceProvider.GetRequiredService<IProcesamientoDocumentalService>();
+
             // Obtener documentos pendientes
-            var pendientes = (await procesamientoService.ObtenerTodosAsync())
+            pendientes = (await servicioInicial.ObtenerTodosAsync())
                 .Where(p => p.Estado == EstadoProcesamiento.Pendiente.ToString())
                 .Take(_config.MaxDocumentosPorCiclo)
                 .ToList();
-
-            if (!pendientes.Any())
-            {
-                return;
-            }
-
-            _logger.LogInformation("Procesando {Count} documentos pendientes...", pendientes.Count);
-
-            foreach (var documento in pendientes)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                    break;
-
-                try
-                {
-                    _logger.LogInformation(
-                        "Procesando documento '{Nombre}' (versión {Version})...",
-                        documento.DocumentoNombre, documento.NumeroVersion);
-
-                    await procesamientoService.ProcesarDocumentoAsync(documento.IdVersionDocumento);
-
-                    _logger.LogInformation(
-                        "Documento '{Nombre}' procesado exitosamente. {Chunks} chunks, {Caracteres} caracteres.",
-                        documento.DocumentoNombre, documento.TotalChunks, documento.TotalCaracteres);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "Error al procesar documento '{Nombre}' (versión {Version})",
-                        documento.DocumentoNombre, documento.NumeroVersion);
-                }
-            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al obtener documentos pendientes.");
+            return;
+        }
+
+        if (!pendientes.Any())
+        {
+            return;
+        }
+
+        _logger.LogInformation("Procesando {Count} documentos pendientes...", pendientes.Count);
+
+        foreach (var documento in pendientes)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                break;
+
+            // Scope PROPIO por documento: el DbContext compartido del lote acumulaba
+            // instancias de EventoEmpresarial (dispatch del doc anterior) y el
+            // SaveChanges del siguiente doc fallaba con IdentityMap.ThrowIdentityConflict,
+            // dejando la fila en EnProceso para siempre. Cada petición HTTP tenía
+            // scope fresco y nunca fallaba: este ciclo ahora hace lo mismo.
+            using var scope = _serviceProvider.CreateScope();
+            var procesamientoService = scope.ServiceProvider.GetRequiredService<IProcesamientoDocumentalService>();
+
+            try
+            {
+                _logger.LogInformation(
+                    "Procesando documento '{Nombre}' (versión {Version})...",
+                    documento.DocumentoNombre, documento.NumeroVersion);
+
+                await procesamientoService.ProcesarDocumentoAsync(documento.IdVersionDocumento);
+
+                _logger.LogInformation(
+                    "Documento '{Nombre}' procesado exitosamente. {Chunks} chunks, {Caracteres} caracteres.",
+                    documento.DocumentoNombre, documento.TotalChunks, documento.TotalCaracteres);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error al procesar documento '{Nombre}' (versión {Version})",
+                    documento.DocumentoNombre, documento.NumeroVersion);
+            }
         }
     }
 }
