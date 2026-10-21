@@ -18,6 +18,12 @@ para búsqueda semántica.
 | `Workflow` | Solo el flujo indicado en *Id propietario* |
 | `Conversacional` | Compartida, como nota de antecedentes |
 
+El *Id propietario* acompaña al ámbito: es **obligatorio** en `Usuario`, `Agente`
+y `Workflow` (el id del dueño: 1/2/3 de usuario, asistente o flujo) y debe quedar
+**vacío** en `Organizacion` y `Conversacional`. El formulario lo indica y la API lo
+comprueba al guardar: un id que no existe se rechaza en vez de dejar una memoria
+que nadie podría inyectar.
+
 Además, **crear o modificar memorias en los ámbitos compartidos** (`Organizacion`,
 `Agente`, `Workflow`) exige el permiso `MEMORIA_ADMINISTRAR`: quien no lo tiene
 recibe un 403. En el ámbito `Usuario` propio no hace falta trámite.

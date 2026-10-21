@@ -18,7 +18,15 @@ public interface IMemoryRepository
     Task<List<MemoryScope>> GetScopesAsync(CancellationToken ct = default);
     Task<List<MemoryCategory>> GetCategoriesAsync(CancellationToken ct = default);
     Task<List<MemoryRetentionPolicy>> GetPoliticasAsync(CancellationToken ct = default);
-}
+
+    /// <summary>
+    /// Existe el dueño indicado para el ámbito? Un IdPropietario equivocado no
+    /// falla al guardar: deja la memoria visible en la lista pero sin nadie a
+    /// quien inyectarla (huérfana). Se comprueba al crear para que el error
+    /// aparezca en el formulario y no en silencio meses después.
+    /// </summary>
+    Task<bool> PropietarioExisteAsync(string ambito, int idPropietario, CancellationToken ct = default);
+  }
 
 public interface IMemoryVersionRepository
 {

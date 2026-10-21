@@ -468,9 +468,9 @@ public class PlanBuilder
         // documentos estrecharía la búsqueda al primero).
         if (quiereRag)
         {
-            var soporte = agentes.FirstOrDefault(a => a.Codigo == "ASIS-SOP") ?? agentes.FirstOrDefault();
-            pasos.Add(Paso(ref orden, "RAG", "Consultar documentación mediante RAG", soporte?.IdAsistente ?? principal.IdAsistente,
-                soporte?.Nombre ?? principal.Nombre, "Recupera el procedimiento/documento desde la base de conocimiento.", codigoHerramienta: "DocumentSearchTool",
+            var soporte = ElegirPorHerramienta(agentes, "DocumentSearchTool", principal, "ASIS-SOP");
+            pasos.Add(Paso(ref orden, "RAG", "Consultar documentación mediante RAG", soporte.IdAsistente,
+                soporte.Nombre, "Recupera el procedimiento/documento desde la base de conocimiento.", codigoHerramienta: "DocumentSearchTool",
                 entrada: docMencionado != null ? EntradaRag(docMencionado) : null));
         }
 
@@ -555,12 +555,13 @@ public class PlanBuilder
             // por el set cerrado de EntradaConector.
             var metodoMencionado = DetectarVerboMencionado(objetivo);
             var metodoPaso = metodoMencionado ?? metodoConectorSugerido;
+            var agenteGateway = ElegirPorHerramienta(agentes, "GatewayConnectorTool", principal);
             foreach (var codigo in codigosPaso)
             {
                 var elegido = conectores.FirstOrDefault(c =>
                     c.Codigo.Equals(codigo, StringComparison.OrdinalIgnoreCase));
-                pasos.Add(Paso(ref orden, "Tool", $"Consumir sistema externo: {elegido?.Nombre ?? codigo}", principal.IdAsistente,
-                    principal.Nombre, $"Consume el sistema externo '{codigo}' a través del API Gateway.",
+                pasos.Add(Paso(ref orden, "Tool", $"Consumir sistema externo: {elegido?.Nombre ?? codigo}", agenteGateway.IdAsistente,
+                    agenteGateway.Nombre, $"Consume el sistema externo '{codigo}' a través del API Gateway.",
                     codigoHerramienta: "GatewayConnectorTool",
                     entrada: EntradaConector(codigo, objetivo, metodoPaso)));
                 // Gobierno: todo verbo de ESCRITURA exige aprobación humana,
@@ -588,13 +589,14 @@ public class PlanBuilder
         // Orchestrator del nombre de plantilla propia.
         if (tablasMencionadas.Any() && (quiereAgregacion || quiereRiesgo))
         {
+            var agenteSql = ElegirPorHerramienta(agentes, "SqlQueryTool", principal);
             foreach (var tabla in tablasMencionadas)
             {
                 var nombreAnalisis = tablasMencionadas.Count > 1
                     ? $"Analizar resultados y calcular indicadores [{tabla}]"
                     : "Analizar resultados y calcular indicadores";
-                pasos.Add(Paso(ref orden, "Tool", nombreAnalisis, principal.IdAsistente,
-                    principal.Nombre, "Calcula métricas sobre los datos ya consultados.", codigoHerramienta: "SqlQueryTool",
+                pasos.Add(Paso(ref orden, "Tool", nombreAnalisis, agenteSql.IdAsistente,
+                    agenteSql.Nombre, "Calcula métricas sobre los datos ya consultados.", codigoHerramienta: "SqlQueryTool",
                     entrada: EntradaSql(tabla, objetivo)));
             }
         }
@@ -602,8 +604,9 @@ public class PlanBuilder
         // Paso 5: Reporte (depende del análisis o SQL)
         if (quiereReporte)
         {
-            pasos.Add(Paso(ref orden, "Tool", "Generar resumen ejecutivo / informe", principal.IdAsistente,
-                principal.Nombre, "Consolida los hallazgos en un informe.", codigoHerramienta: "ReportTool"));
+            var agenteReporte = ElegirPorHerramienta(agentes, "ReportTool", principal);
+            pasos.Add(Paso(ref orden, "Tool", "Generar resumen ejecutivo / informe", agenteReporte.IdAsistente,
+                agenteReporte.Nombre, "Consolida los hallazgos en un informe.", codigoHerramienta: "ReportTool"));
         }
 
         // Paso 6: Riesgos
@@ -708,6 +711,31 @@ public class PlanBuilder
         plan.Pasos = pasos;
         plan.Razonamiento = await GenerarRazonamientoAsync(objetivo, pasos, ct);
         return plan;
+    }
+
+    /// <summary>
+    /// El agente tiene la herramienta autorizada? Es la misma regla que la
+    /// ejecución: el ToolOrchestrator solo permite usar herramientas asociadas
+    /// al agente, así que un paso planificado contra el agente equivocado
+    /// falla al ejecutarse aunque el plan se vea correcto.
+    /// </summary>
+    private static bool TieneHerramienta(Domain.Entities.Asistente agente, string codigoHerramienta) =>
+        agente.AsistentesHerramientas?.Any(h => h.Activa && h.Herramienta != null
+            && h.Herramienta.Codigo.Equals(codigoHerramienta, StringComparison.OrdinalIgnoreCase)) == true;
+
+    /// <summary>
+    /// Agente para un paso con herramienta: el primero que la tenga (con
+    /// preferencia por el código indicado), y si nadie la tiene se mantiene el
+    /// comportamiento anterior (el agente por defecto) para no romper planes
+    /// de instalaciones sin asignaciones.
+    /// </summary>
+    private static Domain.Entities.Asistente ElegirPorHerramienta(List<Domain.Entities.Asistente> agentes,
+        string codigoHerramienta, Domain.Entities.Asistente defecto, string? codigoPreferido = null)
+    {
+        var conHerramienta = agentes.Where(a => TieneHerramienta(a, codigoHerramienta)).ToList();
+        return (codigoPreferido == null ? null : conHerramienta.FirstOrDefault(a => a.Codigo == codigoPreferido))
+               ?? conHerramienta.FirstOrDefault()
+               ?? defecto;
     }
 
     private PlanStep Paso(ref int orden, string tipo, string nombre, int? idAsistente, string? nombreAgente, string descripcion, string? codigoHerramienta = null, int? idWorkflow = null, string? entrada = null)

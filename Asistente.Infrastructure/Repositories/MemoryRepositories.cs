@@ -61,6 +61,19 @@ public class MemoryRepository : IMemoryRepository
 
     public Task<List<MemoryRetentionPolicy>> GetPoliticasAsync(CancellationToken ct = default)
         => _context.MemoryRetentionPolicies.Where(p => p.Activo).ToListAsync(ct);
+
+    /// <summary>
+    /// El dueño debe existir en su tabla: Usuario → Usuario, Agente → Asistente,
+    /// Workflow → Workflow. Los ámbitos compartidos no tienen dueño.
+    /// </summary>
+    public Task<bool> PropietarioExisteAsync(string ambito, int idPropietario, CancellationToken ct = default)
+        => (ambito ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "USUARIO" => _context.Usuarios.AnyAsync(u => u.IdUsuario == idPropietario, ct),
+            "AGENTE" => _context.Asistentes.AnyAsync(a => a.IdAsistente == idPropietario, ct),
+            "WORKFLOW" => _context.Workflows.AnyAsync(w => w.IdWorkflow == idPropietario, ct),
+            _ => Task.FromResult(false)
+        };
 }
 
 public class MemoryVersionRepository : IMemoryVersionRepository

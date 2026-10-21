@@ -98,8 +98,11 @@ public class PlanValidator
         }
 
         // 2) Herramientas referenciadas existen Y el usuario tiene permiso.
+        // La lista la compone el mismo catálogo que el ToolOrchestrator: si una
+        // herramienta falta aquí, además del aviso se salta el chequeo de permiso
+        // del usuario (está en el else if).
         var herramientasValidas = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "SqlQueryTool", "DocumentSearchTool", "ReportTool", "CalculatorTool" };
+            { "SqlQueryTool", "DocumentSearchTool", "ReportTool", "CalculatorTool", "MemoryTool", "GatewayConnectorTool" };
 
         foreach (var paso in plan.Pasos.Where(p => !string.IsNullOrWhiteSpace(p.CodigoHerramienta)))
         {

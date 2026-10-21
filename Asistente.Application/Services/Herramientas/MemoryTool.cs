@@ -16,7 +16,7 @@ namespace Asistente.Application.Services.Herramientas;
 public class MemoryTool : ITool
 {
     public string Name => "MemoryTool";
-    public string Description => "Consulta y guarda memoria institucional (formatos de reportes, definiciones, preferencias, contexto de workflows). Parámetros: operacion (buscar|leer|guardar), texto, codigo, titulo, contenido, ambito (Usuario|Agente|Organizacion|Workflow).";
+    public string Description => "Consulta y guarda memoria institucional (formatos de reportes, definiciones, preferencias, contexto de workflows). Parámetros: operacion (buscar|leer|guardar), texto, codigo, titulo, contenido, ambito (Usuario|Agente|Organizacion|Workflow), idPropietario (opcional: el ambito Workflow lo exige y el resto lo deduce del contexto).";
     public string Categoria => "Memoria";
 
     private readonly MemoryManager _manager;
@@ -55,13 +55,22 @@ public class MemoryTool : ITool
                 var contenido = Valor("contenido");
                 if (string.IsNullOrWhiteSpace(codigo) || string.IsNullOrWhiteSpace(contenido))
                     return new ToolExecutionResult { Exitoso = false, Error = "Faltan 'codigo' y/o 'contenido'." };
+                var ambito = Valor("ambito") ?? "Usuario";
+                // El dueño lo decide el ámbito, no quien guarda: Usuario es quien
+                // ejecuta, Agente es el agente en cuyo contexto corre la herramienta.
+                // Un dueño incoherente dejaba memorias que nadie podía inyectar.
+                int? duenoPorDefecto = ambito.Equals("Usuario", System.StringComparison.OrdinalIgnoreCase)
+                    ? request.IdUsuario
+                    : ambito.Equals("Agente", System.StringComparison.OrdinalIgnoreCase)
+                        ? request.IdAsistente
+                        : null;
                 var memoria = await _manager.CrearAsync(new Shared.CrearMemoryRequest
                 {
                     Codigo = codigo,
                     Titulo = Valor("titulo") ?? codigo,
                     Contenido = contenido,
-                    Ambito = Valor("ambito") ?? "Usuario",
-                    IdPropietario = request.IdUsuario
+                    Ambito = ambito,
+                    IdPropietario = int.TryParse(Valor("idPropietario"), out var idDueno) ? idDueno : duenoPorDefecto
                 }, request.IdUsuario, cancellationToken);
                 return new ToolExecutionResult
                 {

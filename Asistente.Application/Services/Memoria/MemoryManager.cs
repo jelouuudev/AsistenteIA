@@ -72,6 +72,26 @@ public class MemoryManager
             idCategoria = cat.IdCategory;
         }
 
+        // El dueño debe ser coherente con el ámbito: si falta o no existe, la
+        // memoria se guarda sin nadie a quien inyectarla (visible en la lista,
+        // buscable, y jamás usada). Antes esto pasaba sin aviso: un IdPropietario
+        // de 99 en vez de 1 bastaba para dejarla muerta para siempre.
+        var ambito = scope.Codigo;
+        if (AmbitoConDueno(ambito))
+        {
+            if (!request.IdPropietario.HasValue)
+                throw new InvalidOperationException(
+                    $"El ámbito '{ambito}' requiere el Id propietario de su dueño.");
+            if (!await _repo.PropietarioExisteAsync(ambito, request.IdPropietario.Value, ct))
+                throw new InvalidOperationException(
+                    $"El Id propietario {request.IdPropietario.Value} no existe para el ámbito '{ambito}'.");
+        }
+        else if (request.IdPropietario.HasValue)
+        {
+            throw new InvalidOperationException(
+                $"El ámbito '{ambito}' no admite Id propietario: déjalo vacío.");
+        }
+
         var ahora = DateTime.UtcNow;
         var memoria = new MemoryRecord
         {
@@ -460,6 +480,13 @@ return (await _logs.GetByMemoryAsync(memoria.IdMemory, tope, ct))
 
     internal async Task<bool> AutorizadoAsync(MemoryRecord memoria, string ambito, int idUsuario, CancellationToken ct)
     {
+        // El ámbito decide quién puede LEER, y no lo salva ni la apertura de la
+        // memoria: una nota privada creada sin permiso no deja de ser privada.
+        // Antes bastaba crearla abierta para que la viera cualquiera (verificado
+        // en vivo: el operador veía la nota privada del administrador y el
+        // conocimiento del agente).
+        if (!await LegiblePorAsync(memoria, ambito, idUsuario, ct))
+            return false;
         if (!memoria.RequierePermiso) return true;
         // El propietario exime el permiso en su propio ámbito Usuario.
         if (ambito.Equals("Usuario", StringComparison.OrdinalIgnoreCase)
@@ -471,11 +498,50 @@ return (await _logs.GetByMemoryAsync(memoria.IdMemory, tope, ct))
     }
 
     /// <summary>
+    /// Público de cada ámbito. Usuario y Agente son conocimiento con dueño
+    /// concreto: lo ve su dueño, y en el caso de Agente quien puede usar ese
+    /// agente (misma regla que el chat). Quien administra la memoria
+    /// (MEMORIA_ADMINISTRAR) sí la ve toda, para poder gestionarla.
+    /// Workflow, Organizacion y Conversacional no filtran: son compartidos y el
+    /// permiso por código sigue cubriéndolos.
+    /// </summary>
+    internal async Task<bool> LegiblePorAsync(MemoryRecord memoria, string ambito, int idUsuario, CancellationToken ct)
+    {
+        if (ambito.Equals("Usuario", StringComparison.OrdinalIgnoreCase))
+            return memoria.IdPropietario == idUsuario || await AdministraMemoriaAsync(idUsuario, ct);
+        if (ambito.Equals("Agente", StringComparison.OrdinalIgnoreCase))
+        {
+            if (await AdministraMemoriaAsync(idUsuario, ct)) return true;
+            // Sin dueño no se inyecta en ningún sitio: no lo enseña nadie.
+            if (!memoria.IdPropietario.HasValue) return false;
+            var uso = await _autorizacion.VerificarAsistenteAsync(idUsuario, memoria.IdPropietario.Value, ct);
+            return uso.Permitido;
+        }
+        return true;
+    }
+
+    private async Task<bool> AdministraMemoriaAsync(int idUsuario, CancellationToken ct)
+    {
+        var permiso = await _autorizacion.VerificarPermisoAsync(idUsuario, PermisoAdministrarMemoria, ct);
+        return permiso.Permitido;
+    }
+
+    /// <summary>
     /// Permiso que exige escribir en un ámbito compartido. Es el mismo patrón que
     /// FUENTES_ADMINISTRAR o ASISTENTES_ADMINISTRAR: administeredar el contenido
     /// de la organización es una tarea conprivilegio, no de autoservicio.
     /// </summary>
     public const string PermisoAdministrarMemoria = "MEMORIA_ADMINISTRAR";
+
+    /// <summary>
+    /// Ámbitos con dueño concreto: la memoria pertenece a un usuario, a un agente
+    /// o a un workflow. En ellos el IdPropietario es obligatorio; en los
+    /// compartidos (Organizacion, Conversacional) no debe venir.
+    /// </summary>
+    internal static bool AmbitoConDueno(string ambito) =>
+        ambito.Equals("Usuario", StringComparison.OrdinalIgnoreCase)
+        || ambito.Equals("Agente", StringComparison.OrdinalIgnoreCase)
+        || ambito.Equals("Workflow", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Autorización de escritura por ámbito. Solo el ámbito Usuario y de su propio

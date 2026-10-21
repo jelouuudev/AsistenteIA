@@ -93,6 +93,15 @@ public class MemoryManagerTests
             => Task.FromResult(Categorias.Where(c => c.Activo).ToList());
         public Task<List<MemoryRetentionPolicy>> GetPoliticasAsync(CancellationToken ct = default)
             => Task.FromResult(Politicas.Where(p => p.Activo).ToList());
+
+        /// <summary>
+        /// Dueños inexistentes por ámbito ("AGENTE:99"). Por defecto todo existe:
+        /// solo se declara lo que el test quiere que no exista.
+        /// </summary>
+        public HashSet<string> PropietariosInexistentes { get; } = new();
+        public Task<bool> PropietarioExisteAsync(string ambito, int idPropietario, CancellationToken ct = default)
+            => Task.FromResult(!PropietariosInexistentes.Contains(
+                $"{ambito.Trim().ToUpperInvariant()}:{idPropietario}"));
     }
 
     private sealed class RepoVersiones : IMemoryVersionRepository
@@ -231,6 +240,10 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
             {
                 Permitido = concedidos.Contains(codigo)
             });
+        // El doble de agentes asume que el usuario puede usarlos: los tests que
+        // miden el filtro de lectura por ámbito configuran su propio doble.
+        m.Setup(a => a.VerificarAsistenteAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResultadoAutorizacion { Permitido = true });
         return m;
     }
 
@@ -242,6 +255,26 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
             .ReturnsAsync((int _, string codigo, CancellationToken _) => new ResultadoAutorizacion
             {
                 Permitido = concedidos.Contains(codigo)
+            });
+        m.Setup(a => a.VerificarAsistenteAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResultadoAutorizacion { Permitido = true });
+        return m;
+    }
+
+    /// <summary>
+    /// Usuario corriente (sin MEMORIA_ADMINISTRAR) que solo puede usar los agentes
+    /// indicados: es la configuración del operador real frente al filtro de lectura.
+    /// </summary>
+    private static Mock<IAutorizacionService> AuthOperador(params (int Usuario, int Agente)[] agentesQuePuedeUsar)
+    {
+        var pares = new HashSet<(int, int)>(agentesQuePuedeUsar);
+        var m = new Mock<IAutorizacionService>();
+        m.Setup(a => a.VerificarPermisoAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResultadoAutorizacion { Permitido = false });
+        m.Setup(a => a.VerificarAsistenteAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int usuario, int idAsistente, CancellationToken _) => new ResultadoAutorizacion
+            {
+                Permitido = pares.Contains((usuario, idAsistente))
             });
         return m;
     }
@@ -292,6 +325,79 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
         Assert.Equal("MIA", m.Codigo);
         Assert.Single(repo.Datos);
         Assert.Contains(logs.Datos, l => l.Operacion == "Crear" && l.Resultado == "Exitoso");
+    }
+
+    /// <summary>
+    /// El ámbito con dueño exige el id: sin él la memoria se guardaría sin nadie a
+    /// quien inyectarla (visible en la lista, jamás usada). Antes el formulario
+    /// marcaba el campo como opcional y el error era silencioso.
+    /// </summary>
+    [Fact]
+    public async Task Crear_AmbitoConDueno_SinIdPropietario_EsRechazado()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            manager.CrearAsync(new CrearMemoryRequest
+            {
+                Codigo = "SIN-DUENO", Titulo = "x", Contenido = "y",
+                Ambito = "Agente"
+            }, 1));
+
+        Assert.Contains("requiere el Id propietario", ex.Message);
+        Assert.Empty(repo.Datos);
+    }
+
+    /// <summary>Un id que no existe en su tabla deja memorias huérfanas: se rechaza al crear.</summary>
+    [Fact]
+    public async Task Crear_PropietarioInexistente_EsRechazado()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>());
+        repo.PropietariosInexistentes.Add("AGENTE:99");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            manager.CrearAsync(new CrearMemoryRequest
+            {
+                Codigo = "HUERFANA", Titulo = "x", Contenido = "y",
+                Ambito = "Agente", IdPropietario = 99
+            }, 1));
+
+        Assert.Contains("no existe para el ámbito 'Agente'", ex.Message);
+        Assert.Empty(repo.Datos);
+    }
+
+    /// <summary>Los ámbitos compartidos no tienen dueño: si viene, se rechaza en vez de ignorarlo.</summary>
+    [Fact]
+    public async Task Crear_AmbitoCompartido_ConIdPropietario_EsRechazado()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(new[] { "MEMORIA:ORG" });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            manager.CrearAsync(new CrearMemoryRequest
+            {
+                Codigo = "ORG-CON-DUENO", Titulo = "x", Contenido = "y",
+                Ambito = "Organizacion", IdPropietario = 1
+            }, 1));
+
+        Assert.Contains("no admite Id propietario", ex.Message);
+        Assert.Empty(repo.Datos);
+    }
+
+    /// <summary>Con el dueño correcto el ámbito con dueño sí se crea y se puede leer.</summary>
+    [Fact]
+    public async Task Crear_AmbitoConDueno_Valido_SeCreaYSeLee()
+    {
+        var (manager, _, _, _, _, _) = Fabrica(new[] { "MEMORIA:AG-1" });
+
+        var m = await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "AG-1", Titulo = "Conocimiento del agente 1", Contenido = "pasos del procedimiento",
+            Ambito = "Agente", IdPropietario = 1, RequierePermiso = false
+        }, 1);
+
+        Assert.Equal("AG-1", m.Codigo);
+        Assert.Equal(1, m.IdPropietario);
+        Assert.Equal("pasos del procedimiento", (await manager.ObtenerAsync("AG-1", 1)).Contenido);
     }
 
     /// <summary>
@@ -566,7 +672,8 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
 
     private static (MemoryManager Manager, RepoMemoria Repo, RepoVersiones Versiones,
         RepoLogs Logs, VectorFalso Vectores, MemoryRetentionEngine Retencion) Fabrica(
-        string[] permitidos, bool conVectores = true)
+        string[] permitidos, bool conVectores = true,
+        Mock<IAutorizacionService>? autorizacion = null)
     {
         var repo = new RepoMemoria();
         var versiones = new RepoVersiones();
@@ -581,7 +688,7 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
             NullLogger<MemoryRetentionEngine>.Instance);
         var gestorVersiones = new MemoryVersionManager(versiones);
         var manager = new MemoryManager(repo, gestorVersiones, logs, busqueda, retencion,
-            Auth(permitidos).Object, NullLogger<MemoryManager>.Instance);
+            (autorizacion ?? Auth(permitidos)).Object, NullLogger<MemoryManager>.Instance);
         return (manager, repo, versiones, logs, vectores, retencion);
     }
 
@@ -718,6 +825,84 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             manager.ObtenerAsync("MIA", 6));
         Assert.Equal("MIA", dto0.Codigo);
+    }
+
+    /// <summary>
+    /// El ámbito Usuario no filtra solo al inyectar: también al listar y leer.
+    /// Antes una nota privada creada abierta la veía cualquiera (verificado en
+    /// vivo con el operador viendo la nota privada del administrador).
+    /// </summary>
+    [Fact]
+    public async Task Leer_AmbitoUsuario_Abierta_NoLaVeOtroUsuario()
+    {
+        var (manager, _, _, _, _, _) = Fabrica(Array.Empty<string>(), autorizacion: AuthOperador());
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "NOTA-7", Titulo = "Privada", Contenido = "solo del dueño",
+            Ambito = "Usuario", IdPropietario = 7, RequierePermiso = false
+        }, 7);
+
+        Assert.Single(await manager.ListarAsync(7));
+        Assert.Empty(await manager.ListarAsync(6));
+        Assert.Empty(await manager.BuscarAsync("privada", 6));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => manager.ObtenerAsync("NOTA-7", 6));
+    }
+
+    /// <summary>
+    /// El ámbito Agente lo ven quienes pueden usar ese agente (misma regla que el
+    /// chat); el resto, no, aunque la memoria esté abierta.
+    /// </summary>
+    [Fact]
+    public async Task Leer_AmbitoAgente_LoSoloQuienPuedeUsarlo()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>(), autorizacion: AuthOperador((7, 9)));
+        repo.Datos.Add(new MemoryRecord
+        {
+            IdMemory = 1, Codigo = "PROC-9", Titulo = "Procedimiento", Contenido = "pasos internos",
+            IdScope = repo.Scopes.First(s => s.Codigo == "Agente").IdScope,
+            IdPropietario = 9, Activo = true, VersionActual = 1, RequierePermiso = false
+        });
+
+        Assert.Single(await manager.ListarAsync(7));
+        Assert.Empty(await manager.ListarAsync(6));
+        Assert.Equal("pasos internos", (await manager.ObtenerAsync("PROC-9", 7)).Contenido);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => manager.ObtenerAsync("PROC-9", 6));
+    }
+
+    /// <summary>
+    /// Una memoria de ámbito Agente sin dueño no se inyecta en ningún sitio: no
+    /// debe quedar visible para nadie que no la administre.
+    /// </summary>
+    [Fact]
+    public async Task Leer_AmbitoAgente_SinDueno_NoLoVeNadie()
+    {
+        var (manager, repo, _, _, _, _) = Fabrica(Array.Empty<string>(), autorizacion: AuthOperador((7, 9)));
+        repo.Datos.Add(new MemoryRecord
+        {
+            IdMemory = 1, Codigo = "SIN-DUENO", Titulo = "huérfana", Contenido = "x",
+            IdScope = repo.Scopes.First(s => s.Codigo == "Agente").IdScope,
+            Activo = true, VersionActual = 1, RequierePermiso = false
+        });
+
+        Assert.Empty(await manager.ListarAsync(7));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => manager.ObtenerAsync("SIN-DUENO", 7));
+    }
+
+    /// <summary>Quien administra la memoria sí ve toda, para poder gestionarla.</summary>
+    [Fact]
+    public async Task Leer_AmbitoUsuario_DeOtro_AsiLoVeElAdministrador()
+    {
+        var (manager, _, _, _, _, _) = Fabrica(new[] { "MEMORIA:X" });
+        await manager.CrearAsync(new CrearMemoryRequest
+        {
+            Codigo = "NOTA-7", Titulo = "Privada", Contenido = "solo del dueño",
+            Ambito = "Usuario", IdPropietario = 7, RequierePermiso = false
+        }, 7);
+
+        var listadas = await manager.ListarAsync(1);
+
+        Assert.Contains(listadas, m => m.Codigo == "NOTA-7");
+        Assert.Equal("solo del dueño", (await manager.ObtenerAsync("NOTA-7", 1)).Contenido);
     }
 
     [Fact]
@@ -994,7 +1179,6 @@ public Task<List<MemoryAccessLog>> GetByMemoryAsync(int id, int tope = 100, Canc
             Titulo = "Incidencia recurrente",
             Contenido = "el tóner se agota cada dos semanas",
             Ambito = "Conversacional",
-            IdPropietario = 7,
             RequierePermiso = false
         }, 7);
         var orch = Orquestador(manager, repo);

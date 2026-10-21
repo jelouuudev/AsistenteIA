@@ -43,8 +43,13 @@
             <input asp-for="Categoria" class="form-control" placeholder="FormatoReporte" />
         </div>
         <div class="col-md-4">
-            <label class="form-label text-secondary">Id propietario (opcional)</label>
+            <label class="form-label text-secondary">Id propietario</label>
             <input asp-for="IdPropietario" type="number" class="form-control" />
+            <div class="form-text text-secondary">
+                Obligatorio en Usuario, Agente y Workflow: es el id de su dueño
+                (usuario, asistente o flujo). En Organizacion y Conversacional,
+                déjalo vacío.
+            </div>
         </div>
         <div class="col-md-4">
             <label class="form-label text-secondary">Retención (días, opcional)</label>

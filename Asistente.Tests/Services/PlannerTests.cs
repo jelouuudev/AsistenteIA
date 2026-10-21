@@ -633,6 +633,81 @@ public class PlannerTests
         Assert.Contains(r.Errores, e => e.Contains("9999"));
     }
 
+    /// <summary>
+    /// Toda herramienta del catálogo debe estar en la lista del validador: si
+    /// falta, el plan la marca como no registrada Y se salta el chequeo de permiso
+    /// del usuario (está en el else if).
+    /// </summary>
+    [Theory]
+    [InlineData("MemoryTool")]
+    [InlineData("GatewayConnectorTool")]
+    public async Task PlanValidator_HerramientaDelCatalogo_SiCompruebaElPermiso(string codigo)
+    {
+        var agentes = new[] { Agente("COMERCIAL-01", 1008, codigo) };
+        // No Administrador: ese rol el validador lo deja pasar sin comprobar nada.
+        var operador = new Usuario
+        {
+            IdUsuario = 2,
+            UsuarioNombre = "operador",
+            Nombres = "Oper",
+            Apellidos = "Dor",
+            Activo = true,
+            UsuarioRoles = new List<UsuarioRol>
+            {
+                new() { IdUsuario = 2, IdRol = 2, Rol = new Rol { IdRol = 2, Nombre = "Operador" } }
+            }
+        };
+        var plan = new Plan
+        {
+            IdUsuario = 2,
+            Pasos = new List<PlanStep> { new() { Orden = 0, Tipo = "Agent", Nombre = "A", IdAsistente = 1008, CodigoHerramienta = codigo } },
+            Dependencias = new List<PlanDependency>()
+        };
+
+        var denegado = await new PlanValidator(RepoAsistentes(agentes).Object, AuthStub(permitido: false).Object,
+                RepoUsuario(operador).Object, RepoPolitica().Object, RepoWorkflow().Object)
+            .ValidarAsync(plan, CancellationToken.None);
+        var permitido = await new PlanValidator(RepoAsistentes(agentes).Object, AuthStub(permitido: true).Object,
+                RepoUsuario(operador).Object, RepoPolitica().Object, RepoWorkflow().Object)
+            .ValidarAsync(plan, CancellationToken.None);
+
+        Assert.DoesNotContain(denegado.Advertencias, a => a.Contains("no registrada"));
+        Assert.False(denegado.Valido);
+        Assert.DoesNotContain(permitido.Advertencias, a => a.Contains("no registrada"));
+        Assert.True(permitido.Valido);
+    }
+
+    /// <summary>
+    /// El paso con herramienta va al agente que la tiene autorizada: con el agente
+    /// equivocado el paso se planificaba bien y fallaba al ejecutarse ("la
+    /// herramienta no está autorizada para este asistente").
+    /// </summary>
+    [Fact]
+    public async Task PlanBuilder_PasoConHerramienta_VaAlAgenteQueLaTiene()
+    {
+        var agentes = new[]
+        {
+            Agente("GENERAL-01", 1, "SqlQueryTool"),
+            Agente("SOPORTE-01", 2, "DocumentSearchTool", "SqlQueryTool")
+        };
+        var ollama = new Mock<IOllamaService>();
+        ollama.Setup(o => o.SendMessageAsync(It.IsAny<IEnumerable<Mensaje>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<double?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"tablas\":[],\"rag\":true,\"reporte\":false,\"riesgo\":false,\"workflow\":false,\"agregacion\":false,\"aprobacion\":false}");
+        var builder = new PlanBuilder(
+            RepoAsistentes(agentes).Object,
+            ollama.Object,
+            Logger<PlanBuilder>().Object,
+            RepoConexion().Object,
+            RepoWorkflow().Object);
+
+        var plan = await builder.ConstruirAsync("necesito una síntesis del estado de cuenta", 1, CancellationToken.None);
+
+        var rag = Assert.Single(plan.Pasos, p => p.CodigoHerramienta == "DocumentSearchTool");
+        Assert.Equal(2, rag.IdAsistente);
+        // El coordinador sigue siendo el primer agente activo.
+        Assert.Contains(plan.Pasos, p => p.Orden == 0 && p.IdAsistente == 1);
+    }
+
     [Fact]
     public async Task PlanValidator_CicloDetectado_Invalido()
     {
