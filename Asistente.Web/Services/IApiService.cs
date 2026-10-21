@@ -310,6 +310,7 @@ public interface IApiService
     Task RevertirMemoriaAsync(string codigo, int numero, string? motivo, int currentUserId, string ip);
     Task EliminarMemoriaAsync(string codigo, int currentUserId, string ip);
     Task<IEnumerable<MemoryVersionDto>> GetMemoriaVersionesAsync(string codigo, int currentUserId, string ip);
+    Task<MemoryDto> IndexarMemoriaAsync(string codigo, int currentUserId, string ip);
     Task<IEnumerable<MemoryAccessLogDto>> GetMemoriaAuditoriaAsync(string codigo, int currentUserId, string ip);
     Task<IEnumerable<MemorySearchHitDto>> BuscarMemoriasAsync(string texto, int currentUserId, string ip);
     Task<MemoryMetricasDto> GetMemoriaMetricasAsync(int currentUserId, string ip);

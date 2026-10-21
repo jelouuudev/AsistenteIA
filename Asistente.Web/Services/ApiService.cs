@@ -1624,6 +1624,10 @@ public class ApiService : IApiService
         => await EnviarSinRetornoAsync(
             CrearRequest(HttpMethod.Delete, $"/api/memorias/{codigo}", null, currentUserId, ip));
 
+    public async Task<MemoryDto> IndexarMemoriaAsync(string codigo, int currentUserId, string ip)
+        => await EnviarYLeerAsync<MemoryDto>(
+            CrearRequest(HttpMethod.Post, $"/api/memorias/{codigo}/indexar", null, currentUserId, ip));
+
     public async Task<IEnumerable<MemoryVersionDto>> GetMemoriaVersionesAsync(string codigo, int currentUserId, string ip)
         => await EnviarYLeerAsync<IEnumerable<MemoryVersionDto>>(
             CrearRequest(HttpMethod.Get, $"/api/memorias/{codigo}/versiones", null, currentUserId, ip));

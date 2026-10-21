@@ -2,17 +2,29 @@
 
 ## 0. Preparación (fuera de cámara)
 - Stack levantado; sesión admin en Web y Swagger. ChromaDB arriba (búsqueda semántica real).
+- Las **siete memorias de ejemplo ya están sembradas** (las crea `DbInitializer` al
+  arrancar): `FORM-REPORTE-MENSUAL`, `DEF-VIATICOS`, `PROC-REPORTE-COMERCIAL`,
+  `PREF-TONO-DIRECTO`, `CONOCIMIENTO-ASISTENTE-GENERAL`, `ESTADO-REPORTE-CLIENTES`
+  y `SECRETA`. No hay que crear nada para el guion: se puede empezar directamente.
 
 ## 1. Crear una memoria organizacional (0:00–1:30)
-- [Web → Memorias → Crear] `FORM-REPORTE-MENSUAL`, ámbito `Organizacion`,
-  categoría `FormatoReporte`, contenido con el formato. Guardar → Detalle en v1.
-- Di: *«Genera la versión 1 y la indexa para búsqueda semántica.»*
+- [Web → Memorias] mostrar `FORM-REPORTE-MENSUAL` ya sembrada (ámbito `Organizacion`,
+  categoría `FormatoReporte`) y abrir su Detalle.
+- [Detalle → **Indexar para búsqueda**] → queda indexada. Di: *«La indexo para que
+  la búsqueda semántica la encuentre.»*
+- Si se quiere crear una de cero (para el paso 4): [Web → Memorias → Crear] con otro
+  código (p. ej. `FORM-REPORTE-COMERCIAL`), ámbito `Organizacion`, categoría
+  `FormatoReporte`, contenido con el formato. Guardar → Detalle en v1.
 
 ## 2. Consultar memoria desde un agente (1:30–3:00)
 - [Swagger `GET /api/memorias/FORM-REPORTE-MENSUAL`] → 200 con el contenido.
-- [Swagger misma URL sin el permiso (otro usuario o permiso retirado)] → **403**
-  `Sin permiso MEMORIA:...`. Di: *«Sin permiso no hay contenido: ni siquiera el error lo expone.»*
+- [Swagger `GET /api/memorias/SECRETA`] → **403** `Sin permiso MEMORIA:SECRETA`.
+  Di: *«Sin permiso no hay contenido: ni siquiera el error lo expone.»*
 - [Web → caja de búsqueda] `formato de reporte mensual` → aparece con puntaje.
+- [Chat] preguntar al Asistente General *«Usando la memoria institucional, indica el
+  formato del reporte mensual y sus secciones»* → la respuesta llega con el bloque
+  `[Memoria Organizacion: Formato de reporte mensual]`. Di: *«El agente no inventa el
+  formato: lo recupera de la memoria de la organización.»*
 
 ## 3. Reutilizar contexto en un workflow (3:00–4:30)
 - Mostrar dos guardados de estado (`paso=2`, `paso=3`) y la tabla de versiones
@@ -32,9 +44,9 @@
   Mostrar un `Denegado` a propósito (pedir sin permiso).
 
 ## Notas de grabación
-- La memoria restringida para el 403 es `SECRETA` (ya está en la base de datos,
-  ámbito `Organizacion`, exige el permiso `MEMORIA:SECRETA`): **cualquier** usuario
-  recibe 403 al pedirla, el administrador también. No hay que conceder nada.
+- La memoria restringida para el 403 es `SECRETA` (viene sembrada, ámbito
+  `Organizacion`, exige el permiso `MEMORIA:SECRETA`): **cualquier** usuario recibe
+  403 al pedirla, el administrador también. No hay que conceder nada.
 - El formulario de creación **no** tiene casilla de "requiere permiso": quien
   decide el acceso es el ámbito de la memoria (Usuario, Agente y Workflow solo la
   ven su dueño; Organizacion es compartida). Dilo así si te preguntan por ella.

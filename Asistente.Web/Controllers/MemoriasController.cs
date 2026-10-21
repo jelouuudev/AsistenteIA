@@ -95,6 +95,25 @@ public class MemoriasController : Controller
         return View(memoria);
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Administrador")]
+    public async Task<IActionResult> Indexar(string id)
+    {
+        try
+        {
+            var memoria = await _apiService.IndexarMemoriaAsync(id, UsuarioId(), Ip());
+            TempData["OkMessage"] = memoria.Indexada
+                ? $"Memoria '{id}' indexada: ya aparece en la busqueda semantica."
+                : $"Memoria '{id}' no se pudo indexar: el almacen vectorial no esta disponible. Se buscara por texto.";
+        }
+        catch (System.Exception ex)
+        {
+            TempData["ErrorMessage"] = $"Error al indexar: {ex.Message}";
+        }
+        return RedirectToAction(nameof(Detalle), new { id });
+    }
+
     [HttpGet]
     [Authorize(Roles = "Administrador")]
     public IActionResult Crear() => View(new CrearMemoryRequest());

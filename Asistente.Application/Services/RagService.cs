@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Application.Services.Memoria;
 using Asistente.Application.Services.Herramientas;
 using Asistente.Domain.Enums;
 using Asistente.Domain.Interfaces;
@@ -27,7 +28,15 @@ public class RagService : IRagService
     private readonly IEmbeddingProvider _embeddingProvider;
     private readonly IEmbeddingConfiguracionRepository _configRepository;
     private readonly IDocumentoRepository? _documentoRepo;
+    private readonly MemoryOrchestrator? _memoria;
     private readonly ILogger<RagService> _logger;
+
+    /// <summary>
+    /// Presupuesto de caracteres del bloque de memoria institucional que se
+    /// anade al contexto RAG (ETAPA 21). Es una capa de referencia, no el cuerpo
+    /// de la respuesta: el peso lo lleva el contexto documental.
+    /// </summary>
+    private const int MemoriaEnContextoRag = 1200;
 
     /// <summary>
     public RagService(
@@ -35,13 +44,15 @@ public class RagService : IRagService
         IEmbeddingProvider embeddingProvider,
         IEmbeddingConfiguracionRepository configRepository,
         ILogger<RagService> logger,
-        IDocumentoRepository? documentoRepo = null)
+        IDocumentoRepository? documentoRepo = null,
+        MemoryOrchestrator? memoria = null)
     {
         _vectorStore = vectorStore;
         _embeddingProvider = embeddingProvider;
         _configRepository = configRepository;
         _logger = logger;
         _documentoRepo = documentoRepo;
+        _memoria = memoria;
     }
 
     private async Task<(List<FragmentoRelevanteDto> resultados, string? preferenciaDocUsada)> RecuperarResultadosCoreAsync(
@@ -247,7 +258,7 @@ public class RagService : IRagService
         }
     }
 
-    public async Task<RagContextoDto> RecuperarContextoDocumentalAsync(string consulta, int? topK = null, string? savedDocumentPreference = null)
+    public async Task<RagContextoDto> RecuperarContextoDocumentalAsync(string consulta, int? topK = null, string? savedDocumentPreference = null, int? idUsuario = null, int? idAsistente = null)
     {
         var cronometro = Stopwatch.StartNew();
 
@@ -338,14 +349,42 @@ var totalCaracteres = resultados.Sum(r => r.Texto?.Length ?? 0);
 
         var tokensEstimados = contextoDocumental.Length / 4;
 
+        // ETAPA 21: la memoria institucional entra en el contexto RAG. El
+        // orquestador de memoria ya filtra por ambito y permiso y audita cada
+        // memoria inyectada, asi que aqui solo se compone el bloque. Sin
+        // usuario (monitoreo, busqueda global) no hay a quien leer: no se inyecta.
+        var contextoMemoria = await ObtenerMemoriaParaRagAsync(idUsuario, idAsistente, ct: default);
+
         return new RagContextoDto
         {
             ContextoDocumental = contextoDocumental,
+            ContextoMemoria = contextoMemoria,
             FragmentosRecuperados = resultados,
             TotalFragmentos = resultados.Count,
             TokensEstimadosContexto = tokensEstimados,
             TiempoRecuperacionMs = cronometro.ElapsedMilliseconds
         };
+    }
+
+    /// <summary>
+    /// Bloque de memoria institucional para el contexto RAG. Nunca tumba la
+    /// recuperacion: si la memoria falla, el RAG sigue con su contexto documental.
+    /// </summary>
+    private async Task<string> ObtenerMemoriaParaRagAsync(int? idUsuario, int? idAsistente, CancellationToken ct)
+    {
+        if (_memoria == null || !idUsuario.HasValue || idUsuario.Value <= 0) return string.Empty;
+        try
+        {
+            var bloque = await _memoria.ObtenerContextoAsync(
+                idUsuario.Value, idAsistente, idWorkflow: null,
+                maxCaracteres: MemoriaEnContextoRag, idConversacion: null, ct: ct);
+            return string.IsNullOrWhiteSpace(bloque) ? string.Empty : bloque;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Memoria: no se pudo componer el bloque para el contexto RAG.");
+            return string.Empty;
+        }
     }
 
     /// <summary>

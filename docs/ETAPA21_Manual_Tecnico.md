@@ -31,7 +31,7 @@ MemoryManager (CRUD+versionado+permisos+auditoría)
 | Web | `Asistente.Web/Controllers/MemoriasController.cs` + `Views/Memorias/` + menú |
 | DI | `Asistente.Application/DependencyInjection.cs` + `Asistente.Infrastructure/DependencyInjection.cs` |
 | SQL | `scripts/etapa21_memoria.sql` (idempotente) |
-| Tests | `Asistente.Tests/Services/MemoryManagerTests.cs` (36 pruebas con fakes), `MemoryCifradorTests.cs` (8), `MemoryBackfillCifradoTests.cs` (3), `Web/MemoriasControllerRolesTests.cs` (5), `Web/MemoriasControllerCrearTests.cs` (2) |
+| Tests | `Asistente.Tests/Services/MemoryManagerTests.cs` (44 pruebas con fakes), `MemoryCifradorTests.cs` (8), `MemoryBackfillCifradoTests.cs` (3), `MemoryRetentionEngineTests.cs` (7), `SemanticMemorySearchTests.cs` (7), `MemoryRagIntegrationTests.cs` (5), `MemoriaFuncionalTests.cs` (8), `Web/MemoriasControllerRolesTests.cs` (5), `Web/MemoriasControllerCrearTests.cs` (2) |
 
 ## 3. Decisiones
 
@@ -85,3 +85,41 @@ Idempotente: al volver a arrancar no queda ninguna fila sin prefijo y no escribe
 **Roles por acción, no por controlador.** Para que Supervisor viera el panel, el rol de `MemoriasController` (Web) pasó de estar en la clase a cada acción. En ASP.NET los `[Authorize]` se combinan en AND, así que un rol fijo a nivel de clase impide que ninguna acción se abra a otro rol. La matriz está fijada por `Asistente.Tests/Web/MemoriasControllerRolesTests.cs`, que además falla si alguien añade una acción sin declararle rol.
 
 **Índice.** `IX_MemoryAccessLogs_Fecha`: el panel pide los N accesos más recientes de TODAS las memorias sin filtrar, y la única columna por la que ordena es `Fecha`.
+
+## 6. Integración con el RAG (sección 11 de la especificación)
+
+La memoria llega al runtime por dos caminos, ambos con el mismo filtro de ámbito y permiso del `MemoryOrchestrator`:
+
+| Camino | Dónde | Presupuesto |
+|---|---|---|
+| Prompt del chat y del Agent Runtime | `ChatService.ObtenerMemoriaParaPromptAsync` → `MemoryOrchestrator.ObtenerContextoAsync`. El `AgentOrchestrator` llama al `ChatService` (`AgenteOrchestrator.cs:1348`), así que los agentes heredan el bloque | 1500 caracteres |
+| Contexto RAG | `RagService.RecuperarContextoDocumentalAsync(..., idUsuario, idAsistente)` devuelve el bloque en `RagContextoDto.ContextoMemoria` | 1200 caracteres |
+| Herramienta de búsqueda documental | `DocumentSearchTool` concatena la memoria al resultado (`DocumentSearchTool.ObtenerMemoriaAsync`) | 1200 caracteres |
+
+**Sin usuario no hay memoria.** `idUsuario` es obligatorio para componer el bloque: el motor decide a quién se le puede inyectar, y sin identidad no hay a quién leerle.
+
+**La memoria no se cuela en los documentos.** `SemanticMemorySearch` indexa cada memoria con un Guid propio y el marcador `MEMORIA:{codigo}`; el almacén compartido (`MemorySafeVectorStore`) impide que un vector de memoria aparezca en una consulta de documentos RAG. Por eso el bloque de memoria llega por un camino propio (`ContextoMemoria`) y no mezclado con los fragmentos.
+
+**Si la memoria falla, el RAG sigue.** La composición va en try/catch: un fallo de memoria deja la respuesta sin memoria, nunca sin respuesta.
+
+**El tool ya no dice "sin datos" si hay memoria.** `DocumentSearchTool` marcaba `[SIN_DATOS]` cuando el RAG no devolvía fragmentos; con memoria institucional disponible esa marca era falsa (había información que dar) y el orquestador la usaba para no contaminar reportes. Ahora solo se marca cuando no hay fragmentos **ni** memoria.
+
+## 7. Datos de ejemplo y operación
+
+**Memorias de ejemplo (sembradas por `DbInitializer`).** Una base recién creada nace sin memorias, y sin memoria no hay guion de video, ni escenario de aceptación, ni panel que enseñe algo. El seed siembra siete memorias idempotentes (por `Codigo`) que cubren los cinco ámbitos:
+
+| Código | Ámbito | Categoría | Para qué |
+|---|---|---|---|
+| `FORM-REPORTE-MENSUAL` | Organizacion | FormatoReporte | Caso 1: el formato del reporte mensual del trimestre anterior |
+| `SECRETA` | Organizacion | Definicion | El 403 del guion: exige `MEMORIA:SECRETA` y ni el administrador la lee |
+| `DEF-VIATICOS` | Organizacion | Definicion | Caso 2: definición institucional que el agente debe aplicar |
+| `PROC-REPORTE-COMERCIAL` | Organizacion | Procedimiento | Procedimiento del reporte comercial |
+| `PREF-TONO-DIRECTO` | Usuario (admin) | Preferencia | Ámbito con dueño: solo su dueño la ve |
+| `CONOCIMIENTO-ASISTENTE-GENERAL` | Agente (General) | Hecho | Ámbito de agente: lo ve quien puede usar ese agente |
+| `ESTADO-REPORTE-CLIENTES` | Workflow (ReporteClientes) | Hecho | Caso 3: estado persistente de un workflow |
+
+Cada una nace con su **versión 1** (el versionado empieza en la v1, igual que en el alta manual). Si el dueño de un ámbito con dueño no existe, esa memoria no se siembra: quedaría invisible para todos.
+
+**Indexación explícita.** Crear y actualizar ya indexan solas. Las memories sembradas y las que quedaron sin vector cuando Chroma estaba caído se indexan a mano: `POST /api/memorias/{codigo}/indexar` y el botón *Indexar para búsqueda* del detalle. Indexar exige poder **leer** la memoria, no solo administrarla: indexar no es un atajo para ver contenido restringido. Si el almacén vectorial no está, la memoria queda sin indexar y la búsqueda degrada a texto (por diseño, no es un fallo).
+
+**El alcance de la sección `GestorDocumental` de `appsettings` es real.** Se liga al contenedor con `services.Configure<GestorDocumentalConfig>(configuration.GetSection("GestorDocumental"))`. Sin esa línea la sección era configuración muerta y mandaban los valores por defecto de la clase (`.pdf` y `C:\AsistenteIA_Documentos`), por lo que en producción se rechazaban los `.txt` que el propio `appsettings.Production.json` declaraba permitidos.

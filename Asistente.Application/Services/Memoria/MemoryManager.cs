@@ -160,6 +160,37 @@ public class MemoryManager
         return ADto(memoria, ambito);
     }
 
+    /// <summary>
+    /// Indexa una memoria en el almacen vectorial para que la busqueda
+    /// semantica la encuentre. La crea y la actualiza ya se indexan solas, pero
+    /// las memorias sembradas (ejemplos de la ETAPA 21) y las que quedaron sin
+    /// indexar cuando el vector store estaba caido necesitan una via manual.
+    /// Indexar no es leer: exige poder LEER la memoria, no solo administrarla.
+    /// </summary>
+    public async Task<MemoryDto> IndexarAsync(string codigo, int idUsuario, int? idAsistente = null, CancellationToken ct = default)
+    {
+        var memoria = await _repo.GetByCodigoAsync(codigo, ct)
+            ?? throw new KeyNotFoundException($"No existe la memoria '{codigo}'.");
+        if (!memoria.Activo)
+            throw new InvalidOperationException($"La memoria '{codigo}' está inactiva.");
+
+        var ambito = memoria.Scope?.Codigo ?? string.Empty;
+        if (!await AutorizadoAsync(memoria, ambito, idUsuario, ct))
+        {
+            await AuditarAsync(memoria, idUsuario, idAsistente, "Indexar", "Denegado",
+                $"Sin permiso MEMORIA:{memoria.Codigo}.", ct);
+            throw new UnauthorizedAccessException($"Sin permiso MEMORIA:{memoria.Codigo}.");
+        }
+
+        await _busqueda.IndexarAsync(memoria, ct);
+        if (memoria.Indexada)
+            await _repo.UpdateAsync(memoria, ct);
+
+        await AuditarAsync(memoria, idUsuario, idAsistente, "Indexar",
+            memoria.Indexada ? "Exitoso" : "SinVectorStore", null, ct);
+        return ADto(memoria, ambito);
+    }
+
     public async Task<MemoryDto> ActualizarAsync(string codigo, ActualizarMemoryRequest request,
         int idUsuario, CancellationToken ct = default, bool ignorarExpiracion = false)
     {

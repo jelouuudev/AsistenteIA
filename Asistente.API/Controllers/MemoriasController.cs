@@ -85,6 +85,15 @@ public class MemoriasController : ControllerBase
         catch (System.Exception ex) { return BadRequest(ex.Message); }
     }
 
+    [HttpPost("{codigo}/indexar")]
+    public async Task<ActionResult> Indexar(string codigo, CancellationToken ct)
+    {
+        try { return Ok(await _manager.IndexarAsync(codigo, UsuarioId(), null, ct)); }
+        catch (System.Collections.Generic.KeyNotFoundException ex) { return NotFound(ex.Message); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { error = ex.Message }); }
+        catch (System.Exception ex) { return BadRequest(ex.Message); }
+    }
+
     [HttpPost("{codigo}/revertir/{numero:int}")]
     public async Task<ActionResult> Revertir(string codigo, int numero, [FromBody] RevertirMemoryRequest? request, CancellationToken ct)
     {

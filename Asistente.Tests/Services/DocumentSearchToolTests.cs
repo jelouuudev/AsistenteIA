@@ -23,8 +23,8 @@ public class DocumentSearchToolTests
         var rag = new Mock<IRagService>();
         string? preferenciaVisto = null;
         rag.Setup(r => r.RecuperarContextoDocumentalAsync(
-                It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>()))
-            .Callback<string, int?, string?>((_, _, pref) => preferenciaVisto = pref)
+                It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<int?>(), It.IsAny<int?>()))
+            .Callback<string, int?, string?, int?, int?>((_, _, pref, _, _) => preferenciaVisto = pref)
             .ReturnsAsync(new RagContextoDto
             {
                 ContextoDocumental = "Contenido del documento.",
@@ -52,8 +52,8 @@ public class DocumentSearchToolTests
         var rag = new Mock<IRagService>();
         string? preferenciaVisto = "no-llamado";
         rag.Setup(r => r.RecuperarContextoDocumentalAsync(
-                It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>()))
-            .Callback<string, int?, string?>((_, _, pref) => preferenciaVisto = pref)
+                It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<int?>(), It.IsAny<int?>()))
+            .Callback<string, int?, string?, int?, int?>((_, _, pref, _, _) => preferenciaVisto = pref)
             .ReturnsAsync(new RagContextoDto { ContextoDocumental = "x", TotalFragmentos = 1 });
 
         var tool = new DocumentSearchTool(rag.Object, new Mock<ILogger<DocumentSearchTool>>().Object);
@@ -71,7 +71,7 @@ public class DocumentSearchToolTests
     {
         var rag = new Mock<IRagService>();
         rag.Setup(r => r.RecuperarContextoDocumentalAsync(
-                It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>()))
+                It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<int?>(), It.IsAny<int?>()))
             .ReturnsAsync(new RagContextoDto { ContextoDocumental = string.Empty, TotalFragmentos = 0 });
 
         var tool = new DocumentSearchTool(rag.Object, new Mock<ILogger<DocumentSearchTool>>().Object);

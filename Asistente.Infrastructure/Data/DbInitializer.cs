@@ -373,6 +373,14 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
+        // ===== ETAPA 21: memorias de ejemplo =====
+        // Sin estos datos el guion del video y el escenario de aceptacion
+        // ("genera el mismo reporte mensual que usamos el trimestre pasado")
+        // no son reproducibles: la base recien creada nasce sin ninguna
+        // memoria. Se siembran idempotentes (por Codigo) y con contenido real
+        // para poder mostrar versionado, permisos y retencion en vivo.
+        await SeedMemoriasEjemploAsync(context);
+
         // ===== ETAPA 13: Motor de Eventos Empresariales =====
         // Configuración global del motor
         if (!await context.ConfiguracionEventoMotor.AnyAsync())
@@ -747,11 +755,128 @@ public static class DbInitializer
 
         if (faltantes.Count == 0) return;
 
-        throw new InvalidOperationException(
-            "El esquema de la base de datos no coincide con el modelo: " +
-            $"{faltantes.Count} tabla(s) declarada(s) por EF no existen. " +
-            $"Faltan: {string.Join(", ", faltantes)}. " +
-            "Suele indicar una migración cuyo SQL contradice su propio snapshot; " +
-            "revisa la última migración aplicada y crea la que corrija el nombre.");
+            throw new InvalidOperationException(
+                "El esquema de la base de datos no coincide con el modelo: " +
+                $"{faltantes.Count} tabla(s) declarada(s) por EF no existen. " +
+                $"Faltan: {string.Join(", ", faltantes)}. " +
+                "Suele indicar una migración cuyo SQL contradice su propio snapshot; " +
+                "revisa la última migración aplicada y crea la que corrija el nombre.");
+    }
+
+    /// <summary>
+    /// Memorias de ejemplo de la ETAPA 21. Cubren los cinco ambitos (Usuario,
+    /// Agente, Organizacion, Workflow y, de forma indirecta, el conversacional
+    /// que se crea en cada chat) y los tres casos de uso de la especificacion:
+    /// formato de reporte reutilizable (Caso 1), definicion institucional para
+    /// el agente (Caso 2) y estado persistente de workflow (Caso 3).
+    ///
+    /// SECRETA nace con RequierePermiso: nadie la lee sin el permiso
+    /// MEMORIA:SECRETA, ni siquiera el administrador. Es la memoria que hace
+    /// visible el 403 del guion del video.
+    ///
+    /// Idempotente por Codigo: si la base ya tiene la memoria, no se toca.
+    /// El contenido se cifra solo: lo hace el conversor de valor de EF Core.
+    /// </summary>
+    private static async Task SeedMemoriasEjemploAsync(AsistenteDbContext context)
+    {
+        var scopes = await context.MemoryScopes.ToDictionaryAsync(s => s.Codigo, s => s.IdScope);
+        var categorias = await context.MemoryCategories.ToDictionaryAsync(c => c.Codigo, c => c.IdCategory);
+        if (scopes.Count == 0 || categorias.Count == 0) return;
+
+        // Los duenos de memoria con ambito con dueño (Usuario, Agente, Workflow)
+        // tienen que existir: si no estan, esa memoria no se siembra.
+        var adminId = (await context.Usuarios.FirstOrDefaultAsync(u => u.UsuarioNombre == "admin"))?.IdUsuario;
+        var asistenteId = (await context.Asistentes.FirstOrDefaultAsync(a => a.Nombre == "Asistente General"))?.IdAsistente;
+        var workflowId = (await context.Workflows.FirstOrDefaultAsync(w => w.Codigo == "ReporteClientes"))?.IdWorkflow;
+
+        var ejemplos = new (string Codigo, string Titulo, string Ambito, string Categoria, bool RequierePermiso,
+                            int? Propietario, string Contenido)[]
+        {
+            ("FORM-REPORTE-MENSUAL", "Formato de reporte mensual", "Organizacion", "FormatoReporte", false, null,
+             "FORMATO OFICIAL DEL REPORTE MENSUAL (vigente desde el trimestre anterior)\n" +
+             "1. Resumen ejecutivo: cinco lineas, impacto y conclusion.\n" +
+             "2. Indicadores clave: tabla con indicador, meta, real y variacion.\n" +
+             "3. Avances del mes: una linea por area, con responsable.\n" +
+             "4. Incidencias y riesgos: causa, impacto y mitigacion.\n" +
+             "5. Cierre y proximos pasos: tres commitments con fecha.\n" +
+             "Normas: una pagina por seccion, cifras con unidad, tono ejecutivo, sin anexos."),
+
+            ("SECRETA", "Credencial de la API corporativa (restringida)", "Organizacion", "Definicion", true, null,
+             "DATO RESTRINGIDO DE DEMOSTRACION. Token ficticio: sk-demo-0000-no-usar.\n" +
+             "Solo se lee con el permiso MEMORIA:SECRETA. Sin ese permiso, la respuesta es 403 " +
+             "y el contenido no se expone ni en el error."),
+
+            ("DEF-VIATICOS", "Definicion institucional de viaticos", "Organizacion", "Definicion", false, null,
+             "Viatico diario: 35 USD. Requiere factura y aval de viagem.\n" +
+             "Liquidacion a 15 dias desde la aprobacion.\n" +
+             "Categoria contable: gasto operacional. Si el viaje supera 3 dias, la tarifa sube a 50 USD.\n" +
+             "El agente comercial debe aplicar esta definicion, no la suya."),
+
+            ("PROC-REPORTE-COMERCIAL", "Procedimiento del reporte comercial mensual", "Organizacion", "Procedimiento", false, null,
+             "1. Descargar las ventas del CRM del mes en curso.\n" +
+             "2. Contrastar cada indicador contra el presupuesto del formato institucional vigente.\n" +
+             "3. Comentar toda variacion superior al 10 por ciento.\n" +
+             "4. Cerrar con el forecast del mes siguiente.\n" +
+             "Se usa siempre el formato guardado en memoria institucional, no una plantilla nueva."),
+
+            ("PREF-TONO-DIRECTO", "Preferencia de tono del administrador", "Usuario", "Preferencia", false, adminId,
+             "Responder en espanol, frases cortas, sin emojis. Resumir primero y luego detallar. " +
+             "Si falta respaldo documental, decirlo en vez de rellenar."),
+
+            ("CONOCIMIENTO-ASISTENTE-GENERAL", "Conocimiento propio del Asistente General", "Agente", "Hecho", false, asistenteId,
+             "El Asistente General prioriza la documentacion indexada antes de responder, " +
+             "avisa cuando no encuentra respaldo y consulta la memoria institucional para no repetir trabajo ya hecho."),
+
+            ("ESTADO-REPORTE-CLIENTES", "Estado del flujo ReporteClientes", "Workflow", "Hecho", false, workflowId,
+             "Ultimo paso completado: 2 de 3 (consolidacion de ventas).\n" +
+             "Pendiente: seccion de incidencias.\n" +
+             "Al retomar el flujo se retoma desde el paso 3 con este estado.")
+        };
+
+        var nuevas = new List<MemoryRecord>();
+        foreach (var (codigo, titulo, ambito, categoria, requierePermiso, propietario, contenido) in ejemplos)
+        {
+            if (await context.MemoryRecords.AnyAsync(m => m.Codigo == codigo)) continue;
+            if (!scopes.TryGetValue(ambito, out var idScope)) continue;
+            if (!categorias.TryGetValue(categoria, out var idCategory)) continue;
+            // Ambito con dueno sin dueno: no se siembra (quedaria invisible para todos).
+            if (ambito is "Usuario" or "Agente" or "Workflow" && !propietario.HasValue) continue;
+
+            var memoria = new MemoryRecord
+            {
+                Codigo = codigo,
+                Titulo = titulo,
+                Contenido = contenido,
+                IdScope = idScope,
+                IdCategory = idCategory,
+                IdPropietario = propietario,
+                Activo = true,
+                VersionActual = 1,
+                RequierePermiso = requierePermiso,
+                Indexada = false,
+                FechaCreacion = DateTime.UtcNow,
+                FechaActualizacion = DateTime.UtcNow
+            };
+            nuevas.Add(memoria);
+        }
+
+        if (nuevas.Count == 0) return;
+
+        await context.MemoryRecords.AddRangeAsync(nuevas);
+        await context.SaveChangesAsync();
+
+        // Version 1 inmutable de cada memoria sembrada: el versionado empieza en
+        // la v1, igual que en el alta desde la interfaz.
+        var versiones = nuevas.Select(m => new MemoryVersion
+        {
+            IdMemory = m.IdMemory,
+            Numero = 1,
+            Contenido = m.Contenido,
+            Motivo = "Seed inicial (memoria de ejemplo de la ETAPA 21)",
+            Fecha = DateTime.UtcNow
+        }).ToList();
+
+        await context.MemoryVersions.AddRangeAsync(versiones);
+        await context.SaveChangesAsync();
     }
 }

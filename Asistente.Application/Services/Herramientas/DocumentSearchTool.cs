@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Asistente.Application.Interfaces;
+using Asistente.Application.Services.Memoria;
 using Asistente.Domain.Interfaces;
 using Asistente.Shared;
 using Microsoft.Extensions.Logging;
@@ -24,16 +25,25 @@ public class DocumentSearchTool : ITool
 
     private readonly IRagService _ragService;
     private readonly IRecuperacionService? _recuperacionService;
+    private readonly MemoryOrchestrator? _memoria;
     private readonly ILogger<DocumentSearchTool> _logger;
+
+    /// <summary>
+    /// Presupuesto de caracteres del bloque de memoria institucional que
+    /// acompaña al resultado del RAG (ETAPA 21).
+    /// </summary>
+    private const int MemoriaEnHerramienta = 1200;
 
     public DocumentSearchTool(
         IRagService ragService,
         ILogger<DocumentSearchTool> logger,
-        IRecuperacionService? recuperacionService = null)
+        IRecuperacionService? recuperacionService = null,
+        MemoryOrchestrator? memoria = null)
     {
         _ragService = ragService;
         _logger = logger;
         _recuperacionService = recuperacionService;
+        _memoria = memoria;
     }
 
     public string Name => "DocumentSearchTool";
@@ -66,10 +76,13 @@ public class DocumentSearchTool : ITool
                 {
                     _logger.LogInformation("DocumentSearchTool con alcance del asistente {IdAsistente}: {N} caracteres.",
                         request.IdAsistente, contextoAlcance.Length);
+                    // ETAPA 21: el RAG con alcance no pasa por RagService, asi que
+                    // la memoria institucional se compone aqui.
+                    var memoriaAlcance = await ObtenerMemoriaAsync(request.IdUsuario, request.IdAsistente, cancellationToken);
                     return new ToolExecutionResult
                     {
                         Exitoso = true,
-                        Contenido = contextoAlcance,
+                        Contenido = ConcatenarMemoria(contextoAlcance, memoriaAlcance),
                         Metadatos = new() { ["alcance"] = "asistente" }
                     };
                 }
@@ -83,10 +96,26 @@ public class DocumentSearchTool : ITool
         // 2) Fallback global (sin alcance por asistente).
         var contexto = await _ragService.RecuperarContextoDocumentalAsync(
             consulta, topK: 5,
-            savedDocumentPreference: string.IsNullOrWhiteSpace(preferencia) ? null : preferencia.Trim());
+            savedDocumentPreference: string.IsNullOrWhiteSpace(preferencia) ? null : preferencia.Trim(),
+            idUsuario: request.IdUsuario,
+            idAsistente: request.IdAsistente)
+            ?? new RagContextoDto();
 
         if (string.IsNullOrWhiteSpace(contexto.ContextoDocumental))
         {
+            // Sin fragmentos documentales pero con memoria institucional hay
+            // informacion: no se marca "sin datos" (el marcador se reserva para
+            // cuando no hay nada que decir).
+            if (!string.IsNullOrWhiteSpace(contexto.ContextoMemoria))
+            {
+                return new ToolExecutionResult
+                {
+                    Exitoso = true,
+                    Contenido = contexto.ContextoMemoria,
+                    Metadatos = new() { ["totalFragmentos"] = 0, ["soloMemoria"] = true }
+                };
+            }
+
             return new ToolExecutionResult
             {
                 Exitoso = true,
@@ -104,13 +133,41 @@ public class DocumentSearchTool : ITool
         return new ToolExecutionResult
         {
             Exitoso = true,
-            Contenido = contexto.ContextoDocumental,
+            Contenido = ConcatenarMemoria(contexto.ContextoDocumental, contexto.ContextoMemoria),
             Metadatos = new()
             {
                 ["totalFragmentos"] = contexto.TotalFragmentos,
                 ["referencias"] = string.Join("; ", contexto.Referencias.Select(r => r.NombreDocumento))
             }
         };
+    }
+
+    /// <summary>
+    /// Bloque de memoria institucional para la herramienta (ETAPA 21). El
+    /// orquestador filtra por ambito y permiso y audita cada memoria inyectada.
+    /// Nunca tumba la busqueda: si falla, la herramienta devuelve solo el
+    /// contexto documental.
+    /// </summary>
+    private async Task<string> ObtenerMemoriaAsync(int? idUsuario, int? idAsistente, CancellationToken ct)
+    {
+        if (_memoria == null || !idUsuario.HasValue || idUsuario.Value <= 0) return string.Empty;
+        try
+        {
+            return await _memoria.ObtenerContextoAsync(
+                idUsuario.Value, idAsistente, idWorkflow: null,
+                maxCaracteres: MemoriaEnHerramienta, idConversacion: null, ct: ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Memoria: no se pudo componer el bloque para la herramienta de busqueda.");
+            return string.Empty;
+        }
+    }
+
+    private static string ConcatenarMemoria(string contexto, string memoria)
+    {
+        if (string.IsNullOrWhiteSpace(memoria)) return contexto;
+        return contexto + "\n\n" + memoria;
     }
 
     private static string ObtenerString(Dictionary<string, object?> parametros, string clave, string fallback)

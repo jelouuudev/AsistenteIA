@@ -2,6 +2,30 @@
 
 Todo en el Web (**Memorias**) o en `api/memorias` (con sesión). Los permisos los otorga Seguridad.
 
+## 0. Las memorias de ejemplo (arrancan ya sembradas)
+
+La primera vez que se levanta la base de datos, el sistema siembra **siete memorias de
+ejemplo** para que se pueda ver el panel, probar la búsqueda y reproducir el guion de
+video sin tener que escribir nada:
+
+| Código | Ámbito | Para qué sirve |
+|---|---|---|
+| `FORM-REPORTE-MENSUAL` | Organizacion | El formato del reporte mensual (Caso 1) |
+| `DEF-VIATICOS` | Organizacion | Definición institucional de viáticos (Caso 2) |
+| `PROC-REPORTE-COMERCIAL` | Organizacion | Procedimiento del reporte comercial |
+| `PREF-TONO-DIRECTO` | Usuario (admin) | Preferencia de tono del administrador |
+| `CONOCIMIENTO-ASISTENTE-GENERAL` | Agente (General) | Conocimiento propio del agente |
+| `ESTADO-REPORTE-CLIENTES` | Workflow (ReporteClientes) | Estado persistente de un flujo |
+| `SECRETA` | Organizacion | Memoria restringida: **nadie** la lee sin el permiso `MEMORIA:SECRETA` (ni siquiera el administrador) |
+
+`SECRETA` no aparece en el listado ni se puede abrir: eso es a propósito, para
+enseñar el 403 de permisos sin tener que pedir nada.
+
+Las memorias sembradas no entran solas en la búsqueda semántica (las que se crean o
+editan desde la interfaz, sí). Para que una aparezca en la búsqueda por similitud:
+Detalle → **Indexar para búsqueda**. Si el almacén de vectores está caído, la
+búsqueda por texto sigue funcionando.
+
 ## 1. Crear una memoria organizacional (Caso 1: formato de reporte)
 
 Web → Memorias → Crear: código `FORM-REPORTE-MENSUAL`, ámbito `Organizacion`,
@@ -36,6 +60,12 @@ recibe un 403. En el ámbito `Usuario` propio no hace falta trámite.
 - **Desde planes**: herramienta `Memoria institucional` (`MemoryTool`) con
   `operacion` = `buscar` (parámetro `texto`), `leer` (`codigo`) o `guardar`
   (`codigo`+`contenido`+`ambito`).
+- **En el chat**: el agente recibe solo la memoria que el usuario puede leer
+  (su ámbito y sus permisos), en un bloque al principio del contexto. Si una
+  memoria es de la organización, llega a todo el mundo; si es de un usuario o de
+  un agente, solo llega a su dueño.
+- **En la búsqueda documental**: cuando el agente busca en los documentos, la
+  respuesta llega con la memoria institucional al lado.
 
 ## 3. Reutilizar contexto en un workflow (Caso 3)
 
