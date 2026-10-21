@@ -42,7 +42,7 @@
                         <option value="">Prompt activo (por defecto)</option>
                         @foreach (var p in prompts)
                         {
-                            <option value="@p.IdPrompt" selected="@(Model.IdPrompt == p.IdPrompt)">@p.Nombre (v@p.Version) @(p.Activo ? "— Activo" : "")</option>
+                            <option value="@p.IdPrompt" selected="@(Model.IdPrompt == p.IdPrompt)">@p.Nombre (@("v" + p.Version)) @(p.Activo ? "— Activo" : "")</option>
                         }
                     </select>
                 </div>

@@ -122,7 +122,7 @@
                         <td><code>@m.Codigo</code></td>
                         <td>@m.Titulo</td>
                         <td><span class="badge bg-secondary">@m.Ambito</span></td>
-                        <td>v@m.VersionActual</td>
+                        <td>@("v" + m.VersionActual)</td>
                         <td>
                             @if (m.RequierePermiso)
                             {
