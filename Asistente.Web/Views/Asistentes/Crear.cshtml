@@ -18,7 +18,7 @@
         <div class="card border-0 p-4" style="background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border-radius:20px;border:1px solid rgba(255,255,255,0.07);">
             <form asp-action="Crear" method="post">
                 @Html.AntiForgeryToken()
-                <div asp-validation-summary="ModelOnly" class="alert" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:10px;border:none;"></div>
+                  <div asp-validation-summary="All" class="alert" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:10px;border:none;"></div>
 
                 <h6 class="text-white fw-semibold mb-3"><i class="bi bi-info-circle me-2" style="color:#818cf8;"></i>Información básica</h6>
                 <div class="row g-3 mb-4">

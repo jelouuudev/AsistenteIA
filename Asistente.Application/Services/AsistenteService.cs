@@ -37,7 +37,7 @@ public class AsistenteService
     {
         var a = new Domain.Entities.Asistente
         {
-            Codigo = r.Codigo,
+            Codigo = r.Codigo ?? string.Empty,
             Nombre = r.Nombre,
             Descripcion = r.Descripcion,
             Objetivo = r.Objetivo,
@@ -89,7 +89,7 @@ public class AsistenteService
         var a = (Domain.Entities.Asistente?)(await _asistenteRepository.GetByIdAsync(id))
             ?? throw new KeyNotFoundException("Agente no encontrado.");
 
-        a.Codigo = r.Codigo;
+        a.Codigo = r.Codigo ?? string.Empty;
         a.Nombre = r.Nombre;
         a.Descripcion = r.Descripcion;
         a.Objetivo = r.Objetivo;

@@ -4,7 +4,14 @@ namespace Asistente.Shared;
 
 public class ActualizarAsistenteRequest
 {
-    public string Codigo { get; set; } = string.Empty;
+    /// <summary>
+    /// Opcional a proposito: en la base el codigo puede estar vacio (no hay
+    /// indice unico y el seed no lo pone) y ASP.NET daba por requerido todo
+    /// string no-nullable, asi que editar un agente sin codigo era IMPOSIBLE:
+    /// el POST caia en ModelState invalido y devolvia la vista sin los
+    /// catalogos (las asignaciones se veian vacias y el guardado no se aplicaba).
+    /// </summary>
+    public string? Codigo { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public string? Descripcion { get; set; }
     public string? Objetivo { get; set; }

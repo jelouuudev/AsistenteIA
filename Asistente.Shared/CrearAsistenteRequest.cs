@@ -2,7 +2,8 @@ namespace Asistente.Shared;
 
 public class CrearAsistenteRequest
 {
-    public string Codigo { get; set; } = string.Empty;
+    /// <summary>Opcional: en la base el codigo puede estar vacio (ver ActualizarAsistenteRequest).</summary>
+    public string? Codigo { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public string? Descripcion { get; set; }
     public string? Objetivo { get; set; }

@@ -174,7 +174,12 @@ public class AsistentesController : Controller
     {
         if (!ModelState.IsValid)
         {
+            // Sin recargar los catalogos, la vista vuelve sin ViewBag y las
+            // secciones de asignaciones salen VACIAS (sin casillas): parecia
+            // que el guardado habia borrado las asignaciones del agente.
+            ModelState.AddModelError(string.Empty, "Revisa los campos marcados: no se ha guardado nada.");
             ViewBag.AsistenteId = id;
+            await CargarCatalogosAsync();
             return View(model);
         }
 
