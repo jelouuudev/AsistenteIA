@@ -1,0 +1,37 @@
+USUARIOS Y ROLES DEL SISTEMA ASISTENTE IA
+
+Este documento es la fuente de verdad sobre las cuentas de usuario y los roles del sistema.
+
+USUARIOS PREDEFINIDOS (tabla Usuario)
+
+1. admin - Administrador Principal - admin@asistenteia.local - Rol: Administrador.
+   Puede usar todas las funciones, incluida la administracion de memorias, agentes, herramientas y seguridad.
+2. operador - Operador Asistente - operador@asistenteia.local - Rol: Operador.
+   Uso operativo: consulta, chat y busqueda documental. No administra.
+3. supervisor - Supervisor Auditoria - supervisor@asistenteia.local - Rol: Supervisor.
+   Puede ver el panel de memoria y la auditoria.
+
+ROLES EXISTENTES (tabla Rol)
+
+- Administrador: control total del sistema, la gestion de memoria y la configuracion.
+- Operador: uso operativo del chat, la busqueda documental y las consultas a datos.
+- Supervisor: supervision y auditoria, incluida la consulta del panel de memoria.
+- Usuario: rol base sin permisos especiales, para cuentas de solo consulta.
+
+AGENTES DISPONIBLES (tabla Asistente)
+
+- Asistente General: agente por defecto de la empresa.
+- Asistente de Soporte Tecnico: agente de soporte.
+- Asistente de RRHH: agente de recursos humanos.
+
+ASIGNACION DE UN AGENTE A UN USUARIO
+
+Un usuario puede usar un agente de dos maneras, y son las unicas:
+- Asignacion directa: la fila en la tabla UsuarioAsistentes (pantalla Seguridad, pestana Usuarios, boton Asignar asistentes).
+- Asignacion por rol: el agente tiene el rol del usuario en la tabla AgentesRoles (pantalla Editar agente, seccion Roles autorizados).
+
+Si ninguna de las dos se cumple, el chat responde que el agente no esta autorizado para ese usuario.
+
+FUENTES DE CONOCIMIENTO (tabla AsistenteFuente)
+
+Cada agente tiene asignadas las fuentes de conocimiento que puede consultar con la busqueda documental. Un documento que no pertenece a una fuente asignada no aparece en las respuestas del agente.

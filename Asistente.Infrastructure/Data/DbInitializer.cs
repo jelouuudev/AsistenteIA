@@ -609,19 +609,24 @@ public static class DbInitializer
             };
             await context.Asistentes.AddRangeAsync(asistentes);
             await context.SaveChangesAsync();
-
-            // Vincular cada asistente con todas las fuentes (control de conocimiento)
-            var todasFuentes = await context.FuentesConocimiento.ToListAsync();
-            foreach (var a in context.Asistentes.Local)
-            {
-                foreach (var f in todasFuentes)
-                {
-                    if (!await context.AsistentesFuentes.AnyAsync(af => af.IdAsistente == a.IdAsistente && af.IdFuente == f.IdFuente))
-                        await context.AsistentesFuentes.AddAsync(new AsistenteFuente { IdAsistente = a.IdAsistente, IdFuente = f.IdFuente, Activo = true });
-                }
-            }
-            await context.SaveChangesAsync();
         }
+
+        // Vincular CADA asistente con TODAS las fuentes activas (control de
+        // conocimiento). Idempotente y fuera del bloque de creacion: antes solo
+        // se hacia con los asistentes recien creados (context.Asistentes.Local),
+        // asi que el Asistente General se quedo con 2 de las 5 fuentes y su
+        // busqueda documental no veia mas que una parte del material. Un
+        // asistente sin fuentes asignadas es un agente mudo.
+        var todasFuentes = await context.FuentesConocimiento.Where(f => f.Activo).ToListAsync();
+        foreach (var a in await context.Asistentes.ToListAsync())
+        {
+            foreach (var f in todasFuentes)
+            {
+                if (!await context.AsistentesFuentes.AnyAsync(af => af.IdAsistente == a.IdAsistente && af.IdFuente == f.IdFuente))
+                    await context.AsistentesFuentes.AddAsync(new AsistenteFuente { IdAsistente = a.IdAsistente, IdFuente = f.IdFuente, Activo = true });
+            }
+        }
+        await context.SaveChangesAsync();
 
         // 7) Asignación de asistentes y fuentes al administrador (control de acceso)
         var adminUsuario = await context.Usuarios.FirstOrDefaultAsync(u => u.UsuarioNombre == "admin");
@@ -632,8 +637,8 @@ public static class DbInitializer
                 if (!await context.UsuarioAsistentes.AnyAsync(ua => ua.IdUsuario == adminUsuario.IdUsuario && ua.IdAsistente == a.IdAsistente))
                     await context.UsuarioAsistentes.AddAsync(new UsuarioAsistente { IdUsuario = adminUsuario.IdUsuario, IdAsistente = a.IdAsistente, Activo = true });
 
-            var todasFuentes = await context.FuentesConocimiento.ToListAsync();
-            foreach (var f in todasFuentes)
+            var todasFuentesAdmin = await context.FuentesConocimiento.ToListAsync();
+            foreach (var f in todasFuentesAdmin)
                 if (!await context.UsuarioFuentes.AnyAsync(uf => uf.IdUsuario == adminUsuario.IdUsuario && uf.IdFuente == f.IdFuente))
                     await context.UsuarioFuentes.AddAsync(new UsuarioFuente { IdUsuario = adminUsuario.IdUsuario, IdFuente = f.IdFuente, Activo = true });
 

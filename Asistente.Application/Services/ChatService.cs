@@ -448,7 +448,10 @@ public class ChatService : IChatService
 
                     if (string.IsNullOrWhiteSpace(systemPrompt))
         {
-            systemPrompt = "Eres un asistente virtual empresarial. Responde ÚNICAMENTE en español. Está prohibido usar cualquier otro idioma. No incluyas pensamiento interno ni etiquetas. Responde de forma clara, concisa y profesional.";
+            systemPrompt = "Eres un asistente virtual empresarial. Responde ÚNICAMENTE en español. Está prohibido usar cualquier otro idioma. No incluyas pensamiento interno ni etiquetas. Responde de forma clara, concisa y profesional. " +
+                "Reglas de veracidad: responde solo con la informacion que aparezca en el contexto que te dan (documentos, datos de la base de datos, resultados de herramientas o memoria institucional). " +
+                "Si el contexto no contiene la respuesta, indicarlo con claridad en lugar de completarla con conocimiento general. " +
+                "Cuando la respuesta venga de un documento, cita su nombre y su codigo.";
         }
 
         // === Memoria institucional (ETAPA 21) ===
@@ -564,7 +567,17 @@ public class ChatService : IChatService
                 "- Analiza el contexto documental proporcionado arriba.\n" +
                 "- Extrae la información relevante para responder la pregunta del usuario.\n" +
                 "- Si encuentras información parcial o relacionada, úsala para formular tu respuesta.\n" +
-                "- Si no encuentras información directamente relacionada, responde con lo que tengas disponible en el contexto.\n" +
+                // Aqui se abria la puerta a la invencion: la instruccion decia
+                // "responde con lo que tengas disponible en el contexto", y con
+                // fragmentos irrelevantes el modelo rellenaba la respuesta con
+                // conocimiento general (listas de roles, politicas y nombres de
+                // personas que no estaban en ninguna fuente).
+                "- Si el contexto NO contiene la respuesta, dilo con claridad: esa informacion no esta en las " +
+                "fuentes de conocimiento asignadas a este asistente.\n" +
+                "- No completes la respuesta con conocimiento general, ejemplos, nombres ni suposiciones: " +
+                "solo puedes afirmar lo que este en el contexto.\n" +
+                "- Cita el documento de origen cuando la respuesta venga de un fragmento " +
+                "(por ejemplo: Segun <documento> (codigo)).\n" +
                 "- Sé claro, conciso y profesional en tu respuesta.";
 
             // La temperatura del asistente manda; 0.3 solo si no esta configurada.
