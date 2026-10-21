@@ -12,10 +12,20 @@
                 <tbody>
                 @for (int i = 0; i < Model.Count; i++)
                 {
+                    var marcada = Model[i].Autorizada;
                     <tr>
-                        <td>@Html.CheckBoxFor(m => m[i].Autorizada)</td>
+                        @* Mismo prefijo "items[]" que en AsignarAsistentes: sin el,
+                           el binding devolvia null y al guardar se perdian todas las
+                           fuentes asignadas al usuario. *@
+                        <td>
+                            <input type="hidden" name="items[@i].Autorizada" value="false" />
+                            <input class="form-check-input" type="checkbox" name="items[@i].Autorizada" value="true" checked="@(marcada ? "checked" : null)" />
+                        </td>
                         <td>@Model[i].Nombre</td>
-                        <td>@Html.HiddenFor(m => m[i].IdFuente) @Html.HiddenFor(m => m[i].Nombre)</td>
+                        <td>
+                            <input type="hidden" name="items[@i].IdFuente" value="@Model[i].IdFuente" />
+                            <input type="hidden" name="items[@i].Nombre" value="@Model[i].Nombre" />
+                        </td>
                     </tr>
                 }
                 </tbody>

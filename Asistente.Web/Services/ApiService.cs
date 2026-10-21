@@ -1403,7 +1403,14 @@ public class ApiService : IApiService
     public async Task<List<AsistenteAutorizadoDto>> GetAsistentesDeUsuarioAsync(int idUsuario, int currentUserId, string ip)
     {
         try { return await EnviarYLeerAsync<List<AsistenteAutorizadoDto>>(CrearRequest(HttpMethod.Get, $"/api/seguridad/usuarios/{idUsuario}/asistentes", null, currentUserId, ip)); }
-        catch { return new List<AsistenteAutorizadoDto>(); }
+        catch (Exception ex)
+        {
+            // Sin este log el fallo era invisible: la pantalla salia vacia y al
+            // guardar el POST de "borrar y reasignar" se llevaba por delante
+            // todas las asignaciones del usuario.
+            _logger.LogError(ex, "No se pudieron obtener los asistentes del usuario {IdUsuario}.", idUsuario);
+            return new List<AsistenteAutorizadoDto>();
+        }
     }
 
     public async Task<List<FuenteAutorizadaDto>> GetFuentesDeUsuarioAsync(int idUsuario, int currentUserId, string ip)

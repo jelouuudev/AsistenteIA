@@ -13,8 +13,19 @@
                 <tbody>
                 @for (int i = 0; i < Model.Count; i++)
                 {
+                    var marcado = Model[i].Autorizado;
                     <tr>
-                        <td>@Html.CheckBoxFor(m => m[i].Autorizado)</td>
+                        @* El prefijo "items[]" es OBLIGATORIO: la accion recibe
+                           List<AsistenteAutorizadoDto> items, y el binder solo
+                           encuentra lo que viene con ese nombre. Con Html.CheckBoxFor
+                           los campos salian como "[0].Autorizado" (sin prefijo), el
+                           binding devolvia null y al guardar se aplicaba un
+                           "borrar todo y reasignar" con lista vacia: se perdian
+                           todas las asignaciones del usuario. *@
+                        <td>
+                            <input type="hidden" name="items[@i].Autorizado" value="false" />
+                            <input class="form-check-input" type="checkbox" name="items[@i].Autorizado" value="true" checked="@(marcado ? "checked" : null)" />
+                        </td>
                         <td>@Model[i].Nombre</td>
                         <td>
                             @if (Model[i].RolesQueOtorgan.Any())
@@ -26,7 +37,10 @@
                                 <span class="text-secondary">—</span>
                             }
                         </td>
-                        <td>@Html.HiddenFor(m => m[i].IdAsistente) @Html.HiddenFor(m => m[i].Nombre)</td>
+                        <td>
+                            <input type="hidden" name="items[@i].IdAsistente" value="@Model[i].IdAsistente" />
+                            <input type="hidden" name="items[@i].Nombre" value="@Model[i].Nombre" />
+                        </td>
                     </tr>
                 }
                 </tbody>

@@ -78,6 +78,16 @@ public class SeguridadController : Controller
         return View(usuarios);
     }
 
+    /// <summary>
+    /// Con y sin id en la ruta. La ruta por defecto del Web es
+    /// {controller}/{action}/{id?}: como el parametro se llama idUsuario (no id),
+    /// /Seguridad/AsignarAsistentes/7 llegaba con idUsuario = 0 y la pantalla
+    /// ensenaba la del usuario 0 (vacia). Con la ruta explicita el id se
+    /// bindea bien; la variante sin id sigue sirviendo el enlace antiguo por
+    /// query string.
+    /// </summary>
+    [HttpGet("~/Seguridad/AsignarAsistentes")]
+    [HttpGet("~/Seguridad/AsignarAsistentes/{idUsuario:int}")]
     [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> AsignarAsistentes(int idUsuario)
     {
@@ -86,13 +96,24 @@ public class SeguridadController : Controller
         return View(asistentes);
     }
 
-    [HttpPost]
+    [HttpPost("~/Seguridad/AsignarAsistentes")]
+    [HttpPost("~/Seguridad/AsignarAsistentes/{idUsuario:int}")]
     [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> AsignarAsistentes(int idUsuario, List<AsistenteAutorizadoDto> items)
     {
+        // Si el binding no llega (lista null), NO se llama a la API: la API
+        // "borra y reasigna", y con una lista vacia eso se traducía en borrar
+        // todas las asignaciones del usuario sin querer. Desasignar de verdad se
+        // hace desmarcando los checks (items llega con todos en false).
+        if (items == null)
+        {
+            TempData["ErrorMessage"] = "No se recibió la lista de asignaciones: no se ha modificado nada.";
+            return RedirectToAction("AsignarAsistentes", new { idUsuario });
+        }
+
         try
         {
-            var ids = (items ?? new List<AsistenteAutorizadoDto>())
+            var ids = items
                 .Where(x => x.Autorizado)
                 .Select(x => x.IdAsistente)
                 .ToList();
@@ -141,6 +162,8 @@ public class SeguridadController : Controller
         return RedirectToAction("Permisos", new { idRol });
     }
 
+    [HttpGet("~/Seguridad/AsignarFuentes")]
+    [HttpGet("~/Seguridad/AsignarFuentes/{idUsuario:int}")]
     [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> AsignarFuentes(int idUsuario)
     {
@@ -149,13 +172,22 @@ public class SeguridadController : Controller
         return View(fuentes);
     }
 
-    [HttpPost]
+    [HttpPost("~/Seguridad/AsignarFuentes")]
+    [HttpPost("~/Seguridad/AsignarFuentes/{idUsuario:int}")]
     [Authorize(Roles = "Administrador")]
     public async Task<IActionResult> AsignarFuentes(int idUsuario, List<FuenteAutorizadaDto> items)
     {
+        // Misma proteccion que en AsignarAsistentes: sin lista recibida no se
+        // llama a la API (que borra y reasigna).
+        if (items == null)
+        {
+            TempData["ErrorMessage"] = "No se recibió la lista de fuentes: no se ha modificado nada.";
+            return RedirectToAction("AsignarFuentes", new { idUsuario });
+        }
+
         try
         {
-            var ids = (items ?? new List<FuenteAutorizadaDto>())
+            var ids = items
                 .Where(x => x.Autorizada)
                 .Select(x => x.IdFuente)
                 .ToList();
