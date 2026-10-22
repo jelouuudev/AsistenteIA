@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Asistente.Domain.Entities;
 using Asistente.Domain.Interfaces;
 using Asistente.Infrastructure.Services;
 using Asistente.Shared;
