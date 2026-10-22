@@ -347,8 +347,15 @@ public class RecuperacionServiceIsolationTests
     [Fact]
     public async Task Sin_Mejor_Sobre_El_Umbral_No_Se_Rescata_Nada()
     {
-        // El rescate de empates exige un mejor sobre el umbral: con 0.65/0.64
-        // (pregunta ajena) el resultado sigue vacío en vez de traer ruido.
+        // El rescate de empates exige un mejor sobre el umbral: con 0.30/0.29
+        // (pregunta ajena, por debajo del umbral de 0.35) el resultado sigue
+        // vacío en vez de traer ruido.
+        //
+        // El umbral paso de 0.70 a 0.35 (y la tabla ConfiguracionesRAG se
+        // siembra con ese valor) porque con nomic-embed-text los scores de este
+        // corpus se mueven entre 0.60 y 0.67: con 0.70 no pasaba NINGUN
+        // fragmento y el asistente respondia "no tengo informacion" con el
+        // documento delante.
         _mockAsistenteFuente
             .Setup(r => r.GetFuentesActivasPorAsistenteAsync(1))
             .ReturnsAsync(new List<FuenteConocimiento> { new() { IdFuente = 1, Nombre = "F1", Prioridad = 1 } });
@@ -362,8 +369,8 @@ public class RecuperacionServiceIsolationTests
             .Setup(v => v.SearchWithFilterAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<VectorSearchFilter>()))
             .ReturnsAsync(new List<VectorSearchResult>
             {
-                new() { IdFuente = 1, DocumentoProcesadoId = 100, Orden = 1, Score = 0.65f, Text = "Texto del primer documento", MetadataDocumentoNombre = "DocA" },
-                new() { IdFuente = 1, DocumentoProcesadoId = 101, Orden = 1, Score = 0.64f, Text = "Texto del segundo documento", MetadataDocumentoNombre = "DocV" }
+                new() { IdFuente = 1, DocumentoProcesadoId = 100, Orden = 1, Score = 0.30f, Text = "Texto del primer documento", MetadataDocumentoNombre = "DocA" },
+                new() { IdFuente = 1, DocumentoProcesadoId = 101, Orden = 1, Score = 0.29f, Text = "Texto del segundo documento", MetadataDocumentoNombre = "DocV" }
             });
 
         var (contexto, referencias) = await _service.RecuperarContextoConFuentesAsync("pregunta", 1);

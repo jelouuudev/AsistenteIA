@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -120,7 +120,7 @@ public class IndexacionService : IIndexacionService
         // no deben tener vectores (archivar revoca el acceso).
         if (!await EsDocumentoActivoAsync(procesado.IdVersionDocumento))
         {
-            _logger.LogInformation("Documento procesado {Id} omitido en indexación: su documento no está Activo.", documentoProcesadoId);
+            _logger.LogDebug("Documento procesado {Id} omitido en indexación: su documento no está Activo.", documentoProcesadoId);
             return;
         }
 
@@ -131,7 +131,7 @@ public class IndexacionService : IIndexacionService
         var version = await _versionRepository.GetByIdAsync(procesado.IdVersionDocumento);
         if (version == null || !version.Activo)
         {
-            _logger.LogInformation("Documento procesado {Id} omitido en indexación: su versión no está activa.", documentoProcesadoId);
+            _logger.LogDebug("Documento procesado {Id} omitido en indexación: su versión no está activa.", documentoProcesadoId);
             try
             {
                 await _vectorStore.DeleteByDocumentoProcesadoIdAsync(documentoProcesadoId);

@@ -286,6 +286,29 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
+        // Configuracion RAG por defecto (idempotente). Sin fila, la recuperacion
+        // con alcance usaba un umbral de similitud de 0.70 y descartaba TODOS
+        // los fragmentos del corpus (los scores de nomic-embed-text se mueven
+        // entre 0.60 y 0.67): el asistente respondia "no tengo informacion"
+        // con el documento delante. Con la fila sembrada, el umbral es visible
+        // y ajustable desde Configuracion RAG.
+        if (!await context.ConfiguracionesRAG.AnyAsync())
+        {
+            await context.ConfiguracionesRAG.AddAsync(new ConfiguracionRAG
+            {
+                MaxChunks = 5,
+                MaxCaracteresContexto = 12000,
+                MinScore = 0.35,
+                TopKPorFuente = 5,
+                MaxFuentesConsultadas = 5,
+                MaxReferencias = 10,
+                MaxChunksAlModelo = 10,
+                UsarDocumentosHistoricos = false,
+                Activo = true
+            });
+            await context.SaveChangesAsync();
+        }
+
         // Seed ConfiguracionOrchestrator
         if (!await context.ConfiguracionesOrchestrator.AnyAsync())
         {

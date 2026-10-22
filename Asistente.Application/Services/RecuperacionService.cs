@@ -30,7 +30,17 @@ public class RecuperacionService : IRecuperacionService
 
     private const int MaxChunksDefault = 5;
     private const int MaxCaracteresContextoDefault = 12000;
-    private const float MinScoreDefault = 0.7f;
+    /// <summary>
+    /// Umbral de similitud por defecto. Antes era 0.70 y la tabla
+    /// ConfiguracionesRAG estaba vacia: con el modelo de embeddings
+    /// (nomic-embed-text) los fragmentos de este corpus se movian entre 0.60 y
+    /// 0.67, asi que NINGUNO pasaba el filtro y el RAG con alcance devolvia
+    /// cero resultados. El asistente respondia "no tengo informacion" con el
+    /// documento delante (medido en vivo). Ademas, el otro motor de
+    /// recuperacion (RagService) usaba 0.15: dos umbrales distintos para la
+    /// misma busqueda.
+    /// </summary>
+    private const float MinScoreDefault = 0.35f;
 
     private static readonly HashSet<string> Stopwords = new(StringComparer.OrdinalIgnoreCase)
     {

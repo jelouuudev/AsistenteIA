@@ -576,6 +576,8 @@ public class ChatService : IChatService
                 "fuentes de conocimiento asignadas a este asistente.\n" +
                 "- No completes la respuesta con conocimiento general, ejemplos, nombres ni suposiciones: " +
                 "solo puedes afirmar lo que este en el contexto.\n" +
+                "- Transcribe LITERALMENTE los datos del contexto (nombres, correos, codigos, roles, " +
+                "importes): no los reescribas, no los resumas y no anadas campos que no aparezcan.\n" +
                 "- Cita el documento de origen cuando la respuesta venga de un fragmento " +
                 "(por ejemplo: Segun <documento> (codigo)).\n" +
                 "- Sé claro, conciso y profesional en tu respuesta.";

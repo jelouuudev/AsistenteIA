@@ -183,6 +183,11 @@ public class ChromaVectorStore : IVectorStore
         var response = await _httpClient.PostAsync(url, content);
         var responseContent = await response.Content.ReadAsStringAsync();
 
+        if (where != null)
+        {
+            _logger.LogDebug("ChromaDB query con where: {Where} n_results={N}", json.Length > 400 ? json[..400] + "..." : json, topK);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("ChromaDB rechazó query con status {Status}: {Body}", response.StatusCode, responseContent);
@@ -259,6 +264,8 @@ public class ChromaVectorStore : IVectorStore
                         || string.IsNullOrWhiteSpace(r.EstadoDocumento)
                         || r.EstadoDocumento != "Obsoleto")
                     .ToList();
+                _logger.LogDebug("ChromaDB con where devolvio {N} resultados (ids: {Ids}).", finales.Count,
+                    string.Join(",", finales.Select(r => r.MetadataDocumentoCodigo).Take(5)));
                 if (finales.Count > 0) return finales;
                 // Un where que no casa con nada puede ser un filtro demasiado
                 // restrictivo o un metadato ausente: se reintenta sin where para
