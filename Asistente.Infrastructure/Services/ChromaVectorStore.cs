@@ -143,79 +143,7 @@ public class ChromaVectorStore : IVectorStore
     {
         try
         {
-            var collectionId = await ObtenerCollectionIdAsync();
-
-            var queryEmbedding = await _embeddingProvider.GenerateEmbeddingAsync(query);
-
-            var request = new
-            {
-                query_embeddings = new[] { queryEmbedding.ToList() },
-                n_results = topK
-            };
-
-            var json = JsonSerializer.Serialize(request, JsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var url = $"/api/v1/collections/{collectionId}/query";
-            var response = await _httpClient.PostAsync(url, content);
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogError("ChromaDB rechazó query con status {Status}: {Body}", response.StatusCode, responseContent);
-                return Enumerable.Empty<VectorSearchResult>();
-            }
-
-            if (string.IsNullOrWhiteSpace(responseContent) || !responseContent.TrimStart().StartsWith("{") && !responseContent.TrimStart().StartsWith("["))
-            {
-                _logger.LogWarning("ChromaDB devolvió respuesta no válida en SearchAsync: {Preview}",
-                    responseContent.Length > 100 ? responseContent[..100] + "..." : responseContent);
-                return Enumerable.Empty<VectorSearchResult>();
-            }
-
-            var chromaResponse = JsonSerializer.Deserialize<ChromaQueryResponse>(responseContent, JsonOptions);
-
-            if (chromaResponse?.Ids == null || !chromaResponse.Ids.Any())
-                return Enumerable.Empty<VectorSearchResult>();
-
-            var resultados = new List<VectorSearchResult>();
-
-            var ids = chromaResponse.Ids.FirstOrDefault() ?? new List<string>();
-            var distances = chromaResponse.Distances?.FirstOrDefault() ?? new List<float>();
-            var documents = chromaResponse.Documents?.FirstOrDefault() ?? new List<string>();
-            var metadatas = chromaResponse.Metadatas?.FirstOrDefault() ?? new List<Dictionary<string, object>>();
-
-            for (int i = 0; i < ids.Count; i++)
-            {
-                // Similitud desde la DISTANCIA que devuelve Chroma, según su métrica
-                // (cos = 1 - d en cosine; 1 - d/2 en l2 con vectores unitarios).
-                var dist = distances.Count > i ? distances[i] : float.MaxValue;
-                var score = DistanciaASimilitud(dist);
-                var metadata = metadatas.Count > i ? metadatas[i] : new Dictionary<string, object>();
-
-                resultados.Add(new VectorSearchResult
-                {
-                    DocumentId = Guid.TryParse(ids[i], out var guid) ? guid : Guid.NewGuid(),
-                    ChunkId = GetMetadataInt(metadata, "chunk_id", 0),
-                    DocumentoProcesadoId = GetMetadataInt(metadata, "documento_procesado_id", 0),
-                    Text = documents.Count > i ? documents[i] : string.Empty,
-                    Score = score,
-                    Orden = GetMetadataInt(metadata, "orden", i),
-                    PaginaInicial = GetMetadataInt(metadata, "pagina_inicial", 0),
-                    PaginaFinal = GetMetadataInt(metadata, "pagina_final", 0),
-                    MetadataDocumentoNombre = metadata.TryGetValue("documento_nombre", out var dn) ? dn?.ToString() : null,
-                    MetadataDocumentoCodigo = metadata.TryGetValue("documento_codigo", out var dc) ? dc?.ToString() : null,
-                    IdDocumento = GetMetadataNullableInt(metadata, "id_documento"),
-                    IdVersion = GetMetadataNullableInt(metadata, "id_version"),
-                    IdFuente = GetMetadataNullableInt(metadata, "id_fuente"),
-                    IdCategoria = GetMetadataNullableInt(metadata, "id_categoria"),
-                    TipoDocumento = GetMetadataString(metadata, "tipo_documento"),
-                    VersionDocumento = GetMetadataString(metadata, "version_documento"),
-                    EstadoDocumento = GetMetadataString(metadata, "estado_documento")
-                });
-            }
-
-            return resultados.OrderByDescending(r => r.Score);
+            return await ConsultarAsync(query, topK, where: null);
         }
         catch (Exception ex)
         {
@@ -224,10 +152,120 @@ public class ChromaVectorStore : IVectorStore
         }
     }
 
+    /// <summary>
+    /// Consulta a Chroma con filtro opcional. El where se arma con $and/$or/$eq
+    /// (operadores soportados por la 0.4.x) para que el filtro se aplique en el
+    /// servidor y no despues.
+    /// </summary>
+    private async Task<List<VectorSearchResult>> ConsultarAsync(string query, int topK, Dictionary<string, object>? where)
+    {
+        var collectionId = await ObtenerCollectionIdAsync();
+
+        var queryEmbedding = await _embeddingProvider.GenerateEmbeddingAsync(query);
+
+        object request = where == null
+            ? new
+            {
+                query_embeddings = new[] { queryEmbedding.ToList() },
+                n_results = topK
+            }
+            : new
+            {
+                query_embeddings = new[] { queryEmbedding.ToList() },
+                n_results = topK,
+                where = where
+            };
+
+        var json = JsonSerializer.Serialize(request, JsonOptions);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        var url = $"/api/v1/collections/{collectionId}/query";
+        var response = await _httpClient.PostAsync(url, content);
+        var responseContent = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("ChromaDB rechazó query con status {Status}: {Body}", response.StatusCode, responseContent);
+            throw new Exception($"ChromaDB query falló ({response.StatusCode}): {responseContent}");
+        }
+
+        if (string.IsNullOrWhiteSpace(responseContent) || !responseContent.TrimStart().StartsWith("{") && !responseContent.TrimStart().StartsWith("["))
+        {
+            _logger.LogWarning("ChromaDB devolvió respuesta no válida en SearchAsync: {Preview}",
+                responseContent.Length > 100 ? responseContent[..100] + "..." : responseContent);
+            return new List<VectorSearchResult>();
+        }
+
+        var chromaResponse = JsonSerializer.Deserialize<ChromaQueryResponse>(responseContent, JsonOptions);
+
+        if (chromaResponse?.Ids == null || !chromaResponse.Ids.Any())
+            return new List<VectorSearchResult>();
+
+        var resultados = new List<VectorSearchResult>();
+
+        var ids = chromaResponse.Ids.FirstOrDefault() ?? new List<string>();
+        var distances = chromaResponse.Distances?.FirstOrDefault() ?? new List<float>();
+        var documents = chromaResponse.Documents?.FirstOrDefault() ?? new List<string>();
+        var metadatas = chromaResponse.Metadatas?.FirstOrDefault() ?? new List<Dictionary<string, object>>();
+
+        for (int i = 0; i < ids.Count; i++)
+        {
+            // Similitud desde la DISTANCIA que devuelve Chroma, según su métrica
+            // (cos = 1 - d en cosine; 1 - d/2 en l2 con vectores unitarios).
+            var dist = distances.Count > i ? distances[i] : float.MaxValue;
+            var score = DistanciaASimilitud(dist);
+            var metadata = metadatas.Count > i ? metadatas[i] : new Dictionary<string, object>();
+
+            resultados.Add(new VectorSearchResult
+            {
+                DocumentId = Guid.TryParse(ids[i], out var guid) ? guid : Guid.NewGuid(),
+                ChunkId = GetMetadataInt(metadata, "chunk_id", 0),
+                DocumentoProcesadoId = GetMetadataInt(metadata, "documento_procesado_id", 0),
+                Text = documents.Count > i ? documents[i] : string.Empty,
+                Score = score,
+                Orden = GetMetadataInt(metadata, "orden", i),
+                PaginaInicial = GetMetadataInt(metadata, "pagina_inicial", 0),
+                PaginaFinal = GetMetadataInt(metadata, "pagina_final", 0),
+                MetadataDocumentoNombre = metadata.TryGetValue("documento_nombre", out var dn) ? dn?.ToString() : null,
+                MetadataDocumentoCodigo = metadata.TryGetValue("documento_codigo", out var dc) ? dc?.ToString() : null,
+                IdDocumento = GetMetadataNullableInt(metadata, "id_documento"),
+                IdVersion = GetMetadataNullableInt(metadata, "id_version"),
+                IdFuente = GetMetadataNullableInt(metadata, "id_fuente"),
+                IdCategoria = GetMetadataNullableInt(metadata, "id_categoria"),
+                TipoDocumento = GetMetadataString(metadata, "tipo_documento"),
+                VersionDocumento = GetMetadataString(metadata, "version_documento"),
+                EstadoDocumento = GetMetadataString(metadata, "estado_documento")
+            });
+        }
+
+        return resultados.OrderByDescending(r => r.Score).ToList();
+    }
+
     public async Task<IEnumerable<VectorSearchResult>> SearchWithFilterAsync(string query, int topK, VectorSearchFilter filter)
     {
         try
         {
+            // El filtro se aplica EN Chroma (where). Antes se buscaba sin filtro
+            // (top 30) y se descartaba en memoria lo que no era de la fuente: con
+            // muchos documentos, un documento valido se caia del top-30 y el
+            // asistente respondia "no tengo informacion" aunque el fragmento
+            // estuviera a uno o dos puestos de la respuesta global.
+            var where = ConstruirWhereChroma(filter);
+            if (where != null)
+            {
+                var filtrados = await ConsultarAsync(query, topK, where);
+                var finales = filtrados
+                    .Where(r => !filter.IncluirHistoricos
+                        || string.IsNullOrWhiteSpace(r.EstadoDocumento)
+                        || r.EstadoDocumento != "Obsoleto")
+                    .ToList();
+                if (finales.Count > 0) return finales;
+                // Un where que no casa con nada puede ser un filtro demasiado
+                // restrictivo o un metadato ausente: se reintenta sin where para
+                // no perder la busqueda.
+                _logger.LogWarning("ChromaDB devolvio 0 resultados con el where de filtro; se reintenta sin filtro.");
+            }
+
             var allResults = (await SearchAsync(query, Math.Max(topK * 3, 30))).ToList();
 
             if (filter.IdsFuentes != null && filter.IdsFuentes.Count > 0)
@@ -255,6 +293,38 @@ public class ChromaVectorStore : IVectorStore
             _logger.LogError(ex, "Error al buscar con filtros en ChromaDB.");
             return Enumerable.Empty<VectorSearchResult>();
         }
+    }
+
+    /// <summary>
+    /// Arma el where de Chroma a partir del filtro de la recuperacion. Usa
+    /// $or/$eq (soportados por la 0.4.x) en vez de $in: el metadato es un
+    /// numero y no conviene depender de operadores mas recientes.
+    /// </summary>
+    internal static Dictionary<string, object>? ConstruirWhereChroma(VectorSearchFilter filter)
+    {
+        var condiciones = new List<Dictionary<string, object>>();
+
+        void AgregarIgual(string campo, object valor)
+            => condiciones.Add(new Dictionary<string, object> { [campo] = new Dictionary<string, object> { ["$eq"] = valor } });
+
+        void AgregarUnoDe(string campo, IEnumerable<int> valores)
+        {
+            var lista = valores.Distinct().Select(v => (object)v).ToList();
+            if (lista.Count == 0) return;
+            if (lista.Count == 1) { AgregarIgual(campo, lista[0]); return; }
+            var opciones = lista.Select(valor => (object)new Dictionary<string, object> { [campo] = new Dictionary<string, object> { ["$eq"] = valor } }).ToList();
+            condiciones.Add(new Dictionary<string, object> { ["$or"] = opciones });
+        }
+
+        if (filter.IdsFuentes != null && filter.IdsFuentes.Count > 0) AgregarUnoDe("id_fuente", filter.IdsFuentes);
+        if (filter.IdsDocumentos != null && filter.IdsDocumentos.Count > 0) AgregarUnoDe("id_documento", filter.IdsDocumentos);
+        if (filter.IdCategoria.HasValue) AgregarIgual("id_categoria", filter.IdCategoria.Value);
+        if (filter.IdVersion.HasValue) AgregarIgual("id_version", filter.IdVersion.Value);
+        if (!string.IsNullOrWhiteSpace(filter.EstadoDocumento)) AgregarIgual("estado_documento", filter.EstadoDocumento!);
+
+        if (condiciones.Count == 0) return null;
+        if (condiciones.Count == 1) return condiciones[0];
+        return new Dictionary<string, object> { ["$and"] = condiciones.Cast<object>().ToList() };
     }
 
     public async Task DeleteDocumentAsync(Guid documentId)
